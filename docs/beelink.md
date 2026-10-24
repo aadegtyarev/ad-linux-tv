@@ -19,7 +19,7 @@ The installed app uses `/home/ad-tv/.local/share/ad-linux-tv`; config is `/home/
 
 ## Mode switching and recovery
 
-After integration is staged, `gui status` reports the current mode. `gui tv` starts the TV session when a display is connected; `gui kde` starts the existing KDE autologin; `gui off` returns to the tty1 console. Switching away from an active graphical session requires confirmation. `gui on` remains an alias for KDE. In TV mode, press Ctrl+Alt+F2 to reach the tty2 login console, then run `gui kde` or `gui off`. SSH remains available. There is no visible exit button in the TV page.
+After integration is staged, `gui status` reports the current mode. `gui tv` starts the TV session when a display is connected; `gui kde` starts the existing KDE autologin; `gui off` returns to the tty1 console. Switching away from an active graphical session requires confirmation. `gui on` remains an alias for KDE. On the TV launcher, open the Settings tile with arrows and OK on the phone remote or with a keyboard/mouse. Settings shows the phone QR/address and a confirmed "Выйти из ТВ-режима → KDE" action. In TV mode, Ctrl+Alt+F2 opens the tty2 recovery console, where `gui kde` or `gui off` can also be run. SSH remains available.
 
 Cage runs Firefox fullscreen and stops when the browser exits. The script then stops the local server. The kiosk unit switches to tty2 on exit or failure, leaving a login console. With no monitor at boot, tty1 remains a login console. If a monitor is connected after boot, use `gui tv` to start TV mode manually.
 

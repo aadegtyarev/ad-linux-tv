@@ -7,7 +7,10 @@ function launcher() {
   const calls = [];
   const doc = {
     activeElement: null,
-    addEventListener: (name, fn) => (events[name] = fn),
+    addEventListener: (name, fn) => {
+      const previous = events[name];
+      events[name] = previous ? event => { previous(event); fn(event); } : fn;
+    },
     dispatchEvent(event) { event.target = this; events[event.type](event); },
     querySelectorAll: () => [],
   };
@@ -27,10 +30,13 @@ function launcher() {
   doc.documentElement = new Element("html");
   doc.activeElement = doc.body;
   const elements = Object.fromEntries(
-    ["#tiles", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#page", "#next", "#prev"]
+    ["#tiles", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes"]
       .map(id => [id, new Element(id)])
   );
-  doc.querySelector = id => elements[id];
+  elements["#settings"].hidden = true;
+  elements["#confirm-kde"].hidden = true;
+  doc.querySelector = id => id === '[data-settings="true"]'
+    ? elements["#tiles"].children.find(child => child.dataset.settings === "true") : elements[id];
   doc.createElement = name => new Element(name);
   let serviceData = Array.from({length:25}, (_, id) => ({id:`svc-${id}`, name:`Service ${id}`}));
   let bridgeData = {extension_online:true, pending_commands:0, last_command_failure:null};

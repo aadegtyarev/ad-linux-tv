@@ -1,0 +1,7 @@
+[Unit]
+Description=Switch from ad-linux-tv kiosk to KDE
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl start sddm.service
+ExecStartPost=/usr/bin/chvt 1

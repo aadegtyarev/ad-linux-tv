@@ -59,3 +59,22 @@ test("physical tile click still posts Open and pagination stays local", async ()
   assert.equal(ui.elements["#page"].textContent, "2 / 3");
   assert.equal(ui.doc.activeElement.dataset.serviceIndex, "12");
 });
+
+test("settings is reachable by remote OK and KDE requires a second confirmation", async () => {
+  const ui = launcher();
+  ui.services = [{id:"svc-0", name:"Service 0"}];
+  await ready();
+  ui.doc.dispatchEvent({type:"keydown", key:"ArrowRight", preventDefault(){}});
+  assert.equal(ui.doc.activeElement.dataset.settings, "true");
+  ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
+  assert.equal(ui.elements["#settings"].hidden, false);
+  assert.equal(ui.doc.documentElement.dataset.bridgeServiceId, "");
+  ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", preventDefault(){}});
+  ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
+  assert.equal(ui.elements["#confirm-kde"].hidden, false);
+  assert.equal(ui.calls.filter(call => call.url === "/api/system/kde").length, 0);
+  ui.doc.dispatchEvent({type:"keydown", key:"ArrowRight", preventDefault(){}});
+  ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
+  await ready();
+  assert.equal(ui.calls.filter(call => call.url === "/api/system/kde").length, 1);
+});

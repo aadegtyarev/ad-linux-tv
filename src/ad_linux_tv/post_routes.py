@@ -1,6 +1,8 @@
 """Bounded login and authenticated browser-command POST routes."""
 
 import json
+import os
+import subprocess
 from urllib.parse import urlparse
 
 from .config import verify_pin
@@ -16,6 +18,39 @@ def handle_post(handler, config, queue, sessions, failures):
     local_ui = loopback_source(handler.client_address[0])
     if not handler.valid_origin(local_ui):
         return handler.send(403, "{}")
+    if path == "/api/system/kde":
+        expected_host = f"127.0.0.1:{handler.server.server_port}"
+        if (
+            not local_ui
+            or handler.headers.get("Host") != expected_host
+            or os.environ.get("AD_LINUX_TV_KIOSK") != "1"
+        ):
+            return handler.send(403, "{}")
+        try:
+            if handler.read_payload() != {}:
+                return handler.send(400, "{}")
+            result = subprocess.run(
+                [
+                    "/usr/bin/sudo",
+                    "-n",
+                    "/usr/bin/systemctl",
+                    "--no-block",
+                    "start",
+                    "ad-linux-tv-switch-kde.service",
+                ],
+                check=False,
+                capture_output=True,
+                timeout=5,
+            )
+        except OverflowError:
+            return handler.send(413, "{}")
+        except BodyTimeout:
+            return handler.send(408, "{}", headers=(("Connection", "close"),))
+        except (OSError, subprocess.TimeoutExpired):
+            return handler.send(503, "{}")
+        except Exception:
+            return handler.send(400, "{}")
+        return handler.send(202 if result.returncode == 0 else 503, "{}")
     if path == "/api/login":
         if not handler.private():
             return handler.send(403, "{}")

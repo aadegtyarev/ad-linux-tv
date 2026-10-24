@@ -1,5 +1,7 @@
 """HTTP security and command endpoint integration tests."""
 
+from subprocess import CompletedProcess
+
 from conftest import command_headers, login, request
 
 
@@ -68,3 +70,46 @@ def test_login_rejects_malformed_and_oversized_payload(endpoint):
     assert response.status == 400
     response, _ = request(connection, "POST", "/api/command", b"x" * 2049, command)
     assert response.status == 413
+
+
+def test_kde_switch_requires_kiosk_loopback_and_exact_host(endpoint, monkeypatch):
+    import ad_linux_tv.post_routes as post_routes
+
+    connection, port = endpoint
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        return CompletedProcess(command, 0)
+
+    monkeypatch.setattr(post_routes.subprocess, "run", run)
+    headers = {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"}
+    response, _ = request(connection, "POST", "/api/system/kde", "{}", headers)
+    assert response.status == 403
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    response, _ = request(connection, "POST", "/api/system/kde", "{}", headers)
+    assert response.status == 202
+    assert calls == [
+        [
+            "/usr/bin/sudo",
+            "-n",
+            "/usr/bin/systemctl",
+            "--no-block",
+            "start",
+            "ad-linux-tv-switch-kde.service",
+        ]
+    ]
+    headers["Host"] = "localhost"
+    headers["Origin"] = "http://localhost"
+    response, _ = request(connection, "POST", "/api/system/kde", "{}", headers)
+    assert response.status == 403
+    assert len(calls) == 1
+    headers["Host"] = f"127.0.0.1:{port}"
+    headers["Origin"] = "http://attacker.example"
+    response, _ = request(connection, "POST", "/api/system/kde", "{}", headers)
+    assert response.status == 403
+    monkeypatch.setattr(post_routes, "loopback_source", lambda _address: False)
+    headers["Origin"] = f"http://127.0.0.1:{port}"
+    response, _ = request(connection, "POST", "/api/system/kde", "{}", headers)
+    assert response.status == 403
+    assert len(calls) == 1
