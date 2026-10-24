@@ -1,6 +1,8 @@
 """HTTP application with LAN-authenticated phone control."""
 
+import hashlib
 import json
+import os
 import socket
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler
@@ -18,7 +20,14 @@ from .post_routes import handle_post
 
 def make_handler(config):
     queue = CommandQueue()
-    sessions = Sessions()
+    pin_file = (
+        os.environ.get("AD_LINUX_TV_PIN_FILE")
+        if os.environ.get("AD_LINUX_TV_KIOSK") == "1"
+        else None
+    )
+    session_file = Path(pin_file).with_name("remote-sessions.json") if pin_file else None
+    auth_tag = hashlib.sha256(config["auth"]["verifier"].encode()).hexdigest()
+    sessions = Sessions(storage_path=session_file, auth_tag=auth_tag)
     failures = RateLimiter()
     static = Path(__file__).parent / "static"
 
@@ -87,6 +96,16 @@ def make_handler(config):
                 raise BodyTimeout from exc
 
         def do_GET(self):
+            if urlparse(self.path).path == "/api/session":
+                if (
+                    not self.private()
+                    or security.remote_url(self.headers.get("Host", ""), self.server.server_port)
+                    is None
+                ):
+                    return self.send(403, "{}")
+                token = self.authorized()
+                csrf = sessions.csrf_for(token) if token else None
+                return self.send(200, json.dumps({"csrf": csrf})) if csrf else self.send(401, "{}")
             status, body, kind = get_response(self, config, queue, static)
             self.send(status, body, kind)
 

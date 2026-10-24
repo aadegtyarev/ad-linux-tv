@@ -12,9 +12,37 @@ const browserVolume = document.querySelector("#browser-volume");
 const audioStatus = document.querySelector("#audio-status");
 const audioMute = document.querySelector("#audio-mute");
 const settingsActions = [document.querySelector("#settings-back"), audioOutput, audioVolume,
-  browserVolume, audioMute, document.querySelector("#audio-refresh"), document.querySelector("#open-kde")];
+  browserVolume, audioMute, document.querySelector("#audio-refresh"), document.querySelector("#audio-test"), document.querySelector("#open-kde")];
 const confirmActions = [document.querySelector("#cancel-kde"), document.querySelector("#confirm-kde-yes")];
 let currentRemoteAddress = "";
+function showSystemForTouch() {
+  document.documentElement.dataset.touchscreen = "true";
+}
+if (globalThis.navigator?.maxTouchPoints > 0) showSystemForTouch();
+document.addEventListener("pointerdown", event => {
+  if (event.pointerType === "touch") showSystemForTouch();
+});
+document.addEventListener("touchstart", showSystemForTouch);
+let pressedTvButton = null;
+let pressedTvTimer = null;
+function flashTvButton(button) {
+  if (!button) return;
+  if (pressedTvButton && pressedTvButton !== button) pressedTvButton.classList.remove("tv-pressed");
+  pressedTvButton = button;
+  button.classList.add("tv-pressed");
+  if (pressedTvTimer !== null) clearTimeout(pressedTvTimer);
+  pressedTvTimer = setTimeout(() => {
+    button.classList.remove("tv-pressed");
+    pressedTvButton = null;
+  }, 360);
+}
+for (const eventName of ["pointerdown", "click"]) {
+  document.addEventListener(eventName, event => {
+    flashTvButton(event.target?.closest?.("button"));
+  }, true);
+}
+
+
 
 function showAudio(state) {
   const names = state.outputs.map(output => output.id).join("\n");
@@ -64,6 +92,19 @@ async function changeAudio(action) {
 }
 
 document.querySelector("#audio-refresh").onclick = refreshAudio;
+document.querySelector("#audio-test").onclick = async () => {
+  audioStatus.textContent = "Проверяем звук…";
+  try {
+    const response = await fetch("/api/audio", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({test: true}),
+    });
+    if (!response.ok) throw new Error("audio test failed");
+    audioStatus.textContent = "Сигнал отправлен. Если не слышно, проверьте выход и громкость.";
+  } catch (_) {
+    audioStatus.textContent = "Нет звука. Проверьте выход, громкость и отключение звука.";
+  }
+};
 audioOutput.onchange = () => changeAudio({output: audioOutput.value});
 audioVolume.oninput = () => {
   document.querySelector("#audio-volume-value").textContent = `${audioVolume.value}%`;
@@ -105,11 +146,13 @@ function closeSettings() {
   settings.hidden = true;
   home.hidden = false;
   confirmation.hidden = true;
-  document.querySelector("#system-button").focus();
+  const selected = Array.from(document.querySelector("#tiles").children)
+    .find(button => button.tabIndex === 0);
+  selected?.focus();
 }
 
 settingsActions[0].onclick = closeSettings;
-settingsActions[6].onclick = () => {
+document.querySelector("#open-kde").onclick = () => {
   confirmation.hidden = false;
   confirmActions[0].focus();
 };
@@ -133,6 +176,11 @@ confirmActions[1].onclick = async () => {
 };
 
 document.addEventListener("keydown", event => {
+  if (event.key === "F8") {
+    event.preventDefault();
+    if (settings.hidden) openSettings();
+    return;
+  }
   if (settings.hidden) return;
   if (event.key === "Escape") {
     event.preventDefault();

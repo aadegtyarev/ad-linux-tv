@@ -71,13 +71,12 @@ function createLauncherUI(send, openSettings) {
     }
     const activeIndex = Number(document.activeElement?.dataset?.serviceIndex);
     if (Number.isInteger(activeIndex)) focus = activeIndex;
-    if ((direction === "up" && focus < columns()) ||
-        (direction === "right" && focus === services.length - 1)) {
-      systemButton.focus();
-      return;
-    }
+    const currentPage = Math.floor(focus / size);
     focus = MediaLayout.moveFocus(focus, direction, services.length, columns());
-    render(true);
+    if (Math.floor(focus / size) === currentPage) {
+      setFocus(focus);
+      tiles.children[focus - currentPage * size]?.focus();
+    } else render(true);
   });
 
   document.querySelector("#next").onclick = () => {

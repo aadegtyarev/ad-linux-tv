@@ -161,6 +161,26 @@ def apply(action):
             raise AudioUnavailable
         for item in inputs:
             _pactl("set-sink-input-volume", str(int(item["index"])), f"{value}%")
+    elif key == "test":
+        if value is not True:
+            raise ValueError("invalid audio test")
+        state = get_state()
+        if state["muted"] or state["volume"] == 0:
+            raise AudioUnavailable
+        try:
+            subprocess.run(
+                [
+                    "/usr/bin/paplay",
+                    "--device=@DEFAULT_SINK@",
+                    str(Path(__file__).parent / "static/audio-check.wav"),
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise AudioUnavailable from exc
     elif key == "muted":
         if type(value) is not bool:
             raise ValueError("invalid mute")

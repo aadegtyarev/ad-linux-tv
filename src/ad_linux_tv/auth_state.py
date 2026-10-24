@@ -1,8 +1,13 @@
 """Bounded in-memory rate-limit and authenticated-session state."""
 
+import json
+import os
 import secrets
+import stat
+import tempfile
 import time
 from collections import OrderedDict
+from pathlib import Path
 from threading import RLock
 
 
@@ -53,12 +58,81 @@ class RateLimiter:
 
 
 class Sessions:
-    def __init__(self, lifetime=43_200, max_sessions=4096):
+    def __init__(
+        self, lifetime=14 * 24 * 60 * 60, max_sessions=4096, storage_path=None, auth_tag=None
+    ):
         self.tokens = OrderedDict()
         self.csrf_tokens = {}
         self.lifetime = lifetime
         self.max_sessions = max_sessions
         self.lock = RLock()
+        self.storage_path = Path(storage_path) if storage_path else None
+        self.auth_tag = auth_tag
+        self._load()
+
+    def _load(self):
+        if self.storage_path is None or not self.auth_tag:
+            return
+        try:
+            info = self.storage_path.lstat()
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.getuid()
+                or info.st_mode & 0o077
+                or info.st_size > 1_000_000
+            ):
+                return
+            data = json.loads(self.storage_path.read_text())
+            if data.get("auth_tag") != self.auth_tag or not isinstance(data.get("sessions"), list):
+                return
+            now = time.time()
+            for item in data["sessions"][-self.max_sessions :]:
+                if (
+                    not isinstance(item, list)
+                    or len(item) != 3
+                    or not all(
+                        isinstance(value, str) and 20 <= len(value) <= 128
+                        for value in (item[0], item[1])
+                    )
+                    or type(item[2]) not in (int, float)
+                    or not 0 <= now - item[2] < self.lifetime
+                ):
+                    continue
+                token, csrf, issued = item
+                self.tokens[token] = issued
+                self.csrf_tokens[token] = csrf
+        except (OSError, ValueError, TypeError, AttributeError):
+            return
+
+    def _save(self):
+        if self.storage_path is None or not self.auth_tag:
+            return
+        temporary = None
+        try:
+            self.storage_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w", dir=self.storage_path.parent, delete=False
+            ) as stream:
+                temporary = Path(stream.name)
+                os.fchmod(stream.fileno(), 0o600)
+                json.dump(
+                    {
+                        "auth_tag": self.auth_tag,
+                        "sessions": [
+                            [token, self.csrf_tokens[token], issued]
+                            for token, issued in self.tokens.items()
+                        ],
+                    },
+                    stream,
+                )
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, self.storage_path)
+        except OSError:
+            pass
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def create(self, now=None):
         now = time.time() if now is None else now
@@ -69,6 +143,7 @@ class Sessions:
             while len(self.tokens) > self.max_sessions:
                 expired, _ = self.tokens.popitem(last=False)
                 self.csrf_tokens.pop(expired, None)
+            self._save()
         return token, csrf
 
     def valid(self, token, now=None):
@@ -78,6 +153,7 @@ class Sessions:
             if issued is None or now - issued >= self.lifetime:
                 self.tokens.pop(token, None)
                 self.csrf_tokens.pop(token, None)
+                self._save()
                 return False
             self.tokens.move_to_end(token)
             return True
@@ -90,5 +166,12 @@ class Sessions:
             if issued is None or now - issued >= self.lifetime:
                 self.tokens.pop(token, None)
                 self.csrf_tokens.pop(token, None)
+                self._save()
                 return False
             return expected is not None and secrets.compare_digest(expected, csrf or "")
+
+    def csrf_for(self, token):
+        if not self.valid(token):
+            return None
+        with self.lock:
+            return self.csrf_tokens.get(token)
