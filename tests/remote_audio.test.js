@@ -19,7 +19,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
     setAttribute(name, value) { this[name] = value; }
     focus() {}
   }
-  const ids = ["#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#remote-ok", "#touch-indicator", "#touch-indicator-2", "#pin", "#pin-visibility",
+  const ids = ["#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#touch-indicator", "#touch-indicator-2", "#pin", "#pin-visibility",
     "#services", "#history-back", "#history-forward", "#video-fullscreen", "#video-exit", "#remote-face", "#remote-keyboard-page", "#remote-menu-page", "#show-keyboard", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
     "#audio-mute", "#audio-refresh", "#audio-test", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#open", "#text-form", "#remote-text", "#url-form",
     "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address"];
@@ -79,22 +79,19 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   touchpad.listeners.pointerdown(touch(1, 100, 100, "up"));
   touchpad.listeners.pointerup(touch(1, 100, 100, "up"));
   await new Promise(resolve => setImmediate(resolve));
-  elements["#remote-ok"].onclick();
   touchpad.listeners.pointerdown(touch(8, 150, 150));
   touchpad.listeners.pointerup(touch(8, 150, 150));
-  await new Promise(resolve => setImmediate(resolve));
-  touchpad.listeners.pointerdown(touch(2, 100, 100));
-  touchpad.listeners.pointerup(touch(2, 100, 100));
-  await new Promise(resolve => setImmediate(resolve));
-  elements["#remote-ok"].onclick();
   await new Promise(resolve => setImmediate(resolve));
   touchpad.listeners.pointerdown(touch(3, 50, 50));
   touchpad.listeners.pointermove(touch(3, 70, 55));
   touchpad.listeners.pointerup(touch(3, 70, 55));
   await new Promise(resolve => setImmediate(resolve));
+  touchpad.listeners.pointerdown(touch(2, 100, 100));
+  touchpad.listeners.pointerup(touch(2, 100, 100));
+  await new Promise(resolve => setImmediate(resolve));
   const pointerActions = calls.filter(call => call.url === "/api/pointer")
     .map(call => JSON.parse(call.options.body));
-  assert.deepEqual(pointerActions, [{click:true}, {click:true}, {click:true}, {dx:60, dy:15}]);
+  assert.deepEqual(pointerActions, [{dx:60, dy:15}, {click:true}]);
   touchpad.listeners.pointerdown(touch(4, 100, 100));
   touchpad.listeners.pointerdown(touch(5, 120, 100));
   assert.equal(elements["#touch-indicator"].hidden, false);

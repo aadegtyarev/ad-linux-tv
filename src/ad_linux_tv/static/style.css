@@ -84,5 +84,3 @@ html[data-touchscreen="true"] #system-button{display:inline-flex}
 .remote-pad-wrap .remote-touchpad .touch-guide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(54%,215px);display:flex;flex-direction:column;gap:11px;pointer-events:none}
 .remote-pad-wrap .remote-touchpad .touch-guide>span{display:flex;align-items:center;justify-content:flex-start;gap:8px;min-width:0;padding:4px 6px;border:0;background:none;color:#e9f5ff;font-size:13px;text-align:left;white-space:nowrap}
 
-.remote-ok-button{flex:none;width:100%;min-height:52px;border:1px solid #78c9e8;border-radius:16px;background:#176991;color:#fff;font-size:20px;font-weight:800;letter-spacing:.05em}
-.remote-ok-button:active{background:#2c95bc;transform:scale(.98)}
