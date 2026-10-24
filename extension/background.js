@@ -7,7 +7,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
 });
 browser.tabs.onRemoved.addListener(tabId => { void tabs.onRemoved(tabId); });
 browser.tabs.onUpdated.addListener((tabId, change) => {
-  if (change.status === "complete") void tabs.normalizeMedia(tabId).catch(() => {});
+  if (change.status === "complete" || change.audible === true)
+    void tabs.normalizeMedia(tabId).catch(() => {});
 });
 browser.tabs.onActivated.addListener(info => {
   void tabs.normalizeMedia(info.tabId).catch(() => {});

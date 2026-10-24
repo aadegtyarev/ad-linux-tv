@@ -46,6 +46,8 @@ def test_timer_pauses_before_output_off_then_wakes_without_resuming():
         schedule=Scheduled,
     )
     assert timer.set(15)["remaining_seconds"] == 900
+    assert timer.wake() is True
+    assert timer.status()["remaining_seconds"] == 900
     timer.job.callback(*timer.job.args)
     assert queue.commands == ["player_pause"]
     assert power_calls == [False]
