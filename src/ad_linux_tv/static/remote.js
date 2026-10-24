@@ -328,10 +328,6 @@ function sendArrow(key) {
   return navigationSequence;
 }
 const touchpad = document.querySelector("#remote-touchpad");
-document.querySelector("#remote-ok").onclick = () => {
-  if (inputMode === "pointer") void drainPointer().then(() => sendPointer({click: true}));
-  else void sendArrow("ok");
-};
 const touchIndicators = [document.querySelector("#touch-indicator"), document.querySelector("#touch-indicator-2")];
 const fingers = new Map();
 let pendingX = 0;
@@ -488,14 +484,19 @@ function finishTouch(event, cancelled = false) {
   if (finger.moved) return void drainPointer();
   if (!finger.arrow && Date.now() - finger.time > 650) return;
   if (finger.arrow) void sendArrow(finger.arrow);
-  else { inputMode = "pointer"; void drainPointer().then(() => sendPointer({click: true})); }
+  else if (inputMode === "keys") void sendArrow("ok");
+  else void drainPointer().then(() => sendPointer({click: true}));
 }
 touchpad.addEventListener("pointerup", event => finishTouch(event));
 touchpad.addEventListener("pointercancel", event => finishTouch(event, true));
 touchpad.addEventListener("keydown", event => {
   const key = {ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right"}[event.key];
   if (key) { event.preventDefault(); void sendArrow(key); }
-  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inputMode = "pointer"; void drainPointer().then(() => sendPointer({click: true})); }
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    if (inputMode === "keys") void sendArrow("ok");
+    else void drainPointer().then(() => sendPointer({click: true}));
+  }
 });
 document.querySelectorAll("[data-c]").forEach(button => {
   button.onclick = () => { if (button.dataset.c === "home") inputMode = "keys"; return post("/api/command", {command: button.dataset.c}, ""); };
