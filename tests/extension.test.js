@@ -76,3 +76,29 @@ test("browser restart clears ownership so a reused ID stays unmanaged", async ()
   assert.equal(restarted.tabs.get(reusedId).url, "https://same.example/unrelated");
   assert.notEqual(controller.getState().managed.one.tabId, reusedId);
 });
+
+test("player volume targets only the active managed service tab and reports its result", async () => {
+  const mock = browserMock([{id:1, windowId:1, url:LAUNCHER}]);
+  const controller = createTabController(mock.api, mock.fetcher);
+  await controller.restore();
+  await command(controller, "open", {service_id:"one"});
+  const managed = controller.getState().managed.one.tabId;
+  const read = await command(controller, "player_get");
+  assert.equal(read.volume, 75);
+  const set = await command(controller, "player_set", {volume:40});
+  assert.equal(set.volume, 75);
+  const scripts = mock.calls.filter(call => call[0] === "script");
+  assert.deepEqual(scripts.map(call => call[1].target), [
+    {tabId:managed, allFrames:true}, {tabId:managed, allFrames:true},
+  ]);
+  assert.deepEqual(scripts[1][1].args, ["set", 40]);
+  mock.setScriptingResults([{result:null}, {result:32}]);
+  assert.equal((await command(controller, "player_get")).volume, 32);
+  mock.setScriptingResults([{result:null}]);
+  assert.deepEqual(await command(controller, "player_get"), {outcome:"failed", reason:"no_media"});
+  await mock.api.tabs.create({url:"https://unrelated.example/", active:true});
+  const before = mock.calls.filter(call => call[0] === "script").length;
+  assert.deepEqual(await command(controller, "player_set", {volume:0}),
+    {outcome:"failed", reason:"no_media"});
+  assert.equal(mock.calls.filter(call => call[0] === "script").length, before);
+});

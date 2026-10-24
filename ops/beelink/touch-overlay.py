@@ -8,9 +8,12 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
+import time
 from glob import glob
 from pathlib import Path
 from urllib import request
+from urllib.parse import quote
 
 import gi
 
@@ -37,6 +40,8 @@ window { background: transparent; }
 """
 
 AUDIO_URL = "http://127.0.0.1:8765/api/audio"
+COMMAND_URL = "http://127.0.0.1:8765/api/command"
+RESULT_URL = "http://127.0.0.1:8765/api/command-result"
 POSITION_FILE = Path.home() / ".config/ad-linux-tv/touch-panel-position.json"
 
 
@@ -84,6 +89,29 @@ def audio_request(action=None):
     response = request.Request(AUDIO_URL, data=payload, headers=headers)
     with request.urlopen(response, timeout=1) as reply:
         return json.load(reply)
+
+
+def player_request(command, volume=None):
+    action = {"command": command}
+    if volume is not None:
+        action["volume"] = volume
+    call = request.Request(
+        COMMAND_URL,
+        data=json.dumps(action).encode(),
+        headers={"Origin": "http://127.0.0.1:8765", "Content-Type": "application/json"},
+    )
+    with request.urlopen(call, timeout=1) as reply:
+        command_id = json.load(reply)["id"]
+    for _ in range(25):
+        time.sleep(0.3)
+        lookup = request.Request(
+            f"{RESULT_URL}?id={quote(command_id)}",
+            headers={"Origin": "http://127.0.0.1:8765"},
+        )
+        with request.urlopen(lookup, timeout=1) as reply:
+            if reply.status == 200:
+                return json.load(reply)
+    raise TimeoutError("player command result timed out")
 
 
 def history(direction):
@@ -280,14 +308,19 @@ def main():
     panel.connect("size-allocate", on_panel_allocate)
     pinned = False
     volume_timer = None
-    volume_commits = {"volume": None, "browser_volume": None}
+    volume_commits = {"volume": None, "browser_volume": None, "player_volume": None}
     loading_volume = False
+    player_generation = 0
 
     volume_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
     volume_panel.set_no_show_all(True)
     scales = {}
     labels = {}
-    for key, name in (("volume", "Выход"), ("browser_volume", "Firefox")):
+    for key, name in (
+        ("volume", "Выход"),
+        ("browser_volume", "Firefox"),
+        ("player_volume", "Плеер"),
+    ):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         row.get_style_context().add_class("volume-row")
         title = Gtk.Label(label=name)
@@ -306,7 +339,8 @@ def main():
     panel.pack_start(volume_panel, False, False, 0)
 
     def close_volume():
-        nonlocal volume_timer
+        nonlocal volume_timer, player_generation
+        player_generation += 1
         volume_panel.hide()
         volume_panel.set_no_show_all(True)
         if volume_timer is not None:
@@ -326,8 +360,44 @@ def main():
 
         volume_timer = GLib.timeout_add_seconds(15, timeout_close)
 
+    def update_player(result, generation):
+        nonlocal loading_volume
+        if generation != player_generation or not volume_panel.get_visible():
+            return False
+        if result.get("outcome") == "completed" and type(result.get("volume")) is int:
+            level = result["volume"]
+            loading_volume = True
+            scales["player_volume"].set_value(level)
+            loading_volume = False
+            scales["player_volume"].set_sensitive(True)
+            labels["player_volume"].set_text(f"{level}%")
+        else:
+            scales["player_volume"].set_sensitive(False)
+            labels["player_volume"].set_text(
+                "Нет медиа" if result.get("reason") == "no_media" else "Недоступно"
+            )
+        return False
+
+    def launch_player(command, volume=None):
+        nonlocal player_generation
+        player_generation += 1
+        generation = player_generation
+
+        def worker():
+            try:
+                result = player_request(command, volume)
+            except (OSError, ValueError, KeyError, TimeoutError):
+                result = {"outcome": "failed", "reason": "operation"}
+            GLib.idle_add(update_player, result, generation)
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def commit_volume(key):
         volume_commits[key] = None
+        if key == "player_volume":
+            labels[key].set_text("Ждём…")
+            launch_player("player_set", round(scales[key].get_value()))
+            return False
         try:
             audio_request({key: round(scales[key].get_value())})
         except (OSError, ValueError):
@@ -372,6 +442,11 @@ def main():
             state = audio_request()
             loading_volume = True
             for key, scale in scales.items():
+                if key == "player_volume":
+                    scale.set_sensitive(False)
+                    labels[key].set_text("Поиск…")
+                    scale.set_tooltip_text("Начните воспроизведение на сайте")
+                    continue
                 level = state[key]
                 scale.set_sensitive(level is not None)
                 if level is None:
@@ -391,6 +466,7 @@ def main():
         volume_panel.show_all()
         GLib.idle_add(apply_position, position["top"], position["right"])
         delay_volume_close()
+        launch_player("player_get")
 
     def on_home(_button):
         nonlocal pinned

@@ -1,16 +1,48 @@
 {
   "manifest_version": 3,
   "name": "ad-linux-tv bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "browser_specific_settings": {
     "gecko": {
       "id": "ad-linux-tv@aadegtyarev.github.io",
       "strict_min_version": "157.0",
-      "data_collection_permissions": {"required": ["none"]}
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
     }
   },
-  "permissions": ["tabs", "storage", "alarms"],
-  "host_permissions": ["http://127.0.0.1/*"],
-  "background": {"scripts": ["tab_storage.js", "owned_tabs.js", "command_ledger.js", "tabs.js", "bridge.js", "background.js"]},
-  "content_scripts": [{"matches": ["http://127.0.0.1/*"], "js": ["launcher.js"]}]
+  "permissions": [
+    "tabs",
+    "storage",
+    "alarms",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "scripts": [
+      "tab_storage.js",
+      "player_volume.js",
+      "owned_tabs.js",
+      "command_ledger.js",
+      "tabs.js",
+      "bridge.js",
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "launcher.js"
+      ]
+    }
+  ]
 }

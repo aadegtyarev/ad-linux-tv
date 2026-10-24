@@ -116,14 +116,14 @@ def handle_post(handler, config, queue, sessions, failures):
         return handler.send(403, "{}")
     try:
         data = handler.read_payload()
-        if set(data) - {"command", "service_id"}:
+        if set(data) - {"command", "service_id", "volume"}:
             raise ValueError("unknown command fields")
         command = data["command"]
         service = data.get("service_id")
         service_ids = {entry["id"] for entry in config["services"]}
         if command == "open" and service not in service_ids:
             raise ValueError("unknown service id")
-        queue.push(command, service)
+        command_id = queue.push(command, service, data.get("volume"))
     except OverflowError:
         return handler.send(413, "{}")
     except BodyTimeout:
@@ -132,7 +132,7 @@ def handle_post(handler, config, queue, sessions, failures):
         return handler.send(503, "{}")
     except Exception:
         return handler.send(400, "{}")
-    return handler.send(202, "{}")
+    return handler.send(202, json.dumps({"id": command_id}))
 
 
 def firefox_active():
@@ -284,17 +284,30 @@ def handle_ack(handler, queue):
         return handler.send(403, "{}")
     try:
         data = handler.read_payload()
-        if not isinstance(data, dict) or set(data) != {"id", "outcome", "reason"}:
+        if (
+            not isinstance(data, dict)
+            or not {"id", "outcome", "reason"} <= set(data)
+            or set(data) - {"id", "outcome", "reason", "volume"}
+        ):
             raise ValueError("invalid acknowledgement")
         outcome, reason = data["outcome"], data["reason"]
-        reasons = {"invalid_id", "invalid_command", "retry_exhausted", "interrupted", "operation"}
+        reasons = {
+            "invalid_id",
+            "invalid_command",
+            "retry_exhausted",
+            "interrupted",
+            "operation",
+            "no_media",
+        }
         if outcome not in {"completed", "failed", "uncertain"}:
             raise ValueError("invalid acknowledgement outcome")
         if (outcome == "completed" and reason is not None) or (
             outcome != "completed" and reason not in reasons
         ):
             raise ValueError("invalid acknowledgement reason")
-        if not isinstance(data["id"], str) or not queue.acknowledge(data["id"], outcome, reason):
+        if not isinstance(data["id"], str) or not queue.acknowledge(
+            data["id"], outcome, reason, data.get("volume")
+        ):
             return handler.send(409, "{}")
     except OverflowError:
         return handler.send(413, "{}")

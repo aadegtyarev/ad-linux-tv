@@ -14,6 +14,9 @@ let browserService = null;
 const audioOutput = document.querySelector("#audio-output");
 const audioVolume = document.querySelector("#audio-volume");
 const browserVolume = document.querySelector("#browser-volume");
+const playerVolume = document.querySelector("#player-volume");
+const playerVolumeValue = document.querySelector("#player-volume-value");
+const playerVolumeStatus = document.querySelector("#player-volume-status");
 const audioStatus = document.querySelector("#audio-status");
 let audioTimer = null;
 let audioDragging = false;
@@ -99,6 +102,48 @@ async function changeAudio(action) {
   } catch (_) {
     await refreshAudio();
     audioStatus.textContent = "Не удалось изменить звук. Проверьте выход и повторите.";
+  }
+}
+
+let playerRequest = 0;
+async function playerCommand(command, volume = null) {
+  const requestId = ++playerRequest;
+  playerVolumeStatus.textContent = command === "player_get" ? "Ищем играющий плеер…" : "Меняем громкость плеера…";
+  try {
+    const response = await fetch("/api/command", {
+      method:"POST", headers:{"Content-Type":"application/json", "X-CSRF-Token":csrf},
+      body:JSON.stringify(command === "player_set" ? {command, volume} : {command}),
+    });
+    if (response.status === 401 || response.status === 403) return requireLogin();
+    if (!response.ok) throw new Error("queue unavailable");
+    const {id} = await response.json();
+    if (typeof id !== "string") throw new Error("missing command id");
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const resultResponse = await fetch(`/api/command-result?id=${encodeURIComponent(id)}`, {cache:"no-store"});
+      if (resultResponse.status === 401 || resultResponse.status === 403) return requireLogin();
+      if (resultResponse.status === 202) continue;
+      if (!resultResponse.ok) throw new Error("result unavailable");
+      const result = await resultResponse.json();
+      if (requestId !== playerRequest) return;
+      if (result.outcome !== "completed" || !Number.isInteger(result.volume)) {
+        playerVolume.disabled = true;
+        playerVolumeValue.textContent = "—";
+        playerVolumeStatus.textContent = result.reason === "no_media" ?
+          "Начните воспроизведение на сайте и нажмите «Найти плеер»." :
+          "Сайт не дал управлять плеером. Используйте регулятор Firefox выше.";
+        return;
+      }
+      playerVolume.disabled = false;
+      playerVolume.value = result.volume;
+      playerVolumeValue.textContent = `${result.volume}%`;
+      playerVolumeStatus.textContent = "Громкость играющего видео или музыки.";
+      return;
+    }
+    throw new Error("player result timed out");
+  } catch (_) {
+    if (requestId !== playerRequest) return;
+    playerVolumeStatus.textContent = "Нет ответа от плеера. Проверьте Firefox и повторите.";
   }
 }
 
@@ -277,6 +322,9 @@ browserVolume.oninput = () => {
   document.querySelector("#browser-volume-value").textContent = `${browserVolume.value}%`;
 };
 browserVolume.onchange = () => changeAudio({browser_volume: Number(browserVolume.value)});
+playerVolume.oninput = () => { playerVolumeValue.textContent = `${playerVolume.value}%`; };
+playerVolume.onchange = () => playerCommand("player_set", Number(playerVolume.value));
+document.querySelector("#player-volume-refresh").onclick = () => playerCommand("player_get");
 document.querySelector("#audio-mute").onclick = () =>
   changeAudio({muted: document.querySelector("#audio-mute").dataset.muted !== "true"});
 
@@ -284,11 +332,10 @@ document.querySelector("#history-back").onclick = () =>
   post("/api/input", {key:"browser-back"}, "Открываем предыдущую страницу…");
 document.querySelector("#history-forward").onclick = () =>
   post("/api/input", {key:"browser-forward"}, "Открываем следующую страницу…");
-document.querySelector("#video-fullscreen").onclick = () =>
-  post("/api/input", {key:"video-fullscreen"}, "Команда полного экрана отправлена. Если сайт не отреагировал, нажмите ⛶ в плеере тачпадом.");
-document.querySelector("#video-exit").onclick = () =>
-  post("/api/input", {key:"escape"}, "Выходим из полного экрана…");
-
+document.querySelector("#menu-tab").onclick = () =>
+  post("/api/input", {key:"tab"}, "Фокус на следующем элементе.");
+document.querySelector("#menu-shift-tab").onclick = () =>
+  post("/api/input", {key:"shift-tab"}, "Фокус на предыдущем элементе.");
 const remoteFace = document.querySelector("#remote-face");
 const keyboardPage = document.querySelector("#remote-keyboard-page");
 const menuPage = document.querySelector("#remote-menu-page");
@@ -300,7 +347,10 @@ function showPage(page) {
   if (page === "keyboard") document.querySelector("#remote-text").focus();
 }
 document.querySelector("#show-keyboard").onclick = () => showPage("keyboard");
-document.querySelector("#show-menu").onclick = () => showPage("menu");
+document.querySelector("#show-menu").onclick = () => {
+  showPage("menu");
+  void playerCommand("player_get");
+};
 document.querySelector("#show-system").onclick = async () => {
   if (!await post("/api/command", {command: "home"}, "Открываем Систему…")) return;
   let ready = false;

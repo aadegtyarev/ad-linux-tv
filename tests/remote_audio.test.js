@@ -8,6 +8,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   const calls = [];
   let savedSession = false;
   let holdMove = false;
+  let measuredPlayerVolume = 67;
   const releaseMoves = [];
   class Element {
     constructor() { this.dataset = {}; this.children = []; this.value = ""; this.hidden = false; this.listeners = {}; this.style = {}; this.classes = new Set(); this.classList = {add: value => this.classes.add(value), remove: value => this.classes.delete(value)}; }
@@ -20,8 +21,8 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
     focus() {}
   }
   const ids = ["#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#touch-indicator", "#touch-indicator-2", "#pin", "#pin-visibility",
-    "#services", "#history-back", "#history-forward", "#video-fullscreen", "#video-exit", "#remote-face", "#remote-keyboard-page", "#remote-menu-page", "#show-keyboard", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
-    "#audio-mute", "#audio-refresh", "#audio-test", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#open", "#text-form", "#remote-text", "#url-form",
+    "#services", "#history-back", "#history-forward", "#remote-face", "#remote-keyboard-page", "#remote-menu-page", "#show-keyboard", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
+    "#audio-mute", "#audio-refresh", "#audio-test", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#player-volume", "#player-volume-value", "#player-volume-status", "#player-volume-refresh", "#menu-tab", "#menu-shift-tab", "#open", "#text-form", "#remote-text", "#url-form",
     "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const context = {
@@ -34,6 +35,13 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
         await new Promise(resolve => { releaseMoves.push(resolve); });
       }
       if (url === "/api/session") return {ok:savedSession, status:savedSession ? 200 : 401, json:async () => ({csrf:"test-csrf"})};
+      if (url === "/api/command" && options.method === "POST") {
+        const body = JSON.parse(options.body);
+        if (body.command === "player_set") measuredPlayerVolume = body.volume;
+        return {ok:true, status:202, json:async () => ({id:"test-player-command"})};
+      }
+      if (url.startsWith("/api/command-result?")) return {ok:true, status:200,
+        json:async () => ({outcome:"completed", volume:measuredPlayerVolume})};
       const data = url === "/api/login" ? {csrf:"test-csrf"}
         : url === "/api/services" ? {services:[{id:"browser",name:"Браузер"}]}
           : url === "/api/audio" ? {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:75}
@@ -134,12 +142,21 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   assert.equal(movedPixels, 60 + 30 + 1200);
   await elements["#history-back"].onclick();
   await elements["#history-forward"].onclick();
-  await elements["#video-fullscreen"].onclick();
-  await elements["#video-exit"].onclick();
+  await elements["#menu-tab"].onclick();
+  await elements["#menu-shift-tab"].onclick();
   const history = calls.filter(call => call.url === "/api/input" && call.options.method === "POST")
     .map(call => JSON.parse(call.options.body).key);
-  assert.deepEqual(history, ["up", "ok", "browser-back", "browser-forward", "video-fullscreen", "escape"]);
+  assert.deepEqual(history, ["up", "ok", "browser-back", "browser-forward", "tab", "shift-tab"]);
   elements["#show-menu"].onclick();
+  await new Promise(resolve => setTimeout(resolve, 350));
+  assert.equal(elements["#player-volume"].value, 67);
+  assert.equal(elements["#player-volume"].disabled, false);
+  elements["#player-volume"].value = "45";
+  await elements["#player-volume"].onchange();
+  assert.equal(elements["#player-volume-value"].textContent, "45%");
+  const playerSet = calls.find(call => call.url === "/api/command" &&
+    JSON.parse(call.options.body).command === "player_set");
+  assert.equal(playerSet.options.headers["X-CSRF-Token"], "test-csrf");
   assert.equal(elements["#remote-face"].hidden, true);
   assert.equal(elements["#remote-menu-page"].hidden, false);
   elements["#show-keyboard"].onclick();

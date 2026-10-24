@@ -57,3 +57,45 @@ def test_bridge_requires_custom_header_exact_host_and_orders_acknowledgements(en
     assert acknowledge(following["id"]).status == 200
     retained = json.loads(request(connection, "GET", "/api/status")[1])
     assert retained["last_command_failure"] == {"outcome": "failed", "reason": "operation"}
+
+
+def test_player_result_requires_auth_and_matches_ack(endpoint, monkeypatch):
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    connection, port = endpoint
+    _, auth, cookie = login(connection, port)
+    headers = command_headers(port, cookie, auth["csrf"])
+    response, body = request(
+        connection, "POST", "/api/command", '{"command":"player_get"}', headers
+    )
+    assert response.status == 202
+    command_id = json.loads(body)["id"]
+    route = f"/api/command-result?id={command_id}"
+    remote_host = {"Host": f"192.168.1.50:{port}"}
+    assert request(connection, "GET", route, headers=remote_host)[0].status == 403
+    assert request(connection, "GET", route)[0].status == 202
+    assert (
+        request(connection, "GET", route, headers={**remote_host, "Cookie": cookie})[0].status
+        == 202
+    )
+    bridge = {"Host": f"127.0.0.1:{port}", BRIDGE_HEADER: BRIDGE_VALUE}
+    item = json.loads(request(connection, "GET", "/extension/poll", headers=bridge)[1])[0]
+    assert item["id"] == command_id and item["command"] == "player_get"
+    ack = json.dumps({"id": command_id, "outcome": "completed", "reason": None, "volume": 55})
+    assert (
+        request(
+            connection,
+            "POST",
+            "/extension/ack",
+            ack,
+            {**bridge, "Content-Type": "application/json"},
+        )[0].status
+        == 200
+    )
+    response, body = request(connection, "GET", route, headers={**remote_host, "Cookie": cookie})
+    assert response.status == 200
+    assert json.loads(body) == {
+        "id": command_id,
+        "outcome": "completed",
+        "reason": None,
+        "volume": 55,
+    }
