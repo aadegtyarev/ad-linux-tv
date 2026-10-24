@@ -42,6 +42,11 @@ for name in us us_wide ru ru_wide; do
       -e '/^    preferences:/,/^    show_numbers:/ s/outline: "special[^"]*"/outline: "change-view-2"/' \
       -e "s/label: \"Язык\"/label: \"$language_label\"/" \
       "$original" > "$modified"
+  # Some website PIN widgets listen for keydown and ignore text-input commits.
+  # Explicit keysyms make digit taps work like physical keyboard presses.
+  for digit in {0..9}; do
+    printf '    "%s":\n        keysym: "%s"\n' "$digit" "$digit" >> "$modified"
+  done
   install -o ad-tv -g ad-tv -m 644 "$modified" "$TARGET/$name.yaml"
   rm -f "$original" "$modified"
   trap - EXIT
