@@ -52,7 +52,12 @@ def non_browser_audio_present():
     """Be conservative if another application has an output stream."""
     try:
         inputs = json.loads(_pactl("-f", "json", "list", "sink-inputs"))
-        return any(not _is_firefox(item) for item in inputs)
+        return any(
+            not _is_firefox(item)
+            # Speech Dispatcher's dummy backend leaves a persistent silent stream.
+            and item.get("properties", {}).get("application.process.binary") != "sd_dummy"
+            for item in inputs
+        )
     except (TypeError, ValueError, KeyError) as exc:
         raise AudioUnavailable from exc
 

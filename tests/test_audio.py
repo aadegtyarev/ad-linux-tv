@@ -162,6 +162,7 @@ def test_non_browser_stream_blocks_sleep(monkeypatch):
 
     streams = [
         {"properties": {"application.process.binary": "firefox"}},
+        {"properties": {"application.process.binary": "sd_dummy"}},
         {"properties": {"application.name": "Music Player"}},
     ]
     monkeypatch.setattr(audio, "_pactl", lambda *_args: json.dumps(streams))
