@@ -2,11 +2,26 @@
 
 import secrets
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from threading import Lock
 
-COMMANDS = {"open", "home", "back", "refresh", "up", "down", "left", "right", "ok"}
+COMMANDS = {
+    "open",
+    "home",
+    "back",
+    "refresh",
+    "up",
+    "down",
+    "left",
+    "right",
+    "ok",
+    "player_get",
+    "player_set",
+    "player_pause",
+}
 FAILURE_TTL_SECONDS = 300
+RESULT_TTL_SECONDS = 300
+MAX_RESULTS = 128
 
 
 class QueueFullError(Exception):
@@ -21,20 +36,25 @@ class CommandQueue:
         self.lease_until = 0
         self.lease_seconds = 15
         self.last_command_failure = None
+        self.results = OrderedDict()
 
-    def push(self, command, service_id=None):
-        if command not in COMMANDS or (command == "open") != (service_id is not None):
+    def push(self, command, service_id=None, volume=None):
+        if (
+            command not in COMMANDS
+            or (command == "open") != (service_id is not None)
+            or (command == "player_set" and (type(volume) is not int or not 0 <= volume <= 100))
+            or (command != "player_set" and volume is not None)
+        ):
             raise ValueError("unsupported browser command")
         with self.lock:
             if len(self.items) == self.items.maxlen:
                 raise QueueFullError("browser command queue is full")
-            self.items.append(
-                {
-                    "id": secrets.token_urlsafe(12),
-                    "command": command,
-                    "service_id": service_id,
-                }
-            )
+            command_id = secrets.token_urlsafe(12)
+            item = {"id": command_id, "command": command, "service_id": service_id}
+            if command == "player_set":
+                item["volume"] = volume
+            self.items.append(item)
+            return command_id
 
     def poll(self, now=None):
         now = time.monotonic() if now is None else now
@@ -45,20 +65,45 @@ class CommandQueue:
             self.lease_until = now + self.lease_seconds
             return [dict(self.items[0])]
 
-    def acknowledge(self, command_id, outcome="completed", reason=None):
+    def acknowledge(self, command_id, outcome="completed", reason=None, volume=None):
         with self.lock:
             if not self.items or self.items[0]["id"] != command_id:
+                return False
+            item = self.items[0]
+            player = item["command"] in {"player_get", "player_set", "player_pause"}
+            if (player and outcome == "completed") != (type(volume) is int and 0 <= volume <= 100):
                 return False
             self.items.popleft()
             self.lease_until = 0
             self.last_seen = time.time()
-            if outcome != "completed":
+            if player:
+                self.results[command_id] = {
+                    "id": command_id,
+                    "outcome": outcome,
+                    "reason": reason,
+                    "volume": volume,
+                    "recorded_at": time.monotonic(),
+                }
+                while len(self.results) > MAX_RESULTS:
+                    self.results.popitem(last=False)
+            # No playing media is a normal discovery result, not a global remote failure.
+            if outcome != "completed" and not (player and reason == "no_media"):
                 self.last_command_failure = {
                     "outcome": outcome,
                     "reason": reason,
                     "recorded_at": time.monotonic(),
                 }
             return True
+
+    def result(self, command_id):
+        with self.lock:
+            value = self.results.get(command_id)
+            if not value:
+                return None
+            if time.monotonic() - value["recorded_at"] >= RESULT_TTL_SECONDS:
+                del self.results[command_id]
+                return None
+            return {key: value[key] for key in ("id", "outcome", "reason", "volume")}
 
     def status(self):
         with self.lock:

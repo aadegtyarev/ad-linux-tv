@@ -81,3 +81,22 @@ test("OK resolves selected service inline before following Home", async () => {
   assert.equal((await mock.api.tabs.query({active:true}))[0].url, LAUNCHER);
   assert.equal(offset, 2);
 });
+
+test("player volume ACK keeps its measured value after delivery retry", async () => {
+  const mock = browserMock([{id:1, windowId:1, url:LAUNCHER}]);
+  const controller = createTabController(mock.api, mock.fetcher);
+  await controller.restore();
+  await controller.execute(item("open", {service_id:"one"}));
+  const operation = item("player_get");
+  const acknowledgements = [];
+  const fetcher = async (url, options = {}) => {
+    if (url.endsWith("/poll")) return {ok:true, json:async () => [operation]};
+    acknowledgements.push(JSON.parse(options.body));
+    return {ok:acknowledgements.length > 1};
+  };
+  const bridge = createBridgeController(controller, fetcher, {error() {}});
+  await bridge.wake();
+  await bridge.wake();
+  assert.deepEqual(acknowledgements.map(ack => ack.volume), [75, 75]);
+  assert.equal(mock.calls.filter(call => call[0] === "script").length, 1);
+});

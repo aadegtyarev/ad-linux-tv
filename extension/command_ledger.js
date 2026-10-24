@@ -40,7 +40,7 @@ function createCommandLedger(sessionStorage, durableStorage = sessionStorage) {
       return {outcome:"failed", reason:"invalid_id"};
     }
     const existing = records[id];
-    if (existing?.state === "completed") return {outcome:"completed"};
+    if (existing?.state === "completed") return {outcome:"completed", volume:existing.volume};
     if (existing?.state === "failed" || existing?.state === "uncertain") {
       return {outcome:existing.state, reason:existing.reason};
     }
@@ -62,11 +62,12 @@ function createCommandLedger(sessionStorage, durableStorage = sessionStorage) {
     await save();
   }
 
-  async function complete(id) {
+  async function complete(id, volume) {
     records[id].state = "completed";
     delete records[id].reason;
+    if (Number.isInteger(volume)) records[id].volume = volume;
     await save();
-    return {outcome:"completed"};
+    return {outcome:"completed", ...(Number.isInteger(volume) ? {volume} : {})};
   }
 
   async function retry(id, reason) {

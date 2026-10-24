@@ -142,6 +142,42 @@ def test_browser_volume_requires_active_audio(monkeypatch):
         audio.apply({"browser_volume": 50})
 
 
+def test_browser_streams_return_to_neutral_without_changing_output(monkeypatch):
+    calls = []
+    monkeypatch.setattr(audio, "_pactl", lambda *args: calls.append(args))
+    monkeypatch.setattr(
+        audio,
+        "_browser_inputs",
+        lambda: [
+            {"index": 4, "volume": {"front-left": {"value_percent": "55%"}}},
+            {"index": 5, "volume": {"front-left": {"value_percent": "100%"}}},
+        ],
+    )
+    audio.normalize_browser_volume()
+    assert calls == [("set-sink-input-volume", "4", "100%")]
+
+
+def test_non_browser_stream_blocks_sleep(monkeypatch):
+    import json
+
+    streams = [
+        {"properties": {"application.process.binary": "firefox"}},
+        {"properties": {"application.process.binary": "sd_dummy"}},
+        {"properties": {"application.name": "Music Player"}},
+    ]
+    monkeypatch.setattr(audio, "_pactl", lambda *_args: json.dumps(streams))
+    assert audio.non_browser_audio_present() is True
+    streams.pop()
+    assert audio.non_browser_audio_present() is False
+
+
+def test_corked_firefox_stream_is_not_audible(monkeypatch):
+    monkeypatch.setattr(audio, "_browser_inputs", lambda: [{"corked": True, "mute": False}])
+    assert audio.browser_audio_active() is False
+    monkeypatch.setattr(audio, "_browser_inputs", lambda: [{"corked": False, "mute": False}])
+    assert audio.browser_audio_active() is True
+
+
 def test_audio_sample_requires_sound_and_uses_default_sink(monkeypatch):
     calls = []
     monkeypatch.setattr(audio, "get_state", lambda: {"muted": False, "volume": 60})

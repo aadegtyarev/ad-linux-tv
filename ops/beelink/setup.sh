@@ -14,7 +14,7 @@ preview() {
   printf 'Config: %s\n' /home/ad-tv/.config/ad-linux-tv/config.yaml
   printf 'Firefox profile/XPI: %s\n' /home/ad-tv/snap/firefox/common
   printf 'Optional TV Firefox proxy: %s\n' 127.0.0.1:1081
-  printf 'Compositor/input/audio packages: %s\n' 'labwc squeekboard wtype wlrctl oxygen-cursor-theme python3-gi gir1.2-gtklayershell-0.1 pulseaudio-utils'
+  printf 'Compositor/input/audio packages: %s\n' 'labwc squeekboard wtype wlrctl oxygen-cursor-theme wlopm swayidle python3-gi gir1.2-gtklayershell-0.1 pulseaudio-utils'
   printf 'Compositor config: %s\n' /etc/ad-linux-tv/labwc/rc.xml
   printf 'Touch controls: %s\n' /usr/local/libexec/ad-linux-tv/touch-overlay.py
   printf 'Touch keyboard layouts: %s\n' /home/ad-tv/.local/share/squeekboard/keyboards
@@ -53,7 +53,7 @@ if id -u ad-tv >/dev/null 2>&1; then
 else
   useradd --create-home --home-dir /home/ad-tv --shell /usr/sbin/nologin --user-group ad-tv
 fi
-apt-get install -y labwc squeekboard wtype wlrctl oxygen-cursor-theme python3-gi gir1.2-gtklayershell-0.1 pulseaudio-utils
+apt-get install -y labwc squeekboard wtype wlrctl oxygen-cursor-theme wlopm swayidle python3-gi gir1.2-gtklayershell-0.1 pulseaudio-utils
 if ! "$ROOT/install-keyboard-layouts.sh" --install; then
   echo 'Custom keyboard labels unavailable; stock Squeekboard remains usable.' >&2
 fi
@@ -66,7 +66,7 @@ else
   echo 'Local Xray proxy unavailable; run configure-firefox.sh --configure when it is ready.'
 fi
 install -d -m 755 /usr/local/libexec/ad-linux-tv
-install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" "$ROOT/tv-session.sh" "$ROOT/touch-controls.sh" "$ROOT/select-audio.sh" "$ROOT/touch-overlay.py" "$ROOT/cycle-keyboard-language.sh" /usr/local/libexec/ad-linux-tv/
+install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" "$ROOT/tv-session.sh" "$ROOT/touch-controls.sh" "$ROOT/select-audio.sh" "$ROOT/touch-overlay.py" "$ROOT/cycle-keyboard-language.sh" "$ROOT/wake-display.sh" /usr/local/libexec/ad-linux-tv/
 install -d -m 755 /etc/ad-linux-tv/labwc
 install -m 644 "$ROOT/labwc/rc.xml" /etc/ad-linux-tv/labwc/rc.xml
 install -m 644 "$ROOT/ad-linux-tv-kiosk.service" "$ROOT/ad-linux-tv-boot.service" "$ROOT/ad-linux-tv-switch-kde.service" /etc/systemd/system/

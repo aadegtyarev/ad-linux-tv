@@ -34,9 +34,16 @@ window { background: transparent; }
 .volume-name, .volume-label { color: white; font: 13px sans-serif; }
 .volume-name { min-width: 58px; }
 .volume-label { min-width: 54px; }
+.timer-panel { padding: 7px; }
+.timer-status { color: #e7f6ff; font: 15px sans-serif; padding: 5px; }
+.timer-button { background-image: none; background-color: rgba(43, 64, 89, 0.95);
+  color: white; border: 1px solid #6883a1; border-radius: 8px;
+  min-width: 90px; min-height: 50px; font: 15px sans-serif; }
+.timer-button:active { background-color: #176991; }
 """
 
 AUDIO_URL = "http://127.0.0.1:8765/api/audio"
+TIMER_URL = "http://127.0.0.1:8765/api/display-timer"
 POSITION_FILE = Path.home() / ".config/ad-linux-tv/touch-panel-position.json"
 
 
@@ -82,6 +89,17 @@ def audio_request(action=None):
         payload = json.dumps(action).encode()
         headers["Content-Type"] = "application/json"
     response = request.Request(AUDIO_URL, data=payload, headers=headers)
+    with request.urlopen(response, timeout=1) as reply:
+        return json.load(reply)
+
+
+def timer_request(minutes=None):
+    headers = {"Origin": "http://127.0.0.1:8765"}
+    payload = None
+    if minutes is not None:
+        payload = json.dumps({"minutes": minutes}).encode()
+        headers["Content-Type"] = "application/json"
+    response = request.Request(TIMER_URL, data=payload, headers=headers)
     with request.urlopen(response, timeout=1) as reply:
         return json.load(reply)
 
@@ -280,14 +298,14 @@ def main():
     panel.connect("size-allocate", on_panel_allocate)
     pinned = False
     volume_timer = None
-    volume_commits = {"volume": None, "browser_volume": None}
+    volume_commits = {"volume": None}
     loading_volume = False
 
     volume_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
     volume_panel.set_no_show_all(True)
     scales = {}
     labels = {}
-    for key, name in (("volume", "Выход"), ("browser_volume", "Firefox")):
+    for key, name in (("volume", "Громкость"),):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         row.get_style_context().add_class("volume-row")
         title = Gtk.Label(label=name)
@@ -304,6 +322,70 @@ def main():
         labels[key] = value
         volume_panel.pack_start(row, False, False, 0)
     panel.pack_start(volume_panel, False, False, 0)
+
+    timer_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+    timer_panel.get_style_context().add_class("timer-panel")
+    timer_panel.set_no_show_all(True)
+    timer_status = Gtk.Label(label="Таймер выключен")
+    timer_status.set_xalign(0)
+    timer_status.get_style_context().add_class("timer-status")
+    timer_panel.pack_start(timer_status, False, False, 0)
+    for row_values in (
+        ((15, "15 мин"), (30, "30 мин"), (60, "1 час")),
+        ((90, "1,5 часа"), (120, "2 часа"), (0, "Отменить")),
+    ):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        for minutes, title in row_values:
+            button = Gtk.Button.new_with_label(title)
+            button.get_style_context().add_class("timer-button")
+
+            def select_timer(_button, selected=minutes):
+                try:
+                    state = timer_request(selected)
+                    show_timer_status(state)
+                except (OSError, ValueError):
+                    timer_status.set_text("Таймер недоступен")
+
+            button.connect("clicked", select_timer)
+            row.pack_start(button, True, True, 0)
+        timer_panel.pack_start(row, False, False, 0)
+    panel.pack_start(timer_panel, False, False, 0)
+
+    def show_timer_status(state):
+        if state.get("error"):
+            timer_status.set_text("Ошибка таймера: экран остался включённым")
+        elif state.get("asleep"):
+            timer_status.set_text("Экран погашен")
+        elif state.get("remaining_seconds", 0) > 0:
+            minutes_left = (state["remaining_seconds"] + 59) // 60
+            timer_status.set_text(f"До отключения: {minutes_left} мин")
+        else:
+            timer_status.set_text("Таймер выключен")
+
+    def close_timer():
+        timer_panel.hide()
+        timer_panel.set_no_show_all(True)
+
+    def on_timer(_button):
+        if timer_panel.get_visible():
+            close_timer()
+            return
+        close_volume()
+        try:
+            show_timer_status(timer_request())
+        except (OSError, ValueError):
+            timer_status.set_text("Таймер недоступен")
+        timer_panel.set_no_show_all(False)
+        timer_panel.show_all()
+        GLib.idle_add(apply_position, position["top"], position["right"])
+
+    def refresh_timer_status():
+        if timer_panel.get_visible():
+            try:
+                show_timer_status(timer_request())
+            except (OSError, ValueError):
+                timer_status.set_text("Таймер недоступен")
+        return True
 
     def close_volume():
         nonlocal volume_timer
@@ -346,28 +428,12 @@ def main():
     for key, scale in scales.items():
         scale.connect("value-changed", volume_changed, key)
 
-    def enable_browser_when_playing():
-        nonlocal loading_volume
-        browser = scales["browser_volume"]
-        if volume_panel.get_visible() and not browser.get_sensitive():
-            try:
-                level = audio_request()["browser_volume"]
-                if level is not None:
-                    loading_volume = True
-                    browser.set_value(level)
-                    browser.set_sensitive(True)
-                    labels["browser_volume"].set_text(f"{level}%")
-            except (OSError, ValueError, KeyError):
-                pass
-            finally:
-                loading_volume = False
-        return True
-
     def on_volume(_button):
         nonlocal loading_volume
         if volume_panel.get_visible():
             close_volume()
             return
+        close_timer()
         try:
             state = audio_request()
             loading_volume = True
@@ -396,15 +462,18 @@ def main():
         nonlocal pinned
         pinned = False
         close_volume()
+        close_timer()
         set_keyboard_visible(False)
         home()
 
     def on_back(_button):
         close_volume()
+        close_timer()
         history("back")
 
     def on_forward(_button):
         close_volume()
+        close_timer()
         history("forward")
 
     def on_keyboard(_button):
@@ -433,6 +502,7 @@ def main():
         ("→", "Вперёд", on_forward),
         ("⌨", "Клавиатура", on_keyboard),
         ("🔊", "Громкость", on_volume),
+        ("◷", "Таймер экрана", on_timer),
     ):
         button = Gtk.Button.new_with_label(label)
         button.set_tooltip_text(tooltip)
@@ -451,6 +521,8 @@ def main():
             set_keyboard_visible(False)
         if not should_show and volume_panel.get_visible():
             close_volume()
+        if not should_show and timer_panel.get_visible():
+            close_timer()
         if should_show and visible and not dragging:
             apply_position(position["top"], position["right"])
         if should_show != visible:
@@ -469,8 +541,8 @@ def main():
 
     update_visibility()
     GLib.timeout_add(150, keep_keyboard_open)
-    GLib.timeout_add_seconds(1, enable_browser_when_playing)
     GLib.timeout_add_seconds(2, update_visibility)
+    GLib.timeout_add_seconds(5, refresh_timer_status)
     Gtk.main()
 
 

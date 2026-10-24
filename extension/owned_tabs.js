@@ -2,6 +2,10 @@
 const BASE = "http://127.0.0.1:8765";
 const storageFactory = typeof module !== "undefined"
   ? require("./tab_storage.js").createTabStorage : createTabStorage;
+const mediaVolume = typeof module !== "undefined"
+  ? require("./player_volume.js").playerMediaVolume : playerMediaVolume;
+const pinVolume = typeof module !== "undefined"
+  ? require("./player_volume.js").pinMediaVolume : pinMediaVolume;
 class PermanentCommandError extends Error {}
 function createOwnedTabs(api, fetcher = fetch) {
   const state = storageFactory(api);
@@ -22,6 +26,12 @@ function createOwnedTabs(api, fetcher = fetch) {
     if (item.command === "back" || item.command === "refresh") {
       const active = await state.activeTab();
       return {active: state.owns(active) ? active : null};
+    }
+    if (["player_get", "player_set", "player_pause"].includes(item.command)) {
+      const active = await state.activeTab();
+      if (!state.owns(active) || !/^https?:\/\//i.test(active.url || ""))
+        throw new PermanentCommandError("no_media");
+      return {active};
     }
     if (["up", "down", "left", "right", "ok"].includes(item.command)) {
       return {launcher: await findLauncher()};
@@ -67,14 +77,44 @@ function createOwnedTabs(api, fetcher = fetch) {
       }
       return;
     }
+    if (["player_get", "player_set", "player_pause"].includes(command)) {
+      const active = await state.activeTab();
+      if (!active || active.id !== prepared.active.id || !state.owns(active) ||
+          !/^https?:\/\//i.test(active.url || ""))
+        throw new PermanentCommandError("no_media");
+      const frames = await api.scripting.executeScript({
+        target:{tabId:active.id, allFrames:true},
+        func:mediaVolume,
+        args:[command === "player_set" ? "set" : command === "player_pause" ? "pause" : "get",
+          item.volume ?? null],
+      });
+      const found = frames.find(frame => Number.isInteger(frame.result) &&
+        frame.result >= 0 && frame.result <= 100);
+      if (!found) throw new PermanentCommandError("no_media");
+      if (command === "player_pause") {
+        await new Promise(resolve => setTimeout(resolve, 700));
+        if ((await api.tabs.get(active.id)).audible === true)
+          throw new PermanentCommandError("audio_active");
+      }
+      return {volume:found.result};
+    }
     const launcher = prepared.launcher || await state.ensureLauncher();
     await state.focus(launcher);
     const result = await api.tabs.sendMessage(launcher.id, {command});
     if (command === "ok" && result?.service_id) return {service_id: result.service_id};
   }
 
+  async function normalizeMedia(tabId) {
+    const active = await state.activeTab();
+    if (!active || active.id !== tabId || !state.owns(active) ||
+        !/^https?:\/\//i.test(active.url || "")) return;
+    await api.scripting.executeScript({
+      target:{tabId:active.id, allFrames:true}, func:pinVolume,
+    });
+  }
+
   return {restore:state.restore, ensureLauncher:state.ensureLauncher, prepare, execute, openService,
-    onRemoved:state.onRemoved, getState:state.getState};
+    onRemoved:state.onRemoved, normalizeMedia, getState:state.getState};
 }
 
 if (typeof module !== "undefined") module.exports = {createOwnedTabs, PermanentCommandError};

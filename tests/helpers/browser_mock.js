@@ -17,8 +17,13 @@ function browserMock(initial = []) {
     };
   }
   let activeId = initial.find(tab => tab.active)?.id ?? initial[0]?.id;
+  let scriptingResults = [{result:75}];
   const api = {
     storage: {local:area(local), session:area(session)},
+    scripting: {executeScript: async options => {
+      calls.push(["script", options]);
+      return scriptingResults;
+    }},
     windows: {update: async (id, value) => calls.push(["window", id, value])},
     tabs: {
       query: async query => {
@@ -61,7 +66,8 @@ function browserMock(initial = []) {
     calls.push(["fetch", url, options]);
     return {ok:true, json:async () => ({services})};
   };
-  return {api, fetcher, tabs, calls, storage:{local, session}};
+  return {api, fetcher, tabs, calls, storage:{local, session},
+    setScriptingResults:value => { scriptingResults = value; }};
 }
 
 module.exports = {browserMock, services};

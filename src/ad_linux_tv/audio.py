@@ -35,12 +35,29 @@ def _sinks():
 def _browser_inputs():
     try:
         inputs = json.loads(_pactl("-f", "json", "list", "sink-inputs"))
-        return [
-            item
+        return [item for item in inputs if _is_firefox(item)]
+    except (TypeError, ValueError, KeyError) as exc:
+        raise AudioUnavailable from exc
+
+
+def _is_firefox(item):
+    properties = item.get("properties", {})
+    return (
+        properties.get("application.process.binary") == "firefox"
+        or properties.get("application.name") == "Firefox"
+    )
+
+
+def non_browser_audio_present():
+    """Be conservative if another application has an output stream."""
+    try:
+        inputs = json.loads(_pactl("-f", "json", "list", "sink-inputs"))
+        return any(
+            not _is_firefox(item)
+            # Speech Dispatcher's dummy backend leaves a persistent silent stream.
+            and item.get("properties", {}).get("application.process.binary") != "sd_dummy"
             for item in inputs
-            if item.get("properties", {}).get("application.process.binary") == "firefox"
-            or item.get("properties", {}).get("application.name") == "Firefox"
-        ]
+        )
     except (TypeError, ValueError, KeyError) as exc:
         raise AudioUnavailable from exc
 
@@ -51,6 +68,26 @@ def _volume_percent(item):
         return min(int(channel["value_percent"].rstrip("%")), 100)
     except (KeyError, StopIteration, ValueError, TypeError) as exc:
         raise AudioUnavailable from exc
+
+
+def normalize_browser_volume():
+    """Keep Firefox stream gain neutral; the selected sink is the user's volume control."""
+    for item in _browser_inputs():
+        try:
+            channel = next(iter(item["volume"].values()))
+            level = int(channel["value_percent"].rstrip("%"))
+            index = str(int(item["index"]))
+        except (KeyError, StopIteration, ValueError, TypeError) as exc:
+            raise AudioUnavailable from exc
+        if level != 100:
+            _pactl("set-sink-input-volume", index, "100%")
+
+
+def browser_audio_active():
+    """A Firefox sink input may stay present after its media has been paused."""
+    return any(
+        not item.get("corked", False) and not item.get("mute", False) for item in _browser_inputs()
+    )
 
 
 def get_state():

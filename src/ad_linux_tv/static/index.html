@@ -35,10 +35,8 @@
       <label for="audio-output">Выход звука</label><div class="system-audio-row"><select id="audio-output"></select><button id="audio-refresh">Обновить список</button></div>
       <label for="audio-volume">Громкость выхода: <span id="audio-volume-value">100%</span></label>
       <div class="system-audio-row"><input id="audio-volume" type="range" min="0" max="100" step="5" value="100"><button id="audio-mute">Выключить звук</button></div><button id="audio-test" type="button">▶ Проверить звук</button>
-      <label for="browser-volume">Громкость Firefox: <span id="browser-volume-value">—</span></label>
-      <div class="system-audio-row"><input id="browser-volume" type="range" min="0" max="100" step="5" value="100" disabled></div>
-      <p id="browser-volume-hint">Начните воспроизведение в Firefox, затем обновите список.</p>
     </div>
+    <div class="system-timer"><h2>Таймер экрана</h2><p id="tv-timer-status" role="status">Выключен</p><div class="timer-presets"><button data-timer="15">15 мин</button><button data-timer="30">30 мин</button><button data-timer="60">1 час</button><button data-timer="90">1,5 часа</button><button data-timer="120">2 часа</button><button data-timer="0">Отменить</button></div><p class="timer-hint">Ставит видео на паузу и гасит HDMI. Касание или команда с телефона разбудит экран.</p></div>
     <div class="settings-actions"><button id="open-kde">Выйти из ТВ-режима → KDE</button></div>
     <div id="confirm-kde" hidden><p>Закрыть ТВ-режим и открыть KDE?</p><button id="cancel-kde">Отмена</button><button id="confirm-kde-yes">Да, открыть KDE</button></div>
     <p id="system-status" role="status"></p>

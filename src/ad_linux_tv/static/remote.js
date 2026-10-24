@@ -13,9 +13,10 @@ let statusTimer = null;
 let browserService = null;
 const audioOutput = document.querySelector("#audio-output");
 const audioVolume = document.querySelector("#audio-volume");
-const browserVolume = document.querySelector("#browser-volume");
 const audioStatus = document.querySelector("#audio-status");
 let audioTimer = null;
+let displayTimerPoll = null;
+let displayAsleep = false;
 let audioDragging = false;
 let feedbackTimer = null;
 let pressedButton = null;
@@ -65,11 +66,6 @@ function showAudio(state) {
   audioOutput.value = state.selected;
   audioVolume.value = state.volume;
   document.querySelector("#audio-volume-value").textContent = `${state.volume}%`;
-  const browserActive = state.browser_volume != null;
-  browserVolume.disabled = !browserActive;
-  if (browserActive) browserVolume.value = state.browser_volume;
-  document.querySelector("#browser-volume-value").textContent = browserActive ? `${state.browser_volume}%` : "—";
-  document.querySelector("#browser-volume-hint").hidden = browserActive;
   document.querySelector("#audio-mute").textContent = state.muted ? "♩" : "♬";
   document.querySelector("#audio-mute").setAttribute("aria-label", state.muted ? "Включить звук" : "Выключить звук");
   document.querySelector("#audio-mute").dataset.muted = String(state.muted);
@@ -102,6 +98,60 @@ async function changeAudio(action) {
   }
 }
 
+const phoneTimerStatus = document.querySelector("#phone-timer-status");
+const phoneTimerButtons = Array.from(document.querySelectorAll("[data-phone-timer]"));
+function showPhoneTimer(state) {
+  displayAsleep = state.asleep;
+  phoneTimerButtons.forEach(button => button.setAttribute("aria-pressed",
+    String(Number(button.dataset.phoneTimer) === state.minutes && !state.asleep)));
+  if (state.error === "pause_unavailable")
+    phoneTimerStatus.textContent = "Не удалось поставить видео на паузу. Экран остался включённым.";
+  else if (state.error === "audio_active")
+    phoneTimerStatus.textContent = "Другой звук ещё играет. Экран остался включённым.";
+  else if (state.error === "display_unavailable")
+    phoneTimerStatus.textContent = "Не удалось изменить питание HDMI. Проверьте монитор.";
+  else if (state.phase === "pausing")
+    phoneTimerStatus.textContent = "Останавливаем воспроизведение перед выключением экрана…";
+  else if (state.asleep) phoneTimerStatus.textContent = "Экран погашен. Коснитесь его или нажмите кнопку пульта.";
+  else if (state.remaining_seconds > 0)
+    phoneTimerStatus.textContent = `До отключения: ${Math.ceil(state.remaining_seconds / 60)} мин`;
+  else phoneTimerStatus.textContent = "Выключен";
+}
+
+async function refreshDisplayTimer() {
+  try {
+    const response = await fetch("/api/display-timer", {cache:"no-store"});
+    if (response.status === 401 || response.status === 403) return requireLogin();
+    if (!response.ok) throw new Error("timer unavailable");
+    showPhoneTimer(await response.json());
+  } catch (_) {
+    phoneTimerStatus.textContent = "Нет связи с таймером. Проверьте Wi-Fi.";
+  }
+}
+
+async function changeDisplayTimer(action) {
+  phoneTimerStatus.textContent = "Изменяем таймер…";
+  try {
+    const response = await fetch("/api/display-timer", {
+      method:"POST", headers:{"Content-Type":"application/json", "X-CSRF-Token":csrf},
+      body:JSON.stringify(action),
+    });
+    if (response.status === 401 || response.status === 403) return requireLogin();
+    showPhoneTimer(await response.json());
+  } catch (_) {
+    phoneTimerStatus.textContent = "Не удалось изменить таймер. Повторите.";
+  }
+}
+
+for (const button of phoneTimerButtons)
+  button.onclick = () => changeDisplayTimer({minutes:Number(button.dataset.phoneTimer)});
+document.addEventListener("pointerdown", () => {
+  if (displayAsleep && !controls.hidden) {
+    displayAsleep = false;
+    void changeDisplayTimer({wake:true});
+  }
+}, true);
+
 let messageTimer = null;
 function say(text, error = false) {
   message.textContent = text;
@@ -127,6 +177,8 @@ function requireLogin() {
   statusTimer = null;
   if (audioTimer !== null) clearInterval(audioTimer);
   audioTimer = null;
+  if (displayTimerPoll !== null) clearInterval(displayTimerPoll);
+  displayTimerPoll = null;
   controls.hidden = true;
   connecting.hidden = true;
   loginPanel.hidden = false;
@@ -203,11 +255,13 @@ async function activateRemote(token, restored = false) {
   showPage("remote");
   if (!restored) say("Телефон подключён.");
   void refreshAudio();
+  void refreshDisplayTimer();
   void refreshStatus();
   if (statusTimer !== null) clearInterval(statusTimer);
   if (audioTimer !== null) clearInterval(audioTimer);
   statusTimer = setInterval(refreshStatus, 1000);
   audioTimer = setInterval(() => { if (!audioDragging) void refreshAudio(); }, 5000);
+  displayTimerPoll = setInterval(refreshDisplayTimer, 5000);
 }
 async function restoreLogin() {
   try {
@@ -264,7 +318,7 @@ document.querySelector("#audio-test").onclick = async () => {
   }
 };
 audioOutput.onchange = () => changeAudio({output: audioOutput.value});
-for (const slider of [audioVolume, browserVolume]) {
+for (const slider of [audioVolume]) {
   slider.addEventListener("pointerdown", () => { audioDragging = true; });
   slider.addEventListener("pointerup", () => { audioDragging = false; });
   slider.addEventListener("pointercancel", () => { audioDragging = false; });
@@ -273,10 +327,6 @@ audioVolume.oninput = () => {
   document.querySelector("#audio-volume-value").textContent = `${audioVolume.value}%`;
 };
 audioVolume.onchange = () => changeAudio({volume: Number(audioVolume.value)});
-browserVolume.oninput = () => {
-  document.querySelector("#browser-volume-value").textContent = `${browserVolume.value}%`;
-};
-browserVolume.onchange = () => changeAudio({browser_volume: Number(browserVolume.value)});
 document.querySelector("#audio-mute").onclick = () =>
   changeAudio({muted: document.querySelector("#audio-mute").dataset.muted !== "true"});
 
@@ -284,22 +334,27 @@ document.querySelector("#history-back").onclick = () =>
   post("/api/input", {key:"browser-back"}, "Открываем предыдущую страницу…");
 document.querySelector("#history-forward").onclick = () =>
   post("/api/input", {key:"browser-forward"}, "Открываем следующую страницу…");
-document.querySelector("#video-fullscreen").onclick = () =>
-  post("/api/input", {key:"video-fullscreen"}, "Команда полного экрана отправлена. Если сайт не отреагировал, нажмите ⛶ в плеере тачпадом.");
-document.querySelector("#video-exit").onclick = () =>
-  post("/api/input", {key:"escape"}, "Выходим из полного экрана…");
-
+document.querySelector("#menu-tab").onclick = () =>
+  post("/api/input", {key:"tab"}, "Фокус на следующем элементе.");
+document.querySelector("#menu-shift-tab").onclick = () =>
+  post("/api/input", {key:"shift-tab"}, "Фокус на предыдущем элементе.");
 const remoteFace = document.querySelector("#remote-face");
 const keyboardPage = document.querySelector("#remote-keyboard-page");
+const timerPage = document.querySelector("#remote-timer-page");
 const menuPage = document.querySelector("#remote-menu-page");
 function showPage(page) {
   remoteFace.hidden = page !== "remote";
   keyboardPage.hidden = page !== "keyboard";
+  timerPage.hidden = page !== "timer";
   menuPage.hidden = page !== "menu";
   window.scrollTo(0, 0);
   if (page === "keyboard") document.querySelector("#remote-text").focus();
 }
 document.querySelector("#show-keyboard").onclick = () => showPage("keyboard");
+document.querySelector("#show-timer").onclick = () => {
+  showPage("timer");
+  void refreshDisplayTimer();
+};
 document.querySelector("#show-menu").onclick = () => showPage("menu");
 document.querySelector("#show-system").onclick = async () => {
   if (!await post("/api/command", {command: "home"}, "Открываем Систему…")) return;

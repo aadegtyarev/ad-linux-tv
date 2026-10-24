@@ -24,7 +24,8 @@ function createTabController(api, fetcher = fetch) {
     let prepared;
     try { prepared = await owned.prepare(item); }
     catch (error) {
-      if (error instanceof PermanentError) return failed(item.id, "invalid_command");
+      if (error instanceof PermanentError)
+        return failed(item.id, error.message === "no_media" ? "no_media" : "invalid_command");
       try { return await ledger.retry(item.id, "preparation"); }
       catch (_) { return {outcome:"failed", reason:"operation"}; }
     }
@@ -32,9 +33,10 @@ function createTabController(api, fetcher = fetch) {
       await ledger.claim(item.id);
       const result = await owned.execute(item, prepared);
       if (result?.service_id) await owned.openService(result.service_id);
-      return await ledger.complete(item.id);
-    } catch (_) {
-      return failed(item.id, "operation");
+      return await ledger.complete(item.id, result?.volume);
+    } catch (error) {
+      return failed(item.id, error instanceof PermanentError && error.message === "no_media" ?
+        "no_media" : "operation");
     }
   }
   async function restore() {
@@ -47,6 +49,7 @@ function createTabController(api, fetcher = fetch) {
     ensureLauncher:owned.ensureLauncher,
     execute,
     onRemoved:owned.onRemoved,
+    normalizeMedia:owned.normalizeMedia,
     getState:() => ({...owned.getState(), commands:ledger.getState(), maxPrepareAttempts:PREPARE_LIMIT}),
   };
 }

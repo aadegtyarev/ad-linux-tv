@@ -20,12 +20,17 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
     focus() {}
   }
   const ids = ["#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#touch-indicator", "#touch-indicator-2", "#pin", "#pin-visibility",
-    "#services", "#history-back", "#history-forward", "#video-fullscreen", "#video-exit", "#remote-face", "#remote-keyboard-page", "#remote-menu-page", "#show-keyboard", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
-    "#audio-mute", "#audio-refresh", "#audio-test", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#open", "#text-form", "#remote-text", "#url-form",
-    "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address"];
+    "#services", "#history-back", "#history-forward", "#remote-face", "#remote-keyboard-page", "#remote-timer-page", "#remote-menu-page", "#show-keyboard", "#show-timer", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
+    "#audio-mute", "#audio-refresh", "#audio-test", "#menu-tab", "#menu-shift-tab", "#open", "#text-form", "#remote-text", "#url-form",
+    "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address", "#phone-timer-status"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
+  const timerButtons = [0, 15, 30, 60, 90, 120].map(minutes => {
+    const button = new Element();
+    button.dataset.phoneTimer = String(minutes);
+    return button;
+  });
   const context = {
-    document: {addEventListener() {}, querySelector: id => elements[id], querySelectorAll: () => [], createElement: () => new Element()},
+    document: {addEventListener() {}, querySelector: id => elements[id], querySelectorAll: selector => selector === "[data-phone-timer]" ? timerButtons : [], createElement: () => new Element()},
     window: {scrollTo() {}},
     setInterval: () => 1, clearInterval: () => {}, setTimeout, clearTimeout, URL, console,
     fetch: async (url, options = {}) => {
@@ -34,9 +39,12 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
         await new Promise(resolve => { releaseMoves.push(resolve); });
       }
       if (url === "/api/session") return {ok:savedSession, status:savedSession ? 200 : 401, json:async () => ({csrf:"test-csrf"})};
+      if (url === "/api/command" && options.method === "POST")
+        return {ok:true, status:202, json:async () => ({id:"test-command"})};
       const data = url === "/api/login" ? {csrf:"test-csrf"}
         : url === "/api/services" ? {services:[{id:"browser",name:"Браузер"}]}
           : url === "/api/audio" ? {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:75}
+            : url === "/api/display-timer" ? {minutes:0,remaining_seconds:0,asleep:false,error:null,phase:"idle"}
             : {extension_online:true,pending_commands:0,last_command_failure:null};
       return {ok:true,status:200,json:async () => data};
     },
@@ -60,17 +68,21 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   assert.equal(elements["#controls"].hidden, false);
   assert.equal(elements["#connecting"].hidden, true);
   assert.equal(calls.filter(call => call.url === "/api/login").length, loginsBeforeRestore);
+  const commandsBeforeTimer = calls.filter(call => call.url === "/api/command").length;
+  elements["#show-timer"].onclick();
+  assert.equal(elements["#remote-timer-page"].hidden, false);
+  assert.equal(elements["#remote-face"].hidden, true);
+  assert.equal(calls.filter(call => call.url === "/api/command").length, commandsBeforeTimer);
+  await timerButtons[1].onclick();
+  const timerRequest = calls.find(call => call.url === "/api/display-timer" && call.options.method === "POST");
+  assert.equal(timerRequest.options.headers["X-CSRF-Token"], "test-csrf");
+  assert.equal(JSON.parse(timerRequest.options.body).minutes, 15);
   assert.equal(elements["#audio-output"].value, "hdmi");
   elements["#audio-volume"].value = "55";
   await elements["#audio-volume"].onchange();
   const request = calls.find(call => call.url === "/api/audio" && call.options.method === "POST");
   assert.equal(request.options.headers["X-CSRF-Token"], "test-csrf");
   assert.equal(JSON.parse(request.options.body).volume, 55);
-  elements["#browser-volume"].value = "60";
-  await elements["#browser-volume"].onchange();
-  const browser = calls.find(call => call.url === "/api/audio" &&
-    JSON.parse(call.options.body || "{}").browser_volume === 60);
-  assert.equal(browser.options.headers["X-CSRF-Token"], "test-csrf");
   await elements["#audio-test"].onclick();
   assert.equal(JSON.parse(calls.at(-1).options.body).test, true);
   const touchpad = elements["#remote-touchpad"];
@@ -134,12 +146,15 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   assert.equal(movedPixels, 60 + 30 + 1200);
   await elements["#history-back"].onclick();
   await elements["#history-forward"].onclick();
-  await elements["#video-fullscreen"].onclick();
-  await elements["#video-exit"].onclick();
+  await elements["#menu-tab"].onclick();
+  await elements["#menu-shift-tab"].onclick();
   const history = calls.filter(call => call.url === "/api/input" && call.options.method === "POST")
     .map(call => JSON.parse(call.options.body).key);
-  assert.deepEqual(history, ["up", "ok", "browser-back", "browser-forward", "video-fullscreen", "escape"]);
+  assert.deepEqual(history, ["up", "ok", "browser-back", "browser-forward", "tab", "shift-tab"]);
   elements["#show-menu"].onclick();
+  await new Promise(resolve => setTimeout(resolve, 350));
+  const html = fs.readFileSync("src/ad_linux_tv/static/remote.html", "utf8");
+  assert.equal((html.match(/type="range"/g) || []).length, 1);
   assert.equal(elements["#remote-face"].hidden, true);
   assert.equal(elements["#remote-menu-page"].hidden, false);
   elements["#show-keyboard"].onclick();

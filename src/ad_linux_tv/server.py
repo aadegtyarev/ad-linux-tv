@@ -7,7 +7,7 @@ import socket
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from . import security
 from .auth_state import RateLimiter, Sessions
@@ -16,10 +16,12 @@ from .http_errors import BodyTimeout
 from .http_io import DeadlineReader
 from .pages import get_response
 from .post_routes import handle_post
+from .sleep_timer import DisplaySleepTimer
 
 
 def make_handler(config):
     queue = CommandQueue()
+    display_timer = DisplaySleepTimer(queue)
     pin_file = (
         os.environ.get("AD_LINUX_TV_PIN_FILE")
         if os.environ.get("AD_LINUX_TV_KIOSK") == "1"
@@ -96,6 +98,44 @@ def make_handler(config):
                 raise BodyTimeout from exc
 
         def do_GET(self):
+            if urlparse(self.path).path == "/api/display-timer":
+                host = self.headers.get("Host", "")
+                local = security.loopback_source(self.client_address[0]) and host == (
+                    f"127.0.0.1:{self.server.server_port}"
+                )
+                if (
+                    os.environ.get("AD_LINUX_TV_KIOSK") != "1"
+                    or not self.private()
+                    or security.remote_url(host, self.server.server_port) is None
+                    or not (local or self.authorized())
+                ):
+                    return self.send(403, "{}")
+                return self.send(200, json.dumps(display_timer.status()))
+            if urlparse(self.path).path == "/api/command-result":
+                host = self.headers.get("Host", "")
+                local = security.loopback_source(self.client_address[0]) and host == (
+                    f"127.0.0.1:{self.server.server_port}"
+                )
+                if (
+                    os.environ.get("AD_LINUX_TV_KIOSK") != "1"
+                    or not self.private()
+                    or security.remote_url(host, self.server.server_port) is None
+                    or not (local or self.authorized())
+                ):
+                    return self.send(403, "{}")
+                try:
+                    query = parse_qs(urlparse(self.path).query, strict_parsing=True)
+                    if set(query) != {"id"} or len(query["id"]) != 1:
+                        raise ValueError("invalid result id")
+                    command_id = query["id"][0]
+                    if not 16 <= len(command_id) <= 64 or not all(
+                        char.isalnum() or char in "-_" for char in command_id
+                    ):
+                        raise ValueError("invalid result id")
+                except ValueError:
+                    return self.send(400, "{}")
+                result = queue.result(command_id)
+                return self.send(200, json.dumps(result)) if result else self.send(202, "{}")
             if urlparse(self.path).path == "/api/session":
                 if (
                     not self.private()
@@ -110,6 +150,6 @@ def make_handler(config):
             self.send(status, body, kind)
 
         def do_POST(self):
-            return handle_post(self, config, queue, sessions, failures)
+            return handle_post(self, config, queue, sessions, failures, display_timer)
 
     return Handler
