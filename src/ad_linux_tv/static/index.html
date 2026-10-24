@@ -1,3 +1,37 @@
 <!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ad-linux-tv</title><link rel="stylesheet" href="/style.css"><main><section id="home"><h1>Media center</h1><p id="config-status"></p><p id="bridge-status"></p><p id="command-status"></p><nav id="tiles"></nav><button id="prev">Previous</button><span id="page"></span><button id="next">Next</button></section><section id="settings" hidden><h1>Настройки</h1><p>Пульт телефона:</p><p id="address"></p><img id="qr" alt="QR-код пульта" hidden><div class="settings-actions"><button id="settings-back">Назад</button><button id="open-kde">Выйти из ТВ-режима → KDE</button></div><div id="confirm-kde" hidden><p>Закрыть ТВ-режим и открыть KDE?</p><button id="cancel-kde">Отмена</button><button id="confirm-kde-yes">Да, открыть KDE</button></div><p id="system-status" role="status"></p></section></main><script src="/layout.js"></script><script src="/launcher_ui.js"></script><script src="/app.js"></script></html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ad-linux-tv</title>
+<link rel="stylesheet" href="/style.css">
+<main>
+  <section id="home">
+    <header class="topbar">
+      <div><p class="eyebrow">ad-linux-tv</p><h1>Медиацентр</h1><p class="subtitle">Выберите сервис</p></div>
+      <div class="status-area"><p id="config-status"></p><p id="bridge-status"></p><p id="command-status"></p></div>
+    </header>
+    <div class="home-content">
+      <div class="services-area">
+        <nav id="tiles" aria-label="Сервисы и система"></nav>
+        <div class="pagination"><button id="prev">← Предыдущая</button><span id="page"></span><button id="next">Следующая →</button></div>
+      </div>
+      <aside id="remote-setup">
+        <p class="eyebrow">Пульт на телефоне</p>
+        <h2>Сканируйте QR-код</h2>
+        <img id="qr" alt="QR-код пульта" hidden>
+        <p id="address"></p>
+        <p class="hint">Телефон и Beelink должны быть в одной домашней сети.</p>
+      </aside>
+    </div>
+  </section>
+  <section id="settings" hidden>
+    <p class="eyebrow">ad-linux-tv</p><h1>Система</h1>
+    <div class="settings-actions"><button id="settings-back">← К сервисам</button><button id="open-kde">Выйти из ТВ-режима → KDE</button></div>
+    <div id="confirm-kde" hidden><p>Закрыть ТВ-режим и открыть KDE?</p><button id="cancel-kde">Отмена</button><button id="confirm-kde-yes">Да, открыть KDE</button></div>
+    <p id="system-status" role="status"></p>
+  </section>
+</main>
+<script src="/layout.js"></script>
+<script src="/launcher_ui.js"></script>
+<script src="/app.js"></script>
+</html>

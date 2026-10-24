@@ -5,7 +5,7 @@ function createLauncherUI(send, openSettings) {
   let size = 12;
   let focus = 0;
   const tiles = document.querySelector("#tiles");
-  const entries = () => [...services, {name: "Настройки", settings: true}];
+  const entries = () => [...services, {name: "Система", settings: true}];
 
   function render(focusButton = false) {
     const page = Math.floor(focus / size);
@@ -29,6 +29,7 @@ function createLauncherUI(send, openSettings) {
     });
     const pages = MediaLayout.pageCount(services.length + 1, size);
     document.querySelector("#page").textContent = `${page + 1} / ${pages}`;
+    document.querySelector(".pagination").hidden = pages === 1;
     if (focusButton) tiles.children[focus - first]?.focus();
   }
 

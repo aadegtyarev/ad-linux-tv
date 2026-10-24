@@ -4,9 +4,9 @@
 The browser-rendered home page and Firefox bridge provide TV service selection and browser-tab control. The Python HTTP server owns service catalogue, command queue, and status; launcher clients are unauthenticated on the TV-side local page.
 
 ## Inputs, outputs, and flows
-- `/` renders configured services, a Settings tile, adaptive grid, page indicator and bridge/command status. Settings shows the phone QR/address and a confirmed switch to KDE in the dedicated kiosk session.
+- `/` renders configured services, a System tile, adaptive grid, page indicator, phone QR/address and bridge/command status. System offers a confirmed switch to KDE in the dedicated kiosk session.
 - `GET /api/services` supplies services, page size and advertised remote address; `/api/status` supplies bridge online, pending count and latest command failure. Polling refreshes every five seconds.
-- Arrow keys move focus in the grid (wraps horizontally and vertically); next/previous controls paginate. OK from bridge selects the focused service or opens Settings. In Settings, arrows move between controls and OK activates the focused control; leaving for KDE requires a second confirmation. Clicking a service tile queues `open`.
+- Arrow keys move focus in the grid (wraps horizontally and vertically); next/previous controls paginate. OK from bridge selects the focused service or opens System. In System, arrows move between controls and OK activates the focused control; leaving for KDE requires a second confirmation. Clicking a service tile queues `open`.
 - Firefox bridge polls localhost port 8765 and executes open/home/back/refresh plus launcher navigation; service selection opens a managed service tab. Home returns to launcher and closes the managed service tab.
 
 ## Guarantees, failures, and security
