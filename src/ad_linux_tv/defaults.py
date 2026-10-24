@@ -7,6 +7,7 @@ DEFAULT_SERVICES = [
     {"id": "kinopoisk", "name": "КиноПоиск", "url": "https://hd.kinopoisk.ru/", "color": "#FF6600"},
     {"id": "music", "name": "Яндекс Музыка", "url": "https://music.yandex.ru/", "color": "#FFCC00"},
     {"id": "youtube", "name": "YouTube", "url": "https://www.youtube.com/", "color": "#FF0000"},
+    {"id": "kion", "name": "KION", "url": "https://kion.ru/", "color": "#B90065"},
     {"id": "browser", "name": "Браузер", "url": "https://ya.ru/", "color": "#6B7280"},
 ]
 
