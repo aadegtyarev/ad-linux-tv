@@ -12,6 +12,7 @@ const audioVolume = document.querySelector("#audio-volume");
 const browserVolume = document.querySelector("#browser-volume");
 const audioStatus = document.querySelector("#audio-status");
 let audioTimer = null;
+let audioDragging = false;
 
 function showAudio(state) {
   const names = state.outputs.map(output => output.id).join("\n");
@@ -146,7 +147,7 @@ loginForm.onsubmit = async event => {
     void refreshAudio();
     void refreshStatus();
     statusTimer = setInterval(refreshStatus, 1000);
-    audioTimer = setInterval(() => { if (browserVolume.disabled) void refreshAudio(); }, 3000);
+    audioTimer = setInterval(() => { if (!audioDragging) void refreshAudio(); }, 5000);
   } catch (_) {
     say("Нет связи с Beelink. Проверьте Wi‑Fi и повторите попытку.", true);
   }
@@ -154,6 +155,11 @@ loginForm.onsubmit = async event => {
 
 document.querySelector("#audio-refresh").onclick = refreshAudio;
 audioOutput.onchange = () => changeAudio({output: audioOutput.value});
+for (const slider of [audioVolume, browserVolume]) {
+  slider.addEventListener("pointerdown", () => { audioDragging = true; });
+  slider.addEventListener("pointerup", () => { audioDragging = false; });
+  slider.addEventListener("pointercancel", () => { audioDragging = false; });
+}
 audioVolume.oninput = () => {
   document.querySelector("#audio-volume-value").textContent = `${audioVolume.value}%`;
 };
