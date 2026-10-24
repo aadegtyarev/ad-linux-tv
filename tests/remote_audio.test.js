@@ -10,6 +10,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
     constructor() { this.dataset = {}; this.children = []; this.value = ""; this.hidden = false; }
     replaceChildren() { this.children = []; }
     append(item) { this.children.push(item); }
+    addEventListener() {}
   }
   const ids = ["#message", "#login", "#login-panel", "#controls", "#status", "#pin",
     "#services", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
