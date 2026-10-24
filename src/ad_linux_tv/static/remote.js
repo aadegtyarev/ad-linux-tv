@@ -2,8 +2,12 @@
 const message = document.querySelector("#message");
 const loginForm = document.querySelector("#login");
 const loginPanel = document.querySelector("#login-panel");
+const connecting = document.querySelector("#connecting");
+const pinInput = document.querySelector("#pin");
+const pinVisibility = document.querySelector("#pin-visibility");
 const controls = document.querySelector("#controls");
 const status = document.querySelector("#status");
+const commandStatus = document.querySelector("#command-status");
 let csrf = "";
 let statusTimer = null;
 let browserService = null;
@@ -13,6 +17,38 @@ const browserVolume = document.querySelector("#browser-volume");
 const audioStatus = document.querySelector("#audio-status");
 let audioTimer = null;
 let audioDragging = false;
+let feedbackTimer = null;
+let pressedButton = null;
+function showButtonFeedback(button) {
+  if (!button) return;
+  if (pressedButton && pressedButton !== button) pressedButton.classList.remove("remote-pressed");
+  pressedButton = button;
+  button.classList.add("remote-pressed");
+  const lamp = document.querySelector("#status");
+  lamp.classList.add("remote-activity");
+  if (feedbackTimer !== null) clearTimeout(feedbackTimer);
+  feedbackTimer = setTimeout(() => {
+    button.classList.remove("remote-pressed");
+    pressedButton = null;
+    lamp.classList.remove("remote-activity");
+  }, 300);
+}
+document.addEventListener("pointerdown", event => {
+  const button = event.target.closest("button");
+  if (button) showButtonFeedback(button);
+}, true);
+document.addEventListener("click", event => {
+  const button = event.target.closest("button");
+  if (button) showButtonFeedback(button);
+}, true);
+
+pinVisibility.onclick = () => {
+  const showing = pinInput.type === "password";
+  pinInput.type = showing ? "text" : "password";
+  pinVisibility.setAttribute("aria-pressed", String(showing));
+  pinVisibility.setAttribute("aria-label", showing ? "Скрыть PIN" : "Показать PIN");
+  pinInput.focus();
+};
 
 function showAudio(state) {
   const names = state.outputs.map(output => output.id).join("\n");
@@ -34,7 +70,8 @@ function showAudio(state) {
   if (browserActive) browserVolume.value = state.browser_volume;
   document.querySelector("#browser-volume-value").textContent = browserActive ? `${state.browser_volume}%` : "—";
   document.querySelector("#browser-volume-hint").hidden = browserActive;
-  document.querySelector("#audio-mute").textContent = state.muted ? "Включить звук" : "Выключить звук";
+  document.querySelector("#audio-mute").textContent = state.muted ? "♩" : "♬";
+  document.querySelector("#audio-mute").setAttribute("aria-label", state.muted ? "Включить звук" : "Выключить звук");
   document.querySelector("#audio-mute").dataset.muted = String(state.muted);
   audioStatus.textContent = "";
 }
@@ -65,9 +102,23 @@ async function changeAudio(action) {
   }
 }
 
+let messageTimer = null;
 function say(text, error = false) {
   message.textContent = text;
-  message.dataset.error = String(error);
+  message.hidden = !text;
+  const loginError = document.querySelector("#login-error");
+  loginError.textContent = error && !loginPanel.hidden ? text : "";
+  if (!text) return;
+  status.textContent = error ? "Ошибка" : "Отправлено";
+  status.dataset.feedback = error ? "error" : "success";
+  status.title = text;
+  status.setAttribute("aria-label", text);
+  if (messageTimer !== null) clearTimeout(messageTimer);
+  messageTimer = setTimeout(() => {
+    delete status.dataset.feedback;
+    message.hidden = true;
+    void refreshStatus();
+  }, error ? 5000 : 1300);
 }
 
 function requireLogin() {
@@ -77,6 +128,7 @@ function requireLogin() {
   if (audioTimer !== null) clearInterval(audioTimer);
   audioTimer = null;
   controls.hidden = true;
+  connecting.hidden = true;
   loginPanel.hidden = false;
   say("Сеанс пульта истёк. Введите PIN ещё раз.", true);
 }
@@ -89,11 +141,25 @@ async function refreshStatus() {
     const messages = [value.extension_online ? "Firefox подключён." : "Firefox не подключён. Подождите или перезапустите ТВ-режим."];
     if (value.pending_commands) messages.push("Команда выполняется…");
     if (value.last_command_failure) messages.push("Последняя команда не выполнена. Нажмите ещё раз.");
-    status.textContent = messages.join(" ");
     status.dataset.online = String(value.extension_online);
+    if (!status.dataset.feedback) {
+      status.textContent = !value.extension_online ? "Firefox" :
+        value.last_command_failure ? "Ошибка" : value.pending_commands ? "Ждём" : "";
+      status.setAttribute("aria-label", messages.join(" "));
+      status.title = messages.join(" ");
+    }
+    const visible = [];
+    if (value.pending_commands) visible.push("Команда выполняется…");
+    if (value.last_command_failure) visible.push("Последняя команда не выполнена. Повторите действие.");
+    commandStatus.textContent = visible.join(" ");
+    commandStatus.hidden = visible.length === 0;
   } catch (_) {
-    status.textContent = "Нет связи с Beelink. Проверьте сеть и повторите попытку.";
     status.dataset.online = "false";
+    if (!status.dataset.feedback) {
+      status.textContent = "Нет связи";
+      status.setAttribute("aria-label", "Нет связи с Beelink. Проверьте Wi-Fi.");
+    }
+    commandStatus.hidden = true;
   }
 }
 
@@ -105,6 +171,7 @@ async function post(path, body, success) {
       body: JSON.stringify(body),
     });
     if (response.status === 401 || response.status === 403) return requireLogin();
+    if (response.status === 503 && (body.key?.startsWith("browser-") || ["up", "down", "left", "right", "ok", "system", "video-fullscreen"].includes(body.key))) return say("Firefox на телевизоре сейчас не активен. Откройте ТВ-режим и повторите.", true);
     if (response.status === 503) return say("Управление сейчас недоступно. Подождите несколько секунд и повторите.", true);
     if (!response.ok) return say(`Не удалось выполнить действие (${response.status}). Повторите попытку.`, true);
     say(success);
@@ -116,9 +183,51 @@ async function post(path, body, success) {
   return false;
 }
 
+async function activateRemote(token, restored = false) {
+  csrf = token;
+  const responseServices = await fetch("/api/services");
+  if (!responseServices.ok) throw new Error("service list unavailable");
+  const data = await responseServices.json();
+  browserService = data.services.find(service => service.id === "browser")?.id || null;
+  const select = document.querySelector("#services");
+  select.replaceChildren();
+  for (const service of data.services) {
+    const option = document.createElement("option");
+    option.value = service.id;
+    option.textContent = service.name;
+    select.append(option);
+  }
+  connecting.hidden = true;
+  loginPanel.hidden = true;
+  controls.hidden = false;
+  showPage("remote");
+  if (!restored) say("Телефон подключён.");
+  void refreshAudio();
+  void refreshStatus();
+  if (statusTimer !== null) clearInterval(statusTimer);
+  if (audioTimer !== null) clearInterval(audioTimer);
+  statusTimer = setInterval(refreshStatus, 1000);
+  audioTimer = setInterval(() => { if (!audioDragging) void refreshAudio(); }, 5000);
+}
+async function restoreLogin() {
+  try {
+    const response = await fetch("/api/session", {cache:"no-store"});
+    if (response.ok) {
+      const data = await response.json();
+      if (typeof data.csrf === "string" && data.csrf) {
+        await activateRemote(data.csrf, true);
+        return;
+      }
+    }
+  } catch (_) { /* Keep PIN entry available when the server cannot be reached. */ }
+  connecting.hidden = true;
+  loginPanel.hidden = false;
+}
+void restoreLogin();
+
 loginForm.onsubmit = async event => {
   event.preventDefault();
-  const pin = document.querySelector("#pin").value;
+  const pin = pinInput.value;
   try {
     const response = await fetch("/api/login", {
       method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({pin}),
@@ -127,33 +236,33 @@ loginForm.onsubmit = async event => {
       say(response.status === 429 ? "Слишком много попыток. Подождите и попробуйте снова." : "Неверный PIN. Попробуйте ещё раз.", true);
       return;
     }
-    csrf = (await response.json()).csrf;
-    document.querySelector("#pin").value = "";
-    const responseServices = await fetch("/api/services");
-    if (!responseServices.ok) throw new Error("service list unavailable");
-    const data = await responseServices.json();
-    browserService = data.services.find(service => service.id === "browser")?.id || null;
-    const select = document.querySelector("#services");
-    select.replaceChildren();
-    for (const service of data.services) {
-      const option = document.createElement("option");
-      option.value = service.id;
-      option.textContent = service.name;
-      select.append(option);
-    }
-    loginPanel.hidden = true;
-    controls.hidden = false;
-    say("Телефон подключён.");
-    void refreshAudio();
-    void refreshStatus();
-    statusTimer = setInterval(refreshStatus, 1000);
-    audioTimer = setInterval(() => { if (!audioDragging) void refreshAudio(); }, 5000);
+    const data = await response.json();
+    pinInput.value = "";
+    pinInput.type = "password";
+    pinVisibility.setAttribute("aria-pressed", "false");
+    pinVisibility.setAttribute("aria-label", "Показать PIN");
+    await activateRemote(data.csrf);
   } catch (_) {
-    say("Нет связи с Beelink. Проверьте Wi‑Fi и повторите попытку.", true);
+    say("Нет связи с Beelink. Проверьте Wi-Fi и повторите попытку.", true);
   }
 };
 
 document.querySelector("#audio-refresh").onclick = refreshAudio;
+document.querySelector("#audio-test").onclick = async () => {
+  const notice = document.querySelector("#audio-status");
+  notice.textContent = "Проверяем звук…";
+  try {
+    const response = await fetch("/api/audio", {
+      method: "POST", headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+      body: JSON.stringify({test: true}),
+    });
+    if (response.status === 401 || response.status === 403) return requireLogin();
+    if (!response.ok) throw new Error("audio test failed");
+    notice.textContent = "Сигнал отправлен. Если его не слышно, проверьте выход и громкость.";
+  } catch (_) {
+    notice.textContent = "Нет звука. Проверьте выход, громкость и отключение звука.";
+  }
+};
 audioOutput.onchange = () => changeAudio({output: audioOutput.value});
 for (const slider of [audioVolume, browserVolume]) {
   slider.addEventListener("pointerdown", () => { audioDragging = true; });
@@ -171,8 +280,188 @@ browserVolume.onchange = () => changeAudio({browser_volume: Number(browserVolume
 document.querySelector("#audio-mute").onclick = () =>
   changeAudio({muted: document.querySelector("#audio-mute").dataset.muted !== "true"});
 
+document.querySelector("#history-back").onclick = () =>
+  post("/api/input", {key:"browser-back"}, "Открываем предыдущую страницу…");
+document.querySelector("#history-forward").onclick = () =>
+  post("/api/input", {key:"browser-forward"}, "Открываем следующую страницу…");
+document.querySelector("#video-fullscreen").onclick = () =>
+  post("/api/input", {key:"video-fullscreen"}, "Команда полного экрана отправлена. Если сайт не отреагировал, нажмите ⛶ в плеере тачпадом.");
+document.querySelector("#video-exit").onclick = () =>
+  post("/api/input", {key:"escape"}, "Выходим из полного экрана…");
+
+const remoteFace = document.querySelector("#remote-face");
+const keyboardPage = document.querySelector("#remote-keyboard-page");
+const menuPage = document.querySelector("#remote-menu-page");
+function showPage(page) {
+  remoteFace.hidden = page !== "remote";
+  keyboardPage.hidden = page !== "keyboard";
+  menuPage.hidden = page !== "menu";
+  window.scrollTo(0, 0);
+  if (page === "keyboard") document.querySelector("#remote-text").focus();
+}
+document.querySelector("#show-keyboard").onclick = () => showPage("keyboard");
+document.querySelector("#show-menu").onclick = () => showPage("menu");
+document.querySelector("#show-system").onclick = async () => {
+  if (!await post("/api/command", {command: "home"}, "Открываем Систему…")) return;
+  let ready = false;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    try {
+      const response = await fetch("/api/status");
+      if (!response.ok) break;
+      const state = await response.json();
+      if (state.extension_online && state.pending_commands === 0) { ready = true; break; }
+    } catch (_) { break; }
+  }
+  if (!ready) return say("Система не открылась. Проверьте подключение Firefox и повторите.", true);
+  await new Promise(resolve => setTimeout(resolve, 300));
+  if (await post("/api/input", {key: "system"}, "Система открыта на телевизоре.")) showPage("remote");
+};
+document.querySelectorAll(".return-remote").forEach(button => {
+  button.onclick = () => showPage("remote");
+});
+let navigationSequence = Promise.resolve();
+function sendArrow(key) {
+  navigationSequence = navigationSequence.then(() => post("/api/input", {key}, ""));
+  return navigationSequence;
+}
+const touchpad = document.querySelector("#remote-touchpad");
+const touchIndicator = document.querySelector("#touch-indicator");
+const fingers = new Map();
+let pendingX = 0;
+let pendingY = 0;
+let pendingScroll = 0;
+let drainTimer = null;
+let draining = null;
+let scrollFraction = 0;
+let pointerErrorShown = false;
+async function sendPointer(action) {
+  try {
+    const response = await fetch("/api/pointer", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+      body: JSON.stringify(action),
+    });
+    if (response.status === 401 || response.status === 403) return requireLogin();
+    if (!response.ok) throw new Error("pointer unavailable");
+    pointerErrorShown = false;
+  } catch (_) {
+    if (!pointerErrorShown) say("Курсор недоступен. Проверьте ТВ-режим и Wi-Fi.", true);
+    pointerErrorShown = true;
+  }
+}
+function hasPointerWork() {
+  return Math.abs(pendingX) >= 1 || Math.abs(pendingY) >= 1 || pendingScroll !== 0;
+}
+function drainPointer() {
+  if (drainTimer !== null) clearTimeout(drainTimer);
+  drainTimer = null;
+  if (draining) return draining;
+  draining = (async () => {
+    while (hasPointerWork()) {
+      if (Math.abs(pendingX) >= 1 || Math.abs(pendingY) >= 1) {
+        const dx = Math.max(-600, Math.min(600, Math.round(pendingX)));
+        const dy = Math.max(-600, Math.min(600, Math.round(pendingY)));
+        pendingX -= dx;
+        pendingY -= dy;
+        if (dx || dy) await sendPointer({dx, dy});
+      }
+      if (pendingScroll) {
+        const scroll = Math.max(-8, Math.min(8, pendingScroll));
+        pendingScroll -= scroll;
+        await sendPointer({scroll});
+      }
+    }
+  })().finally(() => {
+    draining = null;
+    if (hasPointerWork()) schedulePointerDrain();
+  });
+  return draining;
+}
+function schedulePointerDrain() {
+  if (drainTimer === null && !draining) drainTimer = setTimeout(() => { void drainPointer(); }, 35);
+}
+function schedulePointerMove(dx, dy) {
+  pendingX = Math.max(-600, Math.min(600, pendingX + dx * 3));
+  pendingY = Math.max(-600, Math.min(600, pendingY + dy * 3));
+  schedulePointerDrain();
+}
+function schedulePointerScroll(dy) {
+  scrollFraction -= dy / 3.5;
+  const steps = Math.trunc(scrollFraction);
+  scrollFraction -= steps;
+  pendingScroll = Math.max(-16, Math.min(16, pendingScroll + steps));
+  schedulePointerDrain();
+}
+function showTouch(event) {
+  const rect = touchpad.getBoundingClientRect();
+  touchIndicator.style.left = `${event.clientX - rect.left}px`;
+  touchIndicator.style.top = `${event.clientY - rect.top}px`;
+  touchIndicator.hidden = false;
+}
+touchpad.addEventListener("pointerdown", event => {
+  event.preventDefault();
+  touchpad.setPointerCapture(event.pointerId);
+  const arrow = event.target.closest("[data-arrow]")?.dataset.arrow || null;
+  fingers.set(event.pointerId, {
+    startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
+    time: Date.now(), moved: false, multi: false, arrow,
+  });
+  if (fingers.size > 1) for (const finger of fingers.values()) finger.multi = true;
+  showTouch(event);
+  touchpad.classList.add("touch-active");
+});
+touchpad.addEventListener("pointermove", event => {
+  const finger = fingers.get(event.pointerId);
+  if (!finger) return;
+  event.preventDefault();
+  const dx = event.clientX - finger.x;
+  const dy = event.clientY - finger.y;
+  finger.x = event.clientX;
+  finger.y = event.clientY;
+  if (fingers.size > 1) {
+    schedulePointerScroll(dy / fingers.size);
+  } else if (!finger.multi) {
+    // Keep a painted key press despite normal finger jitter; a deliberate drag still moves the cursor.
+    const dragDistance = finger.arrow ? 32 : 9;
+    if (Math.hypot(event.clientX - finger.startX, event.clientY - finger.startY) > dragDistance) finger.moved = true;
+    if (finger.moved) schedulePointerMove(dx, dy);
+  }
+  showTouch(event);
+});
+function finishTouch(event, cancelled = false) {
+  const finger = fingers.get(event.pointerId);
+  if (!finger) return;
+  event.preventDefault();
+  fingers.delete(event.pointerId);
+  if (!fingers.size) {
+    touchpad.classList.remove("touch-active");
+    setTimeout(() => { touchIndicator.hidden = true; }, 160);
+  }
+  if (cancelled) {
+    if (drainTimer !== null) clearTimeout(drainTimer);
+    drainTimer = null;
+    pendingX = 0;
+    pendingY = 0;
+    pendingScroll = 0;
+    scrollFraction = 0;
+    return;
+  }
+  if (finger.multi) return;
+  if (finger.moved) return void drainPointer();
+  if (!finger.arrow && Date.now() - finger.time > 650) return;
+  if (finger.arrow) void sendArrow(finger.arrow);
+  else void drainPointer().then(() => sendPointer({click: true}));
+}
+touchpad.addEventListener("pointerup", event => finishTouch(event));
+touchpad.addEventListener("pointercancel", event => finishTouch(event, true));
+touchpad.addEventListener("keydown", event => {
+  const key = {ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right"}[event.key];
+  if (key) { event.preventDefault(); void sendArrow(key); }
+  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void drainPointer().then(() => sendPointer({click: true})); }
+});
 document.querySelectorAll("[data-c]").forEach(button => {
-  button.onclick = () => post("/api/command", {command: button.dataset.c}, "Команда отправлена.");
+  button.onclick = () => post("/api/command", {command: button.dataset.c}, "");
 });
 document.querySelector("#open").onclick = () =>
   post("/api/command", {command: "open", service_id: document.querySelector("#services").value}, "Открываем сервис…");

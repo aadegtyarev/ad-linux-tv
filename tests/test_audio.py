@@ -1,6 +1,7 @@
 """Audio commands are bounded and move existing streams to a selected sink."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -139,3 +140,21 @@ def test_browser_volume_requires_active_audio(monkeypatch):
     monkeypatch.setattr(audio, "_pactl", lambda *_args: "[]")
     with pytest.raises(audio.AudioUnavailable):
         audio.apply({"browser_volume": 50})
+
+
+def test_audio_sample_requires_sound_and_uses_default_sink(monkeypatch):
+    calls = []
+    monkeypatch.setattr(audio, "get_state", lambda: {"muted": False, "volume": 60})
+    monkeypatch.setattr(
+        audio.subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs))
+    )
+    assert audio.apply({"test": True})["volume"] == 60
+    assert calls[0][0][0:2] == ["/usr/bin/paplay", "--device=@DEFAULT_SINK@"]
+    assert calls[0][1]["timeout"] == 5
+    assert Path(calls[0][0][2]).is_file()
+    with pytest.raises(ValueError):
+        audio.apply({"test": False})
+    monkeypatch.setattr(audio, "get_state", lambda: {"muted": True, "volume": 60})
+    with pytest.raises(audio.AudioUnavailable):
+        audio.apply({"test": True})
+    assert len(calls) == 1

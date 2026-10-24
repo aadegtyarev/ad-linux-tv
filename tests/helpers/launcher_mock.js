@@ -11,14 +11,14 @@ function launcher({hostname = "192.168.1.4"} = {}) {
       const previous = events[name];
       events[name] = previous ? event => { previous(event); fn(event); } : fn;
     },
-    dispatchEvent(event) { event.target = this; events[event.type](event); },
+    dispatchEvent(event) { event.target ||= this; events[event.type](event); },
     querySelectorAll: () => [],
   };
   class Element {
     constructor(id) {
       this.id = id; this.children = []; this.dataset = {}; this.selectedIndex = 0;
       this.classes = new Set(); this.properties = {};
-      this.classList = {add: name => this.classes.add(name), contains: name => this.classes.has(name)};
+      this.classList = {add: name => this.classes.add(name), remove: name => this.classes.delete(name), contains: name => this.classes.has(name)};
       this.style = {setProperty: (name, value) => { this.properties[name] = value; }};
     }
     get options() { return this.children; }
@@ -36,7 +36,7 @@ function launcher({hostname = "192.168.1.4"} = {}) {
   doc.documentElement = new Element("html");
   doc.activeElement = doc.body;
   const elements = Object.fromEntries(
-    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#pairing-pin", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes", "#audio-output", "#audio-volume", "#audio-volume-value", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#audio-status", "#audio-mute", "#audio-refresh"]
+    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#pairing-pin", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes", "#audio-output", "#audio-volume", "#audio-volume-value", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#audio-status", "#audio-mute", "#audio-refresh", "#audio-test"]
       .map(id => [id, new Element(id)])
   );
   elements["#settings"].hidden = true;
@@ -53,7 +53,7 @@ function launcher({hostname = "192.168.1.4"} = {}) {
   const context = {
     document:doc, innerWidth:1920, location:{hostname},
     getComputedStyle:() => ({gridTemplateColumns:"300px 300px 300px 300px"}),
-    setInterval(callback) { timer = callback; }, console,
+    setInterval(callback) { timer = callback; }, setTimeout, clearTimeout, console,
     fetch:async (url, options) => {
       calls.push({url, options});
       return {ok:true, status:200, json:async () => url === "/api/services"
