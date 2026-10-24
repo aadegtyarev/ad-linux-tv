@@ -1,0 +1,12 @@
+[Unit]
+Description=Start ad-linux-tv at boot when a display is connected
+After=getty@tty1.service systemd-user-sessions.service
+Wants=getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/ad-linux-tv/boot-tv.sh
+
+[Install]
+WantedBy=multi-user.target
+
