@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  printf '%s\n' \
+    'gui status — состояние' \
+    'gui tv     — ТВ-режим' \
+    'gui kde    — KDE (с подтверждением при выходе из ТВ)' \
+    'gui off    — текстовая консоль (с подтверждением)' \
+    'gui on     — то же, что gui kde'
+}
+
+active() { /usr/bin/systemctl is-active --quiet "$1"; }
+confirm() {
+  local reply
+  if [[ ! -r /dev/tty ]]; then
+    printf 'Нужен интерактивный терминал для подтверждения.\n' >&2
+    return 1
+  fi
+  read -r -p "$1 [y/N] " reply < /dev/tty
+  [[ "$reply" == y || "$reply" == Y || "$reply" == да ]]
+}
+
+status() {
+  if active ad-linux-tv-kiosk.service; then
+    echo 'Графика: ТВ'
+  elif active sddm.service; then
+    echo 'Графика: KDE/SDDM'
+  else
+    echo 'Графика: выключена'
+  fi
+  if active getty@tty1.service; then echo 'Консоль tty1: работает'; fi
+  if active getty@tty2.service; then echo 'Консоль tty2: работает'; fi
+  printf 'ТВ при загрузке: '
+  /usr/bin/systemctl is-enabled ad-linux-tv-boot.service 2>/dev/null || true
+  usage
+}
+
+if (( $# > 1 )); then usage >&2; exit 2; fi
+case "${1:-status}" in
+  status) status ;;
+  help|-h|--help) usage ;;
+  tv|kde|on|off)
+    if active beelink-display.service; then
+      echo 'Сначала выключите автоматику HDMI: она управляет SDDM.' >&2
+      exit 1
+    fi
+    case "$1" in
+      tv)
+        if [[ ! -x /usr/local/libexec/ad-linux-tv/has-monitor.sh ]]; then
+          echo 'ТВ-режим ещё не установлен.' >&2
+          exit 1
+        fi
+        /usr/local/libexec/ad-linux-tv/has-monitor.sh || { echo 'Экран не подключён.' >&2; exit 1; }
+        if active sddm.service; then confirm 'Завершить сеанс KDE и открыть ТВ?' || exit 1; fi
+        /usr/bin/sudo -n /usr/bin/systemctl start ad-linux-tv-kiosk.service
+        ;;
+      kde|on)
+        if active ad-linux-tv-kiosk.service; then confirm 'Закрыть ТВ и войти в KDE?' || exit 1; fi
+        /usr/bin/sudo -n /usr/bin/systemctl start sddm.service
+        /usr/bin/sudo -n /usr/bin/chvt 1
+        ;;
+      off)
+        if active ad-linux-tv-kiosk.service || active sddm.service; then
+          confirm 'Закрыть графику и открыть консоль?' || exit 1
+        fi
+        /usr/bin/sudo -n /usr/bin/systemctl start getty@tty1.service
+        /usr/bin/sudo -n /usr/bin/chvt 1
+        ;;
+    esac
+    ;;
+  *) usage >&2; exit 2 ;;
+esac
+

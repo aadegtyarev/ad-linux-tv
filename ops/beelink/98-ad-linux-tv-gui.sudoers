@@ -1,0 +1,2 @@
+adegtyarev ALL=(root) NOPASSWD: /usr/bin/systemctl start ad-linux-tv-kiosk.service, /usr/bin/systemctl start sddm.service, /usr/bin/systemctl start getty@tty1.service, /usr/bin/chvt 1
+
