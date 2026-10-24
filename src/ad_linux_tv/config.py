@@ -8,11 +8,9 @@ from pathlib import Path
 
 import yaml
 
+from .config_errors import ConfigurationError
+from .service_url import validate_service_url
 from .yaml_config import load_yaml
-
-
-class ConfigurationError(ValueError):
-    """Expected user-facing validation error without input data."""
 
 
 def load_config(path):
@@ -60,24 +58,7 @@ def load_config(path):
                 raise ConfigurationError("service ids must be unique safe identifiers")
             if not isinstance(service["name"], str) or not 1 <= len(service["name"]) <= 80:
                 raise ConfigurationError("invalid service name")
-            if not isinstance(service["url"], str):
-                raise ConfigurationError("service URL must be a string")
-            from urllib.parse import urlparse
-
-            url = urlparse(service["url"])
-            if any(ord(character) <= 32 or ord(character) == 127 for character in service["url"]):
-                raise ConfigurationError("service URLs must not contain whitespace or controls")
-            if (
-                url.scheme != "https"
-                or not url.hostname
-                or url.username
-                or url.password
-                or url.query
-                or url.fragment
-            ):
-                raise ConfigurationError(
-                    "service URLs must be safe HTTPS URLs without query or fragment"
-                )
+            validate_service_url(service["url"])
             ids.add(service["id"])
         return data
     except yaml.YAMLError:

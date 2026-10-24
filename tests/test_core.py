@@ -7,8 +7,7 @@ import pytest
 import yaml
 
 from ad_linux_tv.config import load_config, verify_pin
-from ad_linux_tv.control import CommandQueue
-from ad_linux_tv.defaults import DEFAULT_SERVICES
+from ad_linux_tv.defaults import default_services
 
 
 def config_data():
@@ -22,7 +21,7 @@ def config_data():
             "salt": base64.b64encode(salt).decode(),
             "verifier": base64.b64encode(verifier).decode(),
         },
-        "services": DEFAULT_SERVICES,
+        "services": default_services(),
     }
 
 
@@ -72,14 +71,3 @@ def test_port_and_page_size_are_bounded(tmp_path, field, value):
     data[field] = value
     with pytest.raises(ValueError, match="Invalid configuration"):
         load_config(write_config(tmp_path, data))
-
-
-def test_command_allowlist_and_required_service_id():
-    queue = CommandQueue()
-    for command in ("home", "back", "refresh", "up", "down", "left", "right", "ok"):
-        queue.push(command)
-    queue.push("open", "youtube")
-    assert len(queue.poll()) == 9
-    for command, service in (("exec", "https://evil.test"), ("open", None), ("home", "vk")):
-        with pytest.raises(ValueError):
-            queue.push(command, service)

@@ -8,10 +8,9 @@ import os
 import secrets
 from pathlib import Path
 
-import yaml
-
 from .config import load_config
-from .defaults import DEFAULT_SERVICES
+from .config_write import create_config
+from .defaults import default_services
 from .listener import serve
 
 
@@ -38,10 +37,8 @@ def main():
                 "salt": base64.b64encode(salt).decode(),
                 "verifier": base64.b64encode(verifier).decode(),
             },
-            "services": DEFAULT_SERVICES,
+            "services": default_services(),
         }
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
-        path.chmod(0o600)
+        create_config(path, data)
         return
     serve(load_config(path))

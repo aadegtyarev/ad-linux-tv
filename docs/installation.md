@@ -5,4 +5,6 @@
 3. Firefox Snap support and persistent profile behavior must be checked on the target Kubuntu system. The bridge extension is not signed yet: the release gate requires AMO unlisted signing and publishing the XPI plus SHA256. Once published, provide `AD_LINUX_TV_XPI_URL` and `AD_LINUX_TV_XPI_SHA256` to install; the installer verifies the digest and opens the XPI for explicit Firefox confirmation. No unattended registration.
 4. Update by backing up config and rerunning install. `./uninstall.sh --dry-run` previews removal; `--remove` removes app/autostart and preserves config.
 
-Troubleshoot: inspect terminal output, validate config with `ad-linux-tv`, confirm server and Firefox extension use localhost port 8765, and ensure phone/TV share a private LAN. Plain HTTP and non-DRM/service playback are not guaranteed.
+Manual installed start: `~/.local/share/ad-linux-tv/run.sh ~/.config/ad-linux-tv/config.yaml`; direct server CLI: `~/.local/share/ad-linux-tv/venv/bin/ad-linux-tv --config ~/.config/ad-linux-tv/config.yaml`. Development uses `.venv/bin/ad-linux-tv` after `pip install -e '.[dev]'`.
+
+Troubleshoot: inspect terminal output, validate config with the installed venv CLI above, confirm server and Firefox extension use localhost port 8765, and ensure phone/TV share a private LAN. Plain HTTP and non-DRM/service playback are not guaranteed.
