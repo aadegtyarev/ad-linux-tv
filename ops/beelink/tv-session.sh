@@ -2,7 +2,12 @@
 set -euo pipefail
 
 if command -v gsettings >/dev/null 2>&1; then
-  gsettings set org.gnome.desktop.input-sources sources "[('xkb', 'us'), ('xkb', 'ru')]" || true
+  sources=$(gsettings get org.gnome.desktop.input-sources sources 2>/dev/null || true)
+  case "$sources" in
+    "[('xkb', 'us'), ('xkb', 'ru')]"|"[('xkb', 'ru'), ('xkb', 'us')]") ;;
+    *) gsettings set org.gnome.desktop.input-sources sources "[('xkb', 'us'), ('xkb', 'ru')]" || true ;;
+  esac
+  gsettings set org.gnome.desktop.input-sources current 0 || true
 fi
 /usr/local/libexec/ad-linux-tv/select-audio.sh &
 (

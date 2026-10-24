@@ -2,10 +2,11 @@
 set -euo pipefail
 
 schema=org.gnome.desktop.input-sources
-current=$(gsettings get "$schema" current)
-case "$current" in
-  "uint32 0") next=1 ;;
-  "uint32 1") next=0 ;;
-  *) next=0 ;;
+sources=$(gsettings get "$schema" sources)
+case "$sources" in
+  "[('xkb', 'us'), ('xkb', 'ru')]") next="[('xkb', 'ru'), ('xkb', 'us')]" ;;
+  "[('xkb', 'ru'), ('xkb', 'us')]") next="[('xkb', 'us'), ('xkb', 'ru')]" ;;
+  *) echo "Unexpected TV keyboard sources: $sources" >&2; exit 1 ;;
 esac
-gsettings set "$schema" current "$next"
+gsettings set "$schema" sources "$next"
+gsettings set "$schema" current 0
