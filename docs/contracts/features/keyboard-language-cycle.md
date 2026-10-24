@@ -1,6 +1,6 @@
 # Feature contract: One-tap TV keyboard language cycle
 
-- Status: Implemented; physical touch confirmation pending
+- Status: Physical touch confirmed; session-restart persistence pending
 - Date: 2026-10-24
 - Approval: User requested a large one-tap language switch on the on-screen keyboard, cycling languages with an indicator instead of the small language-selection list.
 
@@ -10,8 +10,8 @@ The dedicated TV keyboard has a prominent language key. The adjacent TV touch co
 
 ## Scenarios and edges
 
-- English layout shows `EN → RU`; tapping it switches to Russian, which shows `RU → EN`. The operation also works from numbers/symbols views.
-- The choice is owned by the dedicated `ad-tv` session and survives a TV session restart. KDE user input sources remain untouched.
+- English layout shows `EN→RU`; tapping it switches to Russian, which shows `RU→EN`. The operation also works from numbers/symbols views.
+- The choice is represented by the first source in the dedicated `ad-tv` source list and survives a TV session restart. KDE user input sources remain untouched.
 - If the system cannot change the layout, the keyboard remains usable; the old language popup is not the primary path.
 
 ## Non-goals
@@ -36,4 +36,4 @@ The dedicated TV keyboard has a prominent language key. The adjacent TV touch co
 
 ## Validation
 
-- Validate generated YAML, script and labwc XML, run project checks, test F12-to-layout switching on Beelink without sending text to a website, and ask for physical touch confirmation. Verified: F12 cycled 0 → 1 → 0; all four installed YAML files contain a large language key with F12 and the correct label; Squeekboard remained active. Physical tapping remains to be checked.
+- Validate generated YAML, script and labwc XML, run project checks, test F12-to-layout switching on Beelink without sending text to a website, and ask for physical touch confirmation. Physical tapping emitted F12 and changed `current`, but Squeekboard continued to use the first item in `sources`. Swapping the source order changed the visible layout immediately. The revised script changed the visible EN/RU layouts, and the user confirmed physical touch switching. Session-restart persistence remains to be checked without interrupting an ongoing sign-in.

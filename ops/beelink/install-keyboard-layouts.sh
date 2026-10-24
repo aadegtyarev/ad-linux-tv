@@ -31,8 +31,8 @@ for name in us us_wide ru ru_wide; do
     echo "Layout checksum mismatch: $name" >&2; exit 1;
   }
   case "$name" in
-    us*) language_label='EN → RU' ;;
-    ru*) language_label='RU → EN' ;;
+    us*) language_label='EN→RU' ;;
+    ru*) language_label='RU→EN' ;;
   esac
   sed -e 's/icon: "key-shift"/label: "⇧"/' \
       -e 's/icon: "edit-clear-symbolic"/label: "⌫"/' \
