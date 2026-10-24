@@ -18,6 +18,30 @@ def test_public_services_and_login_ignore_forwarded_headers(endpoint):
     assert "HttpOnly" in cookie_header and "SameSite=Strict" in cookie_header
 
 
+def test_pairing_pin_is_local_only(endpoint, monkeypatch, tmp_path):
+    import ad_linux_tv.pages as pages
+
+    connection, port = endpoint
+    pin_file = tmp_path / "remote-pin.txt"
+    pin_file.write_text("1234\n")
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    monkeypatch.setenv("AD_LINUX_TV_PIN_FILE", str(pin_file))
+    headers = {"X-TV-Launcher": "1"}
+    response, body = request(connection, "GET", "/api/local-pin", headers=headers)
+    assert response.status == 200 and json.loads(body) == {"pin": "1234"}
+    assert response.getheader("Cache-Control") == "no-store"
+    for denied in ({}, {"Host": "attacker.example", **headers}):
+        response, body = request(connection, "GET", "/api/local-pin", headers=denied)
+        assert response.status == 403 and b"1234" not in body
+    monkeypatch.setattr(pages, "loopback_source", lambda _source: False)
+    response, body = request(connection, "GET", "/api/local-pin", headers=headers)
+    assert response.status == 403 and b"1234" not in body
+    monkeypatch.setattr(pages, "loopback_source", lambda _source: True)
+    pin_file.unlink()
+    response, body = request(connection, "GET", "/api/local-pin", headers=headers)
+    assert response.status == 503 and b"1234" not in body
+
+
 def test_rate_limit_locks_out_bad_pin(endpoint):
     connection, port = endpoint
     headers = {

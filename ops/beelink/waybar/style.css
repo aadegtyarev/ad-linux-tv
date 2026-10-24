@@ -1,6 +1,0 @@
-* { font-family: sans-serif; font-size: 19px; }
-window#waybar { background: transparent; color: #fff; }
-#custom-home, #custom-keyboard { background: rgba(13, 27, 48, 0.88); padding: 6px 10px; min-height: 58px; }
-#custom-home { border-radius: 14px 0 0 14px; }
-#custom-keyboard { border-radius: 0 14px 14px 0; }
-#custom-home:hover, #custom-keyboard:hover { background: rgba(92, 164, 255, 0.45); border-radius: 12px; }

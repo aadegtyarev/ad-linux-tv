@@ -3,11 +3,12 @@
 import io
 import ipaddress
 import json
+import os
 import socket
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .security import private_source, remote_url
+from .security import loopback_source, private_source, remote_url
 
 
 def _advertised_url(address, port):
@@ -48,6 +49,25 @@ def remote_address(handler, config):
 
 def get_response(handler, config, queue, static):
     path = urlparse(handler.path).path
+    if path == "/api/local-pin":
+        expected_host = f"127.0.0.1:{handler.server.server_port}"
+        if (
+            not loopback_source(handler.client_address[0])
+            or handler.headers.get("Host") != expected_host
+            or handler.headers.get("X-TV-Launcher") != "1"
+            or os.environ.get("AD_LINUX_TV_KIOSK") != "1"
+        ):
+            return 403, "{}", "application/json"
+        pin_file = os.environ.get("AD_LINUX_TV_PIN_FILE")
+        if not pin_file:
+            return 503, "{}", "application/json"
+        try:
+            pin = Path(pin_file).read_text().rstrip("\r\n")
+        except OSError:
+            return 503, "{}", "application/json"
+        if not pin or len(pin) > 128 or not pin.isprintable():
+            return 503, "{}", "application/json"
+        return 200, json.dumps({"pin": pin}), "application/json"
     if path == "/extension/poll":
         if not handler.valid_bridge():
             return 403, "{}", "application/json"

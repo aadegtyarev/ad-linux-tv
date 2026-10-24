@@ -14,15 +14,18 @@ Observed on Beelink SER10 Max with HDMI (2026-10-24):
 - [x] Laptop on the private LAN can fetch `/remote` and `/api/qr`.
 - [x] With Wi-Fi connected, disconnecting Ethernet changed the advertised address from `.105` to `.111` and regenerated QR; reconnecting Ethernet returned to `.105` and regenerated QR again.
 - [x] HDMI sink selected for `ad-tv`; a short test sound was audible. The selection survived a TV session restart.
-- [x] Firefox toolbar is hidden in the dedicated TV profile while Squeekboard remains visible; the touch overlay is placed in the lower right.
+- [x] Firefox toolbar is hidden in the dedicated TV profile while Squeekboard remains visible; adjacent touch controls sit in the upper right and disappeared/reappeared when Firefox toggled fullscreen via F11.
 - [x] Focusing Firefox's hidden address bar reveals it; entering a URL in the managed Browser tab reaches that page and Home returns to the launcher.
+- [x] A real reboot with HDMI started the TV session automatically; the bridge, LAN remote and HDMI sink returned.
+- [x] The pairing PIN was detected visually under QR on the TV home screen; local retrieval succeeded, public service data omitted it, and forged-Host LAN retrieval returned 403.
 
 Still to verify on the actual setup:
 
 - [ ] Confirm physical touch on «Плитки» and repeat «Клавиатура» to dismiss it; test both keyboard languages, digits, symbols, and password fields on the touch monitor.
+- [ ] Confirm the overlay hides when the touchscreen is unplugged and that YouTube's own fullscreen video triggers the same behavior as F11.
 - [ ] Pair a real phone by QR, type with its native keyboard, use Home/Back/Refresh, test retry lockout and deny access from outside the trusted LAN.
 - [ ] Change the DHCP lease to an unrelated address and confirm the QR/address refreshes and an already paired phone can reconnect; test packet loss during the change.
-- [ ] After a real reboot, confirm default TV boot with HDMI; test no-HDMI console fallback, Ctrl+Alt+F2, `gui kde`, `gui off`, and `gui tv`.
+- [ ] Test no-HDMI console fallback, Ctrl+Alt+F2, `gui kde`, `gui off`, and `gui tv` after reboot.
 - [ ] Test TV navigation with a remote or touch only, including all service tiles and third-party site controls.
 - [ ] Confirm website playback audio, service logins/cookies across reboot, and DRM availability without bypasses; confirm behavior after Firefox updates.
 - [ ] Complete signed XPI release/update and digest verification from the published artifact.

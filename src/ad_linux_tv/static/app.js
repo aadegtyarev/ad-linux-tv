@@ -10,6 +10,23 @@ const settingsActions = [document.querySelector("#settings-back"), document.quer
 const confirmActions = [document.querySelector("#cancel-kde"), document.querySelector("#confirm-kde-yes")];
 let currentRemoteAddress = "";
 
+async function loadPairingPin() {
+  if (globalThis.location?.hostname !== "127.0.0.1") return;
+  const display = document.querySelector("#pairing-pin");
+  try {
+    const response = await fetch("/api/local-pin", {
+      headers: {"X-TV-Launcher": "1"}, cache: "no-store",
+    });
+    if (!response.ok) throw new Error("PIN unavailable");
+    const data = await response.json();
+    if (typeof data.pin !== "string" || !data.pin || data.pin.length > 128) throw new Error("Invalid PIN");
+    display.textContent = `PIN: ${data.pin}`;
+  } catch (_) {
+    display.textContent = "PIN недоступен. Проверьте настройку ТВ.";
+  }
+  display.hidden = false;
+}
+
 function openSettings() {
   home.hidden = true;
   settings.hidden = false;
@@ -130,6 +147,7 @@ async function send(command, service_id) {
 }
 
 load();
+loadPairingPin();
 checkStatus();
 setInterval(() => {
   checkStatus();

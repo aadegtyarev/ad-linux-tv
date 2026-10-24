@@ -92,3 +92,15 @@ test("LAN address change updates both shown address and QR image", async () => {
   assert.equal(ui.elements["#address"].textContent, ui.remoteAddress);
   assert.match(ui.elements["#qr"].src, /192\.168\.1\.111/);
 });
+
+test("pairing PIN is requested only by the local TV launcher", async () => {
+  const lan = launcher();
+  await ready();
+  assert.equal(lan.calls.some(call => call.url === "/api/local-pin"), false);
+  const local = launcher({hostname:"127.0.0.1"});
+  await ready();
+  assert.equal(local.elements["#pairing-pin"].textContent, "PIN: 1234");
+  assert.equal(local.elements["#pairing-pin"].hidden, false);
+  const call = local.calls.find(value => value.url === "/api/local-pin");
+  assert.equal(call.options.headers["X-TV-Launcher"], "1");
+});

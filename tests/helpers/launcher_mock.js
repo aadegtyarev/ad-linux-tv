@@ -2,7 +2,7 @@
 const fs = require("node:fs");
 const vm = require("node:vm");
 
-function launcher() {
+function launcher({hostname = "192.168.1.4"} = {}) {
   const events = {};
   const calls = [];
   const doc = {
@@ -30,11 +30,12 @@ function launcher() {
   doc.documentElement = new Element("html");
   doc.activeElement = doc.body;
   const elements = Object.fromEntries(
-    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes"]
+    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#pairing-pin", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes"]
       .map(id => [id, new Element(id)])
   );
   elements["#settings"].hidden = true;
   elements["#confirm-kde"].hidden = true;
+  elements["#pairing-pin"].hidden = true;
   doc.querySelector = id => elements[id];
   doc.createElement = name => new Element(name);
   let serviceData = Array.from({length:25}, (_, id) => ({id:`svc-${id}`, name:`Service ${id}`}));
@@ -42,14 +43,14 @@ function launcher() {
   let bridgeData = {extension_online:true, pending_commands:0, last_command_failure:null};
   let timer;
   const context = {
-    document:doc, innerWidth:1920,
+    document:doc, innerWidth:1920, location:{hostname},
     getComputedStyle:() => ({gridTemplateColumns:"300px 300px 300px 300px"}),
     setInterval(callback) { timer = callback; }, console,
     fetch:async (url, options) => {
       calls.push({url, options});
       return {ok:true, status:200, json:async () => url === "/api/services"
         ? {services:serviceData, page_size:12, remote_address:remoteAddress}
-        : bridgeData};
+        : url === "/api/local-pin" ? {pin:"1234"} : bridgeData};
     },
   };
   vm.createContext(context);
