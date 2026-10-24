@@ -16,7 +16,8 @@ function createBridgeController(tabs, fetcher = fetch, logger = console) {
         if (result.retry) return;
         const ack = await fetcher(`${BRIDGE_BASE}/extension/ack`, {
           method: "POST", headers: {...headers, "Content-Type": "application/json"},
-          body: JSON.stringify({id: item.id, outcome: result.outcome, reason: result.reason || null}),
+          body: JSON.stringify({id: item.id, outcome: result.outcome, reason: result.reason || null,
+            ...(Number.isInteger(result.volume) ? {volume:result.volume} : {})}),
         });
         if (!ack.ok) {
           logger.error("Browser command acknowledgement failed; command remains queued.");

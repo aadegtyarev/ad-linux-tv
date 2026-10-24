@@ -58,3 +58,34 @@ def test_commands_are_ordered_and_allowlisted():
     for command, service in (("exec", "https://evil.test"), ("open", None), ("home", "vk")):
         with pytest.raises(ValueError):
             queue.push(command, service)
+
+
+def test_player_volume_results_are_correlated_and_bounded():
+    from ad_linux_tv.control import MAX_RESULTS, RESULT_TTL_SECONDS
+
+    queue = CommandQueue()
+    for invalid in (-1, 101, True, "50", None):
+        with pytest.raises(ValueError):
+            queue.push("player_set", volume=invalid)
+    with pytest.raises(ValueError):
+        queue.push("home", volume=50)
+    read_id = queue.push("player_get")
+    assert queue.poll()[0]["id"] == read_id
+    assert not queue.acknowledge(read_id)
+    assert queue.acknowledge(read_id, volume=35)
+    assert queue.result(read_id) == {
+        "id": read_id,
+        "outcome": "completed",
+        "reason": None,
+        "volume": 35,
+    }
+    for value in range(MAX_RESULTS + 1):
+        command_id = queue.push("player_set", volume=value % 101)
+        item = queue.poll()[0]
+        assert item["id"] == command_id and item["volume"] == value % 101
+        assert queue.acknowledge(command_id, volume=value % 101)
+    assert queue.result(read_id) is None
+    assert len(queue.results) == MAX_RESULTS
+    latest_id = command_id
+    queue.results[latest_id]["recorded_at"] -= RESULT_TTL_SECONDS + 1
+    assert queue.result(latest_id) is None

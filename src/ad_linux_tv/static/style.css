@@ -84,3 +84,5 @@ html[data-touchscreen="true"] #system-button{display:inline-flex}
 .remote-pad-wrap .remote-touchpad .touch-guide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(54%,215px);display:flex;flex-direction:column;gap:11px;pointer-events:none}
 .remote-pad-wrap .remote-touchpad .touch-guide>span{display:flex;align-items:center;justify-content:flex-start;gap:8px;min-width:0;padding:4px 6px;border:0;background:none;color:#e9f5ff;font-size:13px;text-align:left;white-space:nowrap}
 
+
+.player-volume-control{margin:16px 0}.player-volume-control .remote-form-row{align-items:center}.player-volume-control .remote-form-row label{flex:1}.player-volume-control input[type=range]:disabled{opacity:.45}.remote-menu-group .player-volume-status{display:block;min-height:2.6em;margin:6px 0 0;color:#c6d9e9}

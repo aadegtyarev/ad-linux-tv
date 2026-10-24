@@ -2,6 +2,8 @@
 const BASE = "http://127.0.0.1:8765";
 const storageFactory = typeof module !== "undefined"
   ? require("./tab_storage.js").createTabStorage : createTabStorage;
+const mediaVolume = typeof module !== "undefined"
+  ? require("./player_volume.js").playerMediaVolume : playerMediaVolume;
 class PermanentCommandError extends Error {}
 function createOwnedTabs(api, fetcher = fetch) {
   const state = storageFactory(api);
@@ -22,6 +24,12 @@ function createOwnedTabs(api, fetcher = fetch) {
     if (item.command === "back" || item.command === "refresh") {
       const active = await state.activeTab();
       return {active: state.owns(active) ? active : null};
+    }
+    if (item.command === "player_get" || item.command === "player_set") {
+      const active = await state.activeTab();
+      if (!state.owns(active) || !/^https?:\/\//i.test(active.url || ""))
+        throw new PermanentCommandError("no_media");
+      return {active};
     }
     if (["up", "down", "left", "right", "ok"].includes(item.command)) {
       return {launcher: await findLauncher()};
@@ -66,6 +74,21 @@ function createOwnedTabs(api, fetcher = fetch) {
         if (!/cannot.*(?:back|history)|no.*(?:back|history)|(?:back|history).*(?:empty|missing|unavailable)/i.test(String(error.message))) throw error;
       }
       return;
+    }
+    if (command === "player_get" || command === "player_set") {
+      const active = await state.activeTab();
+      if (!active || active.id !== prepared.active.id || !state.owns(active) ||
+          !/^https?:\/\//i.test(active.url || ""))
+        throw new PermanentCommandError("no_media");
+      const frames = await api.scripting.executeScript({
+        target:{tabId:active.id, allFrames:true},
+        func:mediaVolume,
+        args:[command === "player_set" ? "set" : "get", item.volume ?? null],
+      });
+      const found = frames.find(frame => Number.isInteger(frame.result) &&
+        frame.result >= 0 && frame.result <= 100);
+      if (!found) throw new PermanentCommandError("no_media");
+      return {volume:found.result};
     }
     const launcher = prepared.launcher || await state.ensureLauncher();
     await state.focus(launcher);
