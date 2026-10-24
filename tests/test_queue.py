@@ -89,3 +89,11 @@ def test_player_volume_results_are_correlated_and_bounded():
     latest_id = command_id
     queue.results[latest_id]["recorded_at"] -= RESULT_TTL_SECONDS + 1
     assert queue.result(latest_id) is None
+
+
+def test_no_playing_media_does_not_raise_global_command_error():
+    queue = CommandQueue()
+    command_id = queue.push("player_get")
+    assert queue.acknowledge(command_id, "failed", "no_media")
+    assert queue.result(command_id)["reason"] == "no_media"
+    assert queue.status()["last_command_failure"] is None
