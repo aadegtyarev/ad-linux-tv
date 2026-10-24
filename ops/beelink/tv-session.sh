@@ -14,7 +14,7 @@ fi
 osk=$!
 (
   while :; do
-    /usr/bin/waybar -c /etc/ad-linux-tv/waybar/config.jsonc -s /etc/ad-linux-tv/waybar/style.css || true
+    /usr/local/libexec/ad-linux-tv/touch-overlay.py || true
     sleep 2
   done
 ) &

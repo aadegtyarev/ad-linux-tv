@@ -2,7 +2,7 @@
 
 - Status: Implemented; real-phone, DHCP lease and reboot checks pending
 - Date: 2026-10-24
-- Approval: User requested virtual keyboard for logins/search, phone text entry on a TV without touch, a browser tile opening Yandex search, a discreet System control away from service tiles, and QR/IP refresh when Ethernet changes to Wi-Fi. Later user requests added lower-right touch controls, removal of the visible Firefox toolbar, better phone-only navigation, and HDMI audio.
+- Approval: User requested virtual keyboard for logins/search, phone text entry on a TV without touch, a browser tile opening Yandex search, a discreet System control away from service tiles, and QR/IP refresh when Ethernet changes to Wi-Fi. Later user requests added touch controls, removal of the visible Firefox toolbar, better phone-only navigation, and HDMI audio. On physical testing, the lower controls obstructed video scrubbing; user chose two adjacent upper-right controls that hide when a window enters fullscreen and when no touchscreen is connected.
 
 ## Goal and user-visible behavior
 
@@ -16,7 +16,7 @@ The TV session supports text entry from the touchscreen in Firefox pages, includ
 - System remains reachable by touch and the phone remote's arrows/OK. Its KDE action still requires a second confirmation.
 - A failed server process must not leave a working looking browser pointing at a dead localhost page.
 - When the active LAN address changes, the displayed address and QR image change without restarting the TV session.
-- The TV profile hides browser chrome while keeping the screen keyboard usable. The touch overlay is in the lower right. The phone remote can open a managed Browser tab and navigate directly to an HTTP(S) address using its native keyboard.
+- The TV profile hides browser chrome while keeping the screen keyboard usable. The two touch controls sit next to each other at the upper right, occupy only their own small input area, and hide when a window enters fullscreen or no touchscreen is connected. The phone remote can open a managed Browser tab and navigate directly to an HTTP(S) address using its native keyboard.
 - A detected HDMI audio sink is selected for the TV user, without changing the KDE user's default audio device.
 
 ## Non-goals
@@ -46,7 +46,7 @@ The TV session supports text entry from the touchscreen in Firefox pages, includ
 - System is visually separate from service tiles and reachable by touch and remote navigation; KDE still requires confirmation.
 - Restarting the TV session leaves localhost service and Firefox running together or exits to recovery.
 - Removing Ethernet with Wi-Fi connected updates the home address and QR to the Wi-Fi address without server restart.
-- Browser chrome is absent on the home screen, and Squeekboard still appears above Firefox. The lower-right touch targets remain reachable with the keyboard shown. An HDMI test sound is audible.
+- Browser chrome is absent on the home screen, and Squeekboard still appears above Firefox. The upper-right touch targets remain reachable with the keyboard shown and disappear in fullscreen or without a touchscreen. An HDMI test sound is audible.
 
 ## Validation
 

@@ -14,6 +14,7 @@ Group=ad-tv
 PAMName=ad-linux-tv-kiosk
 Environment=HOME=/home/ad-tv
 Environment=AD_LINUX_TV_KIOSK=1
+Environment=AD_LINUX_TV_PIN_FILE=/home/ad-tv/.config/ad-linux-tv/remote-pin.txt
 Environment=XDG_SESSION_TYPE=wayland
 Environment=XDG_CURRENT_DESKTOP=labwc
 Environment=MOZ_ENABLE_WAYLAND=1
