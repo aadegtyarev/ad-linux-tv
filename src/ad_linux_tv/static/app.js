@@ -2,9 +2,75 @@
 const configStatus = document.querySelector("#config-status");
 const bridgeStatus = document.querySelector("#bridge-status");
 const commandStatus = document.querySelector("#command-status");
-const ui = createLauncherUI(send);
+const settings = document.querySelector("#settings");
+const home = document.querySelector("#home");
+const confirmation = document.querySelector("#confirm-kde");
+const systemStatus = document.querySelector("#system-status");
+const settingsActions = [document.querySelector("#settings-back"), document.querySelector("#open-kde")];
+const confirmActions = [document.querySelector("#cancel-kde"), document.querySelector("#confirm-kde-yes")];
+
+function openSettings() {
+  home.hidden = true;
+  settings.hidden = false;
+  confirmation.hidden = true;
+  systemStatus.textContent = "";
+  settingsActions[0].focus();
+}
+
+function closeSettings() {
+  settings.hidden = true;
+  home.hidden = false;
+  confirmation.hidden = true;
+  document.querySelector('[data-settings="true"]')?.focus();
+}
+
+settingsActions[0].onclick = closeSettings;
+settingsActions[1].onclick = () => {
+  confirmation.hidden = false;
+  confirmActions[0].focus();
+};
+confirmActions[0].onclick = () => {
+  confirmation.hidden = true;
+  settingsActions[0].focus();
+};
+confirmActions[1].onclick = async () => {
+  confirmActions[1].disabled = true;
+  systemStatus.textContent = "Открываем KDE…";
+  try {
+    const response = await fetch("/api/system/kde", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: "{}",
+    });
+    if (!response.ok) throw new Error(`Ошибка переключения (${response.status}).`);
+  } catch (error) {
+    systemStatus.textContent = error.message;
+  } finally {
+    confirmActions[1].disabled = false;
+  }
+};
+
+document.addEventListener("keydown", event => {
+  if (settings.hidden) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    if (confirmation.hidden) closeSettings();
+    else confirmActions[0].click();
+    return;
+  }
+  if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  event.preventDefault();
+  const actions = confirmation.hidden ? settingsActions : confirmActions;
+  const index = actions.indexOf(document.activeElement);
+  actions[index === 0 ? 1 : 0].focus();
+});
+
+const ui = createLauncherUI(send, openSettings);
 document.addEventListener("ad-linux-tv-select-for-bridge", () => {
-  document.documentElement.dataset.bridgeServiceId = ui.selectForBridge() || "";
+  if (!settings.hidden) {
+    const actions = confirmation.hidden ? settingsActions : confirmActions;
+    const focused = actions.includes(document.activeElement) ? document.activeElement : actions[0];
+    focused.click();
+    document.documentElement.dataset.bridgeServiceId = "";
+  } else document.documentElement.dataset.bridgeServiceId = ui.selectForBridge() || "";
 });
 
 async function load() {

@@ -15,6 +15,7 @@ preview() {
   printf 'Firefox profile/XPI: %s\n' /home/ad-tv/snap/firefox/common
   printf 'Compositor package: %s\n' cage
   printf 'System units: %s\n' /etc/systemd/system/ad-linux-tv-kiosk.service /etc/systemd/system/ad-linux-tv-boot.service
+  printf 'KDE switch unit: %s\n' /etc/systemd/system/ad-linux-tv-switch-kde.service
   printf 'PAM: %s\n' /etc/pam.d/ad-linux-tv-kiosk
   printf 'Control scripts: %s\n' /usr/local/libexec/ad-linux-tv /home/adegtyarev/.local/bin/gui
   printf 'Sudoers: %s\n' /etc/sudoers.d/98-ad-linux-tv-gui
@@ -53,7 +54,7 @@ install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/.config/ad-linux-tv
 install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/snap/firefox/common
 install -d -m 755 /usr/local/libexec/ad-linux-tv
 install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" /usr/local/libexec/ad-linux-tv/
-install -m 644 "$ROOT/ad-linux-tv-kiosk.service" "$ROOT/ad-linux-tv-boot.service" /etc/systemd/system/
+install -m 644 "$ROOT/ad-linux-tv-kiosk.service" "$ROOT/ad-linux-tv-boot.service" "$ROOT/ad-linux-tv-switch-kde.service" /etc/systemd/system/
 install -m 644 "$ROOT/ad-linux-tv-kiosk.pam" /etc/pam.d/ad-linux-tv-kiosk
 visudo -cf "$ROOT/98-ad-linux-tv-gui.sudoers" >/dev/null
 install -m 440 "$ROOT/98-ad-linux-tv-gui.sudoers" /etc/sudoers.d/98-ad-linux-tv-gui

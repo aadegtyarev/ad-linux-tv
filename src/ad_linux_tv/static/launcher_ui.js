@@ -1,30 +1,33 @@
 "use strict";
 
-function createLauncherUI(send) {
+function createLauncherUI(send, openSettings) {
   let services = [];
   let size = 12;
   let focus = 0;
   const tiles = document.querySelector("#tiles");
+  const entries = () => [...services, {name: "Настройки", settings: true}];
 
   function render(focusButton = false) {
     const page = Math.floor(focus / size);
     const first = page * size;
     tiles.replaceChildren();
-    MediaLayout.pageItems(services, page, size).forEach((service, offset) => {
+    MediaLayout.pageItems(entries(), page, size).forEach((service, offset) => {
       const index = first + offset;
       const button = document.createElement("button");
       button.textContent = service.name;
       button.dataset.serviceIndex = String(index);
-      button.dataset.serviceId = service.id;
+      if (service.settings) button.dataset.settings = "true";
+      else button.dataset.serviceId = service.id;
       button.tabIndex = index === focus ? 0 : -1;
       button.onfocus = () => setFocus(index);
       button.onclick = () => {
         setFocus(index);
-        send("open", service.id);
+        if (service.settings) openSettings();
+        else send("open", service.id);
       };
       tiles.append(button);
     });
-    const pages = MediaLayout.pageCount(services.length, size);
+    const pages = MediaLayout.pageCount(services.length + 1, size);
     document.querySelector("#page").textContent = `${page + 1} / ${pages}`;
     if (focusButton) tiles.children[focus - first]?.focus();
   }
@@ -49,21 +52,21 @@ function createLauncherUI(send) {
     const direction = {
       ArrowRight: "right", ArrowLeft: "left", ArrowDown: "down", ArrowUp: "up",
     }[event.key];
-    if (!direction || !services.length) return;
+    if (!direction || !document.querySelector("#settings").hidden) return;
     event.preventDefault();
     const activeIndex = Number(document.activeElement?.dataset?.serviceIndex);
     if (Number.isInteger(activeIndex)) focus = activeIndex;
-    focus = MediaLayout.moveFocus(focus, direction, services.length, columns());
+    focus = MediaLayout.moveFocus(focus, direction, services.length + 1, columns());
     render(true);
   });
 
   document.querySelector("#next").onclick = () => {
-    const pages = MediaLayout.pageCount(services.length, size);
+    const pages = MediaLayout.pageCount(services.length + 1, size);
     focus = ((Math.floor(focus / size) + 1) % pages) * size;
     render(true);
   };
   document.querySelector("#prev").onclick = () => {
-    const pages = MediaLayout.pageCount(services.length, size);
+    const pages = MediaLayout.pageCount(services.length + 1, size);
     focus = ((Math.floor(focus / size) + pages - 1) % pages) * size;
     render(true);
   };
@@ -74,6 +77,10 @@ function createLauncherUI(send) {
       active.click();
       return null;
     }
+    if (focus === services.length) {
+      Array.from(tiles.children).find(button => button.dataset.settings === "true")?.click();
+      return null;
+    }
     return services[focus]?.id || null;
   }
 
@@ -82,12 +89,13 @@ function createLauncherUI(send) {
     const active = document.activeElement;
     const restoreFocus = tiles.contains(active);
     const selectedId = active?.dataset?.serviceId;
+    const wasSettings = active?.dataset?.settings === "true";
     const previousFocus = focus;
     services = items;
     size = pageSize;
     const selectedIndex = selectedId ? services.findIndex(service => service.id === selectedId) : -1;
-    focus = restoreFocus && selectedIndex >= 0
-      ? selectedIndex : Math.min(previousFocus, Math.max(0, services.length - 1));
+    focus = wasSettings ? services.length : restoreFocus && selectedIndex >= 0
+      ? selectedIndex : Math.min(previousFocus, services.length);
     render(restoreFocus);
   }
   return {update, selectForBridge};
