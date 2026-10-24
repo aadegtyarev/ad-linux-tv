@@ -1,39 +1,85 @@
 """Configuration and command policy regression tests."""
+
 import base64
 import hashlib
 
 import pytest
+import yaml
 
-from ad_linux_tv.config import DEFAULT_SERVICES, load_config, verify_pin
+from ad_linux_tv.config import load_config, verify_pin
 from ad_linux_tv.control import CommandQueue
+from ad_linux_tv.defaults import DEFAULT_SERVICES
 
 
-def config(tmp_path):
+def config_data():
     salt = b"0123456789abcdef"
     verifier = hashlib.pbkdf2_hmac("sha256", b"1234", salt, 310_000)
-    file = tmp_path / "config.yaml"
-    import yaml
-    file.write_text(yaml.safe_dump({"bind":"127.0.0.1", "port":8765, "page_size":12,
-        "auth":{"salt":base64.b64encode(salt).decode(), "verifier":base64.b64encode(verifier).decode()},
-        "services":DEFAULT_SERVICES}, allow_unicode=True))
-    return file
+    return {
+        "bind": "127.0.0.1",
+        "port": 8765,
+        "page_size": 12,
+        "auth": {
+            "salt": base64.b64encode(salt).decode(),
+            "verifier": base64.b64encode(verifier).decode(),
+        },
+        "services": DEFAULT_SERVICES,
+    }
+
+
+def write_config(tmp_path, data):
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    return path
 
 
 def test_valid_config_and_pin(tmp_path):
-    data = load_config(config(tmp_path))
+    data = load_config(write_config(tmp_path, config_data()))
     assert verify_pin("1234", data["auth"])
     assert not verify_pin("bad", data["auth"])
+    assert not verify_pin(1234, data["auth"])
 
 
-def test_unknown_config_key_rejected(tmp_path):
-    path = config(tmp_path)
-    path.write_text(path.read_text() + "secret: value\n")
-    with pytest.raises(ValueError, match="Invalid configuration"):
+def test_unknown_keys_and_invalid_service_fields_rejected(tmp_path):
+    data = config_data() | {"secret_sentinel": "must-not-leak"}
+    path = write_config(tmp_path, data)
+    with pytest.raises(ValueError, match="expected bind") as error:
+        load_config(path)
+    assert "must-not-leak" not in str(error.value)
+    data = config_data()
+    data["services"][0]["url"] = "http://user:password@example.test"
+    with pytest.raises(ValueError, match="safe HTTPS"):
+        load_config(write_config(tmp_path, data))
+
+
+def test_duplicate_yaml_keys_are_rejected(tmp_path):
+    path = tmp_path / "duplicate.yaml"
+    path.write_text("bind: 0.0.0.0\nbind: 127.0.0.1\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid YAML syntax"):
         load_config(path)
 
 
-def test_queue_only_accepts_allowlisted_commands():
-    q = CommandQueue()
-    q.push("home")
-    assert q.poll() == [{"command":"home", "service_id":None}]
-    with pytest.raises(ValueError): q.push("exec", "https://evil.test")
+def test_malformed_yaml_error_does_not_echo_secret(tmp_path):
+    path = tmp_path / "malformed.yaml"
+    path.write_text("pin: 'secret_sentinel\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid YAML syntax") as error:
+        load_config(path)
+    assert "secret_sentinel" not in str(error.value)
+
+
+@pytest.mark.parametrize("field,value", [("port", 8766), ("page_size", 0), ("page_size", 101)])
+def test_port_and_page_size_are_bounded(tmp_path, field, value):
+    data = config_data()
+    data[field] = value
+    with pytest.raises(ValueError, match="Invalid configuration"):
+        load_config(write_config(tmp_path, data))
+
+
+def test_command_allowlist_and_required_service_id():
+    queue = CommandQueue()
+    for command in ("home", "back", "refresh", "up", "down", "left", "right", "ok"):
+        queue.push(command)
+    queue.push("open", "youtube")
+    assert len(queue.poll()) == 9
+    for command, service in (("exec", "https://evil.test"), ("open", None), ("home", "vk")):
+        with pytest.raises(ValueError):
+            queue.push(command, service)

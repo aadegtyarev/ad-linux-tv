@@ -1,4 +1,5 @@
 """Validated, server-only configuration loading."""
+
 import base64
 import hashlib
 import hmac
@@ -7,55 +8,84 @@ from pathlib import Path
 
 import yaml
 
-DEFAULT_SERVICES = [
-    {"id": "vk", "name": "VK Видео", "url": "https://vk.com/video"},
-    {"id": "kinopoisk", "name": "КиноПоиск", "url": "https://hd.kinopoisk.ru/"},
-    {"id": "music", "name": "Яндекс Музыка", "url": "https://music.yandex.ru/"},
-    {"id": "youtube", "name": "YouTube", "url": "https://www.youtube.com/"},
-]
+from .yaml_config import load_yaml
+
+
+class ConfigurationError(ValueError):
+    """Expected user-facing validation error without input data."""
 
 
 def load_config(path):
     try:
-        data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or set(data) != {"bind", "port", "page_size", "auth", "services"}:
-            raise ValueError("expected bind, port, page_size, auth and services")
+        data = load_yaml(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or set(data) != {
+            "bind",
+            "port",
+            "page_size",
+            "auth",
+            "services",
+        }:
+            raise ConfigurationError("expected bind, port, page_size, auth and services")
         if not isinstance(data["bind"], str) or not data["bind"]:
-            raise ValueError("bind must be an IP address")
+            raise ConfigurationError("bind must be an IP address")
         import ipaddress
+
         ipaddress.ip_address(data["bind"])
         if type(data["port"]) is not int or data["port"] != 8765:
-            raise ValueError("port is fixed at 8765 for the Firefox bridge")
+            raise ConfigurationError("port is fixed at 8765 for the Firefox bridge")
         if type(data["page_size"]) is not int or not 1 <= data["page_size"] <= 100:
-            raise ValueError("page_size must be 1..100")
+            raise ConfigurationError("page_size must be 1..100")
         auth = data["auth"]
         if not isinstance(auth, dict) or set(auth) != {"salt", "verifier"}:
-            raise ValueError("auth must contain salt and verifier")
+            raise ConfigurationError("auth must contain salt and verifier")
         for key in ("salt", "verifier"):
             base64.b64decode(auth[key], validate=True)
-        if len(base64.b64decode(auth["salt"])) < 16 or len(base64.b64decode(auth["verifier"])) != 32:
-            raise ValueError("invalid PIN verifier")
+        if (
+            len(base64.b64decode(auth["salt"])) < 16
+            or len(base64.b64decode(auth["verifier"])) != 32
+        ):
+            raise ConfigurationError("invalid PIN verifier")
         services = data["services"]
         if not isinstance(services, list) or not services:
-            raise ValueError("services must be a non-empty list")
+            raise ConfigurationError("services must be a non-empty list")
         ids = set()
         for service in services:
             if not isinstance(service, dict) or set(service) != {"id", "name", "url"}:
-                raise ValueError("each service needs id, name and url")
-            if not re.fullmatch(r"[a-z0-9-]{1,32}", service["id"]) or service["id"] in ids:
-                raise ValueError("service ids must be unique safe identifiers")
+                raise ConfigurationError("each service needs id, name and url")
+            if (
+                not isinstance(service["id"], str)
+                or not re.fullmatch(r"[a-z0-9-]{1,32}", service["id"])
+                or service["id"] in ids
+            ):
+                raise ConfigurationError("service ids must be unique safe identifiers")
             if not isinstance(service["name"], str) or not 1 <= len(service["name"]) <= 80:
-                raise ValueError("invalid service name")
+                raise ConfigurationError("invalid service name")
+            if not isinstance(service["url"], str):
+                raise ConfigurationError("service URL must be a string")
             from urllib.parse import urlparse
+
             url = urlparse(service["url"])
-            if url.scheme != "https" or not url.hostname or url.username or url.password:
-                raise ValueError("service URLs must be safe HTTPS URLs")
+            if any(ord(character) <= 32 or ord(character) == 127 for character in service["url"]):
+                raise ConfigurationError("service URLs must not contain whitespace or controls")
+            if (
+                url.scheme != "https"
+                or not url.hostname
+                or url.username
+                or url.password
+                or url.query
+                or url.fragment
+            ):
+                raise ConfigurationError(
+                    "service URLs must be safe HTTPS URLs without query or fragment"
+                )
             ids.add(service["id"])
         return data
     except yaml.YAMLError:
         raise ValueError("Invalid configuration: invalid YAML syntax") from None
-    except Exception as exc:
-        raise ValueError(f"Invalid configuration: {type(exc).__name__}: {exc}") from None
+    except ConfigurationError as exc:
+        raise ValueError(f"Invalid configuration: {exc}") from None
+    except Exception:
+        raise ValueError("Invalid configuration: invalid field value") from None
 
 
 def verify_pin(pin, auth):

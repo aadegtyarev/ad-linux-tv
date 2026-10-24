@@ -1,7 +1,8 @@
 """In-memory browser command queue and heartbeat state."""
+
+import time
 from collections import deque
 from threading import Lock
-import time
 
 COMMANDS = {"open", "home", "back", "refresh", "up", "down", "left", "right", "ok"}
 
@@ -26,4 +27,5 @@ class CommandQueue:
             return values
 
     def status(self):
-        return {"extension_online": self.last_seen is not None and time.time() - self.last_seen < 30}
+        online = self.last_seen is not None and time.time() - self.last_seen < 30
+        return {"extension_online": online}
