@@ -27,27 +27,37 @@ test("background listeners precede async initialization and filter launcher URL"
   assert.equal(wakes, 2);
 });
 
-test("launcher content script returns tile selection without enqueueing Open", () => {
+test("content-script messages answer through sendResponse only for handled commands", () => {
   let listener;
   const events = [];
   const document = {
     activeElement:{dataset:{serviceId:"svc-7"}},
-    dispatchEvent:event => events.push(event.key),
+    documentElement:{dataset:{bridgeServiceId:"svc-7"}},
+    dispatchEvent:event => events.push(event.key || event.type),
   };
   const browser = {runtime:{
     onMessage:{addListener:fn => {listener = fn;}},
     sendMessage:async () => {},
   }};
   const context = {location:{href:LAUNCHER}, document, browser,
-    KeyboardEvent:function (_type, options) { return options; }, setInterval() {}};
+    Event:function (type) { return {type}; },
+    KeyboardEvent:function (type, options) { return {...options, type}; }, setInterval() {}};
   vm.runInNewContext(fs.readFileSync("extension/launcher.js", "utf8"), context);
-  assert.equal(listener({command:"ok"}).service_id, "svc-7");
-  assert.deepEqual(events, []);
-  document.activeElement = {id:"next"};
-  assert.equal(listener({command:"ok"}).service_id, null);
-  assert.deepEqual(events, ["Enter"]);
-  listener({command:"left"});
-  assert.deepEqual(events, ["Enter", "ArrowLeft"]);
+  const invoke = message => {
+    let response;
+    const keepChannel = listener(message, {}, value => { response = value; });
+    return {keepChannel, response};
+  };
+  const selected = invoke({command:"ok"});
+  assert.equal(selected.keepChannel, false);
+  assert.equal(selected.response.service_id, "svc-7");
+  assert.deepEqual(events, ["ad-linux-tv-select-for-bridge"]);
+  const arrow = invoke({command:"left"});
+  assert.equal(arrow.response.service_id, null);
+  assert.deepEqual(events, ["ad-linux-tv-select-for-bridge", "ArrowLeft"]);
+  const ignored = invoke({command:"unsupported"});
+  assert.equal(ignored.keepChannel, false);
+  assert.equal(ignored.response, undefined);
 });
 
 test("content script ignores other ports and localhost paths", () => {

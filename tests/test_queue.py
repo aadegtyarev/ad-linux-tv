@@ -2,7 +2,7 @@
 
 import pytest
 
-from ad_linux_tv.control import CommandQueue, QueueFullError
+from ad_linux_tv.control import FAILURE_TTL_SECONDS, CommandQueue, QueueFullError
 
 
 def test_command_lease_retries_head_and_waits_for_ack():
@@ -24,6 +24,23 @@ def test_queue_rejects_new_work_instead_of_dropping_old_commands():
     with pytest.raises(QueueFullError):
         queue.push("back")
     assert queue.poll()[0]["command"] == "home"
+
+
+@pytest.mark.parametrize(
+    ("outcome", "reason"), [("failed", "operation"), ("uncertain", "interrupted")]
+)
+def test_failure_survives_completed_ack_and_expires_after_bounded_ttl(outcome, reason):
+    queue = CommandQueue()
+    queue.push("home")
+    failed = queue.poll()[0]
+    assert queue.acknowledge(failed["id"], outcome, reason)
+    queue.push("back")
+    completed = queue.poll()[0]
+    assert queue.acknowledge(completed["id"])
+    assert queue.status()["last_command_failure"] == {"outcome": outcome, "reason": reason}
+    assert "recorded_at" not in queue.status()["last_command_failure"]
+    queue.last_command_failure["recorded_at"] -= FAILURE_TTL_SECONDS + 1
+    assert queue.status()["last_command_failure"] is None
 
 
 def test_commands_are_ordered_and_allowlisted():

@@ -54,3 +54,6 @@ def test_bridge_requires_custom_header_exact_host_and_orders_acknowledgements(en
     assert "service_id" not in status["last_command_failure"]
     following = json.loads(request(connection, "GET", "/extension/poll", headers=bridge)[1])[0]
     assert following["command"] == "back"
+    assert acknowledge(following["id"]).status == 200
+    retained = json.loads(request(connection, "GET", "/api/status")[1])
+    assert retained["last_command_failure"] == {"outcome": "failed", "reason": "operation"}

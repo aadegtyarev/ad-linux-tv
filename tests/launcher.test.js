@@ -36,25 +36,26 @@ test("periodic refresh preserves grid focus and skips unchanged DOM replacement"
 test("services refresh does not clear offline or pending command status", async () => {
   const ui = launcher();
   await ready();
-  ui.status = {extension_online:false, pending_commands:1, last_command_failure:null};
+  ui.status = {extension_online:false, pending_commands:1,
+    last_command_failure:{outcome:"uncertain", reason:"interrupted"}};
   ui.elements["#config-status"].textContent = "old configuration error";
   ui.refresh();
   await ready();
   assert.equal(ui.elements["#config-status"].textContent, "");
   assert.equal(ui.elements["#bridge-status"].textContent, "Firefox bridge offline; check the extension.");
-  assert.equal(ui.elements["#command-status"].textContent, "Browser command awaiting Firefox acknowledgement.");
+  assert.equal(ui.elements["#command-status"].textContent,
+    "Browser command awaiting Firefox acknowledgement. Last browser command uncertain (interrupted).");
 });
 
-test("Tab/click focus remains the item activated by bridge OK", async () => {
+test("physical tile click still posts Open and pagination stays local", async () => {
   const ui = launcher();
   await ready();
-  ui.elements["#tiles"].children[3].focus();
-  ui.doc.dispatchEvent({type:"keydown", key:"Enter", isTrusted:false, preventDefault(){}});
+  ui.elements["#tiles"].children[3].click();
   await ready();
   const command = ui.calls.find(call => call.url === "/api/command");
   assert.equal(JSON.parse(command.options.body).service_id, "svc-3");
   ui.elements["#next"].focus();
-  ui.doc.dispatchEvent({type:"keydown", key:"Enter", isTrusted:false, preventDefault(){}});
+  ui.elements["#next"].click();
   assert.equal(ui.elements["#page"].textContent, "2 / 3");
   assert.equal(ui.doc.activeElement.dataset.serviceIndex, "12");
 });

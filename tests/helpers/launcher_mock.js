@@ -24,6 +24,7 @@ function launcher() {
     click() { this.onclick?.(); }
   }
   doc.body = new Element("body");
+  doc.documentElement = new Element("html");
   doc.activeElement = doc.body;
   const elements = Object.fromEntries(
     ["#tiles", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#page", "#next", "#prev"]
@@ -50,7 +51,7 @@ function launcher() {
     vm.runInContext(fs.readFileSync(`src/ad_linux_tv/static/${file}`, "utf8"), context);
   }
   return {
-    doc, elements, events, calls,
+    doc, elements, events, calls, context,
     get services() { return serviceData; },
     set services(value) { serviceData = value; },
     set status(value) { bridgeData = value; },

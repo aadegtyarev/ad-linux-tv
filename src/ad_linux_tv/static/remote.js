@@ -20,11 +20,12 @@ async function refreshStatus() {
     const response = await fetch("/api/status");
     if (!response.ok) throw new Error("status unavailable");
     const value = await response.json();
-    status.textContent = value.pending_commands
-      ? "Command awaiting Firefox acknowledgement."
-      : value.last_command_failure
-        ? `Last command failed (${value.last_command_failure.reason}).`
-        : value.extension_online ? "Firefox bridge online." : "Firefox bridge offline.";
+    const messages = [value.extension_online ? "Firefox bridge online." : "Firefox bridge offline."];
+    if (value.pending_commands) messages.push("Command awaiting Firefox acknowledgement.");
+    if (value.last_command_failure) {
+      messages.push(`Last command ${value.last_command_failure.outcome} (${value.last_command_failure.reason}).`);
+    }
+    status.textContent = messages.join(" ");
   } catch (_) {
     status.textContent = "TV server unavailable.";
   }

@@ -6,6 +6,7 @@ from collections import deque
 from threading import Lock
 
 COMMANDS = {"open", "home", "back", "refresh", "up", "down", "left", "right", "ok"}
+FAILURE_TTL_SECONDS = 300
 
 
 class QueueFullError(Exception):
@@ -51,16 +52,24 @@ class CommandQueue:
             self.items.popleft()
             self.lease_until = 0
             self.last_seen = time.time()
-            self.last_command_failure = (
-                None if outcome == "completed" else {"outcome": outcome, "reason": reason}
-            )
+            if outcome != "completed":
+                self.last_command_failure = {
+                    "outcome": outcome,
+                    "reason": reason,
+                    "recorded_at": time.monotonic(),
+                }
             return True
 
     def status(self):
         with self.lock:
             online = self.last_seen is not None and time.time() - self.last_seen < 30
             pending = len(self.items)
-            failure = dict(self.last_command_failure) if self.last_command_failure else None
+            failure = self.last_command_failure
+            if failure and time.monotonic() - failure["recorded_at"] >= FAILURE_TTL_SECONDS:
+                self.last_command_failure = None
+                failure = None
+            if failure:
+                failure = {key: failure[key] for key in ("outcome", "reason")}
         return {
             "extension_online": online,
             "pending_commands": pending,

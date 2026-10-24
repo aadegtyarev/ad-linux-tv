@@ -46,17 +46,6 @@ function createLauncherUI(send) {
     if (Number.isInteger(index)) setFocus(index);
   });
   document.addEventListener("keydown", event => {
-    if (event.key === "Enter" && !event.isTrusted && event.target === document) {
-      const active = document.activeElement;
-      if (active === document.querySelector("#next") || active === document.querySelector("#prev")) {
-        active.click();
-      } else if (active?.dataset?.serviceIndex !== undefined) {
-        active.click();
-      } else {
-        tiles.children[focus % size]?.click();
-      }
-      return;
-    }
     const direction = {
       ArrowRight: "right", ArrowLeft: "left", ArrowDown: "down", ArrowUp: "up",
     }[event.key];
@@ -79,6 +68,15 @@ function createLauncherUI(send) {
     render(true);
   };
 
+  function selectForBridge() {
+    const active = document.activeElement;
+    if (active === document.querySelector("#next") || active === document.querySelector("#prev")) {
+      active.click();
+      return null;
+    }
+    return services[focus]?.id || null;
+  }
+
   function update(items, pageSize) {
     if (size === pageSize && JSON.stringify(services) === JSON.stringify(items)) return;
     const active = document.activeElement;
@@ -92,5 +90,5 @@ function createLauncherUI(send) {
       ? selectedIndex : Math.min(previousFocus, Math.max(0, services.length - 1));
     render(restoreFocus);
   }
-  return {update};
+  return {update, selectForBridge};
 }
