@@ -1,0 +1,2 @@
+[console_scripts]
+ad-linux-tv = ad_linux_tv.cli:main

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ad-linux-tv"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["PyYAML>=6", "qrcode[pil]>=7.4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+ad-linux-tv = "ad_linux_tv.cli:main"
+
+[tool.setuptools.package-data]
+ad_linux_tv = ["static/*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

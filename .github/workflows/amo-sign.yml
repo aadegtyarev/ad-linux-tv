@@ -1,0 +1,24 @@
+name: AMO unlisted signing
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --global web-ext
+      - name: Sign unlisted extension
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        run: web-ext sign --source-dir extension --channel=unlisted --artifacts-dir artifacts
+      - run: cd artifacts && sha256sum *.xpi > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        if: github.event_name == 'release'
+        with:
+          files: artifacts/*

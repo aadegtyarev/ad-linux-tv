@@ -1,0 +1,5 @@
+"use strict";
+const message=document.querySelector("#message"), controls=document.querySelector("#controls");
+async function post(command,service_id){const r=await fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command,service_id})});if(!r.ok)message.textContent=`Command failed (${r.status})`;}
+document.querySelector("#login").onsubmit=async e=>{e.preventDefault();const pin=e.target.querySelector("input").value;const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin})});if(!r.ok){message.textContent="Login failed or temporarily locked";return;}e.target.hidden=true;controls.hidden=false;const d=await(await fetch("/api/services")).json();d.services.forEach(s=>{const o=document.createElement("option");o.value=s.id;o.textContent=s.name;document.querySelector("#services").append(o);});};
+document.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>post(b.dataset.c));document.querySelector("#open").onclick=()=>post("open",document.querySelector("#services").value);
