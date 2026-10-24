@@ -171,6 +171,13 @@ def test_non_browser_stream_blocks_sleep(monkeypatch):
     assert audio.non_browser_audio_present() is False
 
 
+def test_corked_firefox_stream_is_not_audible(monkeypatch):
+    monkeypatch.setattr(audio, "_browser_inputs", lambda: [{"corked": True, "mute": False}])
+    assert audio.browser_audio_active() is False
+    monkeypatch.setattr(audio, "_browser_inputs", lambda: [{"corked": False, "mute": False}])
+    assert audio.browser_audio_active() is True
+
+
 def test_audio_sample_requires_sound_and_uses_default_sink(monkeypatch):
     calls = []
     monkeypatch.setattr(audio, "get_state", lambda: {"muted": False, "volume": 60})

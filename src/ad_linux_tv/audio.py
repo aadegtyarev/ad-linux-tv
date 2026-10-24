@@ -83,6 +83,13 @@ def normalize_browser_volume():
             _pactl("set-sink-input-volume", index, "100%")
 
 
+def browser_audio_active():
+    """A Firefox sink input may stay present after its media has been paused."""
+    return any(
+        not item.get("corked", False) and not item.get("mute", False) for item in _browser_inputs()
+    )
+
+
 def get_state():
     sinks = _sinks()
     selected = _pactl("get-default-sink")

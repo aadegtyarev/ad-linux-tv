@@ -87,6 +87,34 @@ def test_timer_preserves_lit_output_if_playback_cannot_be_paused():
     assert timer.status()["error"] == "audio_active"
 
 
+def test_audible_flag_lag_is_accepted_only_after_player_stops():
+    class LagQueue(PauseQueue):
+        def result(self, command_id):
+            if command_id == "player_pause":
+                return {"outcome": "failed", "reason": "operation"}
+            return {"outcome": "failed", "reason": "no_media"}
+
+        def push(self, command):
+            self.commands.append(command)
+            return command
+
+    queue = LagQueue()
+    power_calls = []
+    timer = DisplaySleepTimer(
+        queue,
+        power=lambda enabled: power_calls.append(enabled) or True,
+        browser_audio=lambda: False,
+        other_audio=lambda: False,
+        clock=lambda: 100,
+        schedule=Scheduled,
+    )
+    timer.set(15)
+    timer.job.callback(*timer.job.args)
+    assert queue.commands == ["player_pause", "player_get"]
+    assert power_calls == [False]
+    assert timer.status()["asleep"] is True
+
+
 def test_cancelled_deadline_cannot_turn_output_off():
     power_calls = []
     timer = DisplaySleepTimer(

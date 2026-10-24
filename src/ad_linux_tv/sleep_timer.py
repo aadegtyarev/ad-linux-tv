@@ -44,7 +44,7 @@ def _set_output_power(enabled):
 
 def _browser_audio_active():
     try:
-        return audio.get_state()["browser_volume"] is not None
+        return audio.browser_audio_active()
     except audio.AudioUnavailable:
         # Without audio state, an unrecognized player cannot be declared silent.
         return True
@@ -147,20 +147,32 @@ class DisplaySleepTimer:
             self.error = None
             return True
 
-    def _pause_playback(self):
+    def _player_result(self, command):
         try:
-            command_id = self.queue.push("player_pause")
+            command_id = self.queue.push(command)
         except QueueFullError:
-            return "pause_unavailable"
+            return None
         for _ in range(40):
             result = self.queue.result(command_id)
             if result:
-                if result["outcome"] == "completed":
-                    return "audio_active" if self.other_audio() else None
-                if result["reason"] == "no_media":
-                    return "audio_active" if self.browser_audio() or self.other_audio() else None
-                return "pause_unavailable"
+                return result
             time.sleep(0.2)
+        return None
+
+    def _pause_playback(self):
+        result = self._player_result("player_pause")
+        if result is None:
+            return "pause_unavailable"
+        if result["outcome"] == "completed":
+            return "audio_active" if self.browser_audio() or self.other_audio() else None
+        if result["reason"] == "no_media":
+            return "audio_active" if self.browser_audio() or self.other_audio() else None
+        # Firefox's audible flag can lag behind a successful HTMLMediaElement.pause().
+        # Confirm the element is no longer playing before accepting that case.
+        probe = self._player_result("player_get")
+        if probe and probe["reason"] == "no_media":
+            time.sleep(0.4)
+            return "audio_active" if self.browser_audio() or self.other_audio() else None
         return "pause_unavailable"
 
     def _expire(self, generation):
