@@ -1,6 +1,6 @@
 # Feature contract: Four-digit TV pairing PIN and phone visibility control
 
-- Status: Implemented on Beelink; awaiting physical phone feedback
+- Status: Complete; phone behavior and target operation verified
 - Date: 2026-10-24
 - Approval: User requested a four-digit numeric PIN and an eye control in the phone PIN field for the trusted local LAN.
 

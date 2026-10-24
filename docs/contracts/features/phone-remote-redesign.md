@@ -1,6 +1,6 @@
 # Feature contract: Phone remote redesign
 
-- Status: Implemented on Beelink; awaiting physical phone feedback
+- Status: Complete; phone behavior and target operation verified
 - Date: 2026-10-24
 - Approval: User requested a complete phone remote redesign resembling a physical TV remote, with responsive layout, working arrows, and rare controls moved off the main screen.
 
