@@ -2,10 +2,10 @@
   "layer": "overlay",
   "position": "bottom",
   "height": 64,
-  "width": 312,
   "margin-bottom": 12,
+  "margin-right": 16,
   "exclusive": false,
-  "modules-left": ["custom/home", "custom/keyboard"],
+  "modules-right": ["custom/home", "custom/keyboard"],
   "custom/home": {
     "format": "⌂ Плитки",
     "tooltip": "Вернуться к плиткам",

@@ -4,6 +4,7 @@ set -euo pipefail
 if command -v gsettings >/dev/null 2>&1; then
   gsettings set org.gnome.desktop.input-sources sources "[('xkb', 'us'), ('xkb', 'ru')]" || true
 fi
+/usr/local/libexec/ad-linux-tv/select-audio.sh &
 (
   while :; do
     /usr/bin/squeekboard || true

@@ -41,10 +41,15 @@ kept = [line for line in existing.splitlines()
 kept.extend(f'user_pref("{key}", {value});' for key, value in managed.items())
 user_js.write_text("\n".join(kept) + "\n")
 css = profile / "chrome/userChrome.css"
-rule = "#TabsToolbar, #PersonalToolbar { visibility: collapse !important; }"
 old_css = css.read_text() if css.exists() else ""
-if rule not in old_css:
-    css.write_text(old_css.rstrip() + "\n" + rule + "\n")
+managed_rules = (
+    "#TabsToolbar, #PersonalToolbar { visibility: collapse !important; }",
+    "#TabsToolbar, #PersonalToolbar, #nav-bar { visibility: collapse !important; }",
+    "#nav-bar { margin-top: -40px !important; opacity: 0 !important; pointer-events: none !important; }",
+    "#nav-bar:focus-within { margin-top: 0 !important; opacity: 1 !important; pointer-events: auto !important; }",
+)
+kept_css = [line for line in old_css.splitlines() if line not in managed_rules]
+css.write_text("\n".join(kept_css + [managed_rules[0], *managed_rules[2:]]) + "\n")
 PY_PROFILE
 chown ad-tv:ad-tv "$PROFILE/user.js" "$PROFILE/chrome/userChrome.css"
 chmod 600 "$PROFILE/user.js" "$PROFILE/chrome/userChrome.css"

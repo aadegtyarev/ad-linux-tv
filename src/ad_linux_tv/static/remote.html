@@ -9,16 +9,17 @@
     <form id="login"><label for="pin">PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="off" required><button type="submit" class="primary-button">Подключиться</button></form>
   </section>
   <section id="controls" hidden>
+    <nav class="remote-dock" aria-label="Быстрые действия"><button data-c="home" class="primary-button">⌂ К плиткам</button><button data-c="back">← Назад</button><button data-c="refresh">↻ Обновить</button></nav>
     <section class="remote-card">
       <h2>Навигация</h2><p id="status" class="remote-hint" role="status"></p>
       <div class="remote-pad"><button data-c="up" aria-label="Вверх">↑</button><button data-c="left" aria-label="Влево">←</button><button data-c="ok" class="primary-button">OK</button><button data-c="right" aria-label="Вправо">→</button><button data-c="down" aria-label="Вниз">↓</button></div>
-      <div class="remote-actions"><button data-c="home" class="primary-button">⌂ К плиткам</button><button data-c="back">← Назад</button><button data-c="refresh">↻ Обновить</button></div>
     </section>
     <section class="remote-card"><h2>Открыть сервис</h2><div class="remote-row"><select id="services" aria-label="Сервис"></select><button id="open">Открыть</button></div></section>
-    <section class="remote-card"><h2>Ввод текста</h2><p class="remote-hint">Кнопкой «Следующее поле» выберите поле на телевизоре. Для произвольного сайта откройте адресную строку. Ввод идёт в активное поле Firefox.</p>
+    <section class="remote-card"><h2>Поиск и ввод текста</h2><p class="remote-hint">Коснитесь поля на телевизоре или выберите его кнопками ниже. Печатайте здесь клавиатурой телефона: текст появится в Firefox.</p>
       <div class="remote-actions"><button id="key-tab">Следующее поле</button><button id="key-shift-tab">Предыдущее поле</button><button id="key-address">Адресная строка</button></div>
       <form id="text-form"><label for="remote-text">Текст</label><div class="remote-row"><input id="remote-text" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="512" placeholder="Поиск или логин"><button type="submit" class="primary-button">Ввести</button></div></form>
       <div class="remote-actions"><button id="key-backspace">⌫ Стереть символ</button><button id="key-enter">↵ Enter</button></div>
+      <form id="url-form"><label for="remote-url">Открыть адрес сайта</label><p class="remote-hint">Пульт сам откроет отдельную вкладку «Браузер»; возврат к плиткам останется доступен.</p><div class="remote-row"><input id="remote-url" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="512" placeholder="example.com"><button type="submit">Перейти</button></div></form>
     </section>
   </section>
 </main><script src="/remote.js"></script></html>

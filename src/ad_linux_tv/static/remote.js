@@ -6,6 +6,7 @@ const controls = document.querySelector("#controls");
 const status = document.querySelector("#status");
 let csrf = "";
 let statusTimer = null;
+let browserService = null;
 
 function say(text, error = false) {
   message.textContent = text;
@@ -72,6 +73,7 @@ loginForm.onsubmit = async event => {
     const responseServices = await fetch("/api/services");
     if (!responseServices.ok) throw new Error("service list unavailable");
     const data = await responseServices.json();
+    browserService = data.services.find(service => service.id === "browser")?.id || null;
     const select = document.querySelector("#services");
     select.replaceChildren();
     for (const service of data.services) {
@@ -100,6 +102,36 @@ document.querySelector("#text-form").onsubmit = async event => {
   const input = document.querySelector("#remote-text");
   if (!input.value) return;
   if (await post("/api/input", {text: input.value}, "Текст введён.")) input.value = "";
+};
+document.querySelector("#url-form").onsubmit = async event => {
+  event.preventDefault();
+  const input = document.querySelector("#remote-url");
+  const raw = input.value.trim();
+  if (!raw) return;
+  const address = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const parsed = new URL(address);
+    if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname || address.length > 512) throw new Error("invalid URL");
+  } catch (_) {
+    return say("Введите адрес сайта, например example.com.", true);
+  }
+  if (!browserService) return say("Плитка «Браузер» не настроена на Beelink.", true);
+  if (!await post("/api/command", {command: "open", service_id: browserService}, "Открываем Браузер…")) return;
+  let ready = false;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    try {
+      const response = await fetch("/api/status");
+      if (!response.ok) throw new Error("status unavailable");
+      const state = await response.json();
+      if (state.extension_online && state.pending_commands === 0) { ready = true; break; }
+    } catch (_) { break; }
+  }
+  if (!ready) return say("Браузер не открылся. Проверьте соединение с Firefox и повторите.", true);
+  await new Promise(resolve => setTimeout(resolve, 500));
+  if (!await post("/api/input", {key: "address"}, "Адресная строка выбрана.")) return;
+  if (!await post("/api/input", {text: address}, "Адрес введён.")) return;
+  if (await post("/api/input", {key: "enter"}, "Открываем сайт…")) input.value = "";
 };
 document.querySelector("#key-backspace").onclick = () =>
   post("/api/input", {key: "backspace"}, "Символ удалён.");

@@ -2,7 +2,7 @@
 
 - Status: Implemented; real-phone, DHCP lease and reboot checks pending
 - Date: 2026-10-24
-- Approval: User requested virtual keyboard for logins/search, phone text entry on a TV without touch, a browser tile opening Yandex search, a discreet System control away from service tiles, and QR/IP refresh when Ethernet changes to Wi-Fi.
+- Approval: User requested virtual keyboard for logins/search, phone text entry on a TV without touch, a browser tile opening Yandex search, a discreet System control away from service tiles, and QR/IP refresh when Ethernet changes to Wi-Fi. Later user requests added lower-right touch controls, removal of the visible Firefox toolbar, better phone-only navigation, and HDMI audio.
 
 ## Goal and user-visible behavior
 
@@ -16,6 +16,8 @@ The TV session supports text entry from the touchscreen in Firefox pages, includ
 - System remains reachable by touch and the phone remote's arrows/OK. Its KDE action still requires a second confirmation.
 - A failed server process must not leave a working looking browser pointing at a dead localhost page.
 - When the active LAN address changes, the displayed address and QR image change without restarting the TV session.
+- The TV profile hides browser chrome while keeping the screen keyboard usable. The touch overlay is in the lower right. The phone remote can open a managed Browser tab and navigate directly to an HTTP(S) address using its native keyboard.
+- A detected HDMI audio sink is selected for the TV user, without changing the KDE user's default audio device.
 
 ## Non-goals
 
@@ -44,9 +46,10 @@ The TV session supports text entry from the touchscreen in Firefox pages, includ
 - System is visually separate from service tiles and reachable by touch and remote navigation; KDE still requires confirmation.
 - Restarting the TV session leaves localhost service and Firefox running together or exits to recovery.
 - Removing Ethernet with Wi-Fi connected updates the home address and QR to the Wi-Fi address without server restart.
+- Browser chrome is absent on the home screen, and Squeekboard still appears above Firefox. The lower-right touch targets remain reachable with the keyboard shown. An HDMI test sound is audible.
 
 ## Validation
 
 - Run relevant Python/Node/shell checks and dry-run; visually inspect a rendered launcher.
 - Verify touch keyboard and browser text input on Beelink, plus phone text input, System navigation, session restart, and LAN address refresh.
-- Observed on Beelink: Yandex and YouTube expose their own touch keyboard controls; authenticated API text reaches Firefox; System switches to KDE and back; killing the server restarts the full session; Ethernet disconnect/reconnect changes the advertised address and QR between `.105` and `.111`. The dedicated overlay Home/keyboard controls, real phone, and fresh DHCP lease remain to be checked.
+- Observed on Beelink: Yandex and YouTube expose their own touch keyboard controls, and the user opened Squeekboard with the persistent overlay button; authenticated API text reaches Firefox; the overlay Home script returned to the launcher; System switches to KDE and back; killing the server restarts the full session; Ethernet disconnect/reconnect changes the advertised address and QR between `.105` and `.111`. Physical Home/dismissal, a real phone, and a fresh DHCP lease remain to be checked.
