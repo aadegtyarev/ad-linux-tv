@@ -1,6 +1,6 @@
 # Feature contract: visible TV cursor
 
-- Status: Approved for implementation; target visual check pending
+- Status: Complete; target visual check passed
 - Date: 2026-10-25
 - Approval: User asked to make the phone-controlled cursor about three times larger and visible against dark video.
 
@@ -34,4 +34,4 @@ Use labwc's `XCURSOR_THEME` and `XCURSOR_SIZE` environment variables in the TV s
 
 ## Validation
 
-Check the unit syntax, setup dry-run, installed theme, live process environment, and visual pointer after restart.
+Unit syntax and setup dry-run passed. The installed theme contains a native 72 px cursor; the restarted labwc process has both cursor variables, Firefox bridge reconnected, and the user confirmed the pointer is visible and convenient.
