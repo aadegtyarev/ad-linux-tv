@@ -14,7 +14,7 @@ Environment=HOME=/home/ad-tv
 Environment=AD_LINUX_TV_KIOSK=1
 Environment=XDG_SESSION_TYPE=wayland
 Environment=MOZ_ENABLE_WAYLAND=1
-ExecStart=/usr/bin/weston --backend=drm --shell=kiosk-shell.so --no-config --continue-without-input --idle-time=0 -- /home/ad-tv/.local/share/ad-linux-tv/run.sh /home/ad-tv/.config/ad-linux-tv/config.yaml
+ExecStart=/usr/bin/weston --backend=drm --shell=kiosk-shell.so --no-config --continue-without-input -- /home/ad-tv/.local/share/ad-linux-tv/run.sh /home/ad-tv/.config/ad-linux-tv/config.yaml
 ExecStartPost=+/usr/bin/chvt 1
 ExecStopPost=+/usr/bin/chvt 2
 StandardInput=tty-fail
