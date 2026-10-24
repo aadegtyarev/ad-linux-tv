@@ -24,12 +24,58 @@ window { background: transparent; }
 """
 
 
-def action(name):
+def home():
     subprocess.Popen(
-        ["/usr/local/libexec/ad-linux-tv/touch-controls.sh", name],
+        ["/usr/local/libexec/ad-linux-tv/touch-controls.sh", "home"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+
+
+def keyboard_visible():
+    try:
+        result = subprocess.run(
+            [
+                "/usr/bin/busctl",
+                "--user",
+                "get-property",
+                "sm.puri.OSK0",
+                "/sm/puri/OSK0",
+                "sm.puri.OSK0",
+                "Visible",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=1,
+            check=False,
+        )
+        return result.stdout.strip() == "b true" if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def set_keyboard_visible(visible):
+    try:
+        result = subprocess.run(
+            [
+                "/usr/bin/busctl",
+                "--user",
+                "call",
+                "sm.puri.OSK0",
+                "/sm/puri/OSK0",
+                "sm.puri.OSK0",
+                "SetVisible",
+                "b",
+                "true" if visible else "false",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=1,
+            check=False,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def touch_available():
@@ -88,18 +134,38 @@ def main():
     )
     box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=1)
     box.get_style_context().add_class("touch-panel")
-    for label, name in (("⌂ Плитки", "home"), ("⌨ Клав.", "keyboard")):
+    pinned = False
+
+    def on_home(_button):
+        nonlocal pinned
+        pinned = False
+        set_keyboard_visible(False)
+        home()
+
+    def on_keyboard(_button):
+        nonlocal pinned
+        visible = keyboard_visible()
+        if visible is None:
+            return
+        pinned = not visible
+        if not set_keyboard_visible(pinned):
+            pinned = False
+
+    for label, callback in (("⌂ Плитки", on_home), ("⌨ Клав.", on_keyboard)):
         button = Gtk.Button.new_with_label(label)
         button.get_style_context().add_class("touch-button")
-        button.connect("clicked", lambda _button, action_name=name: action(action_name))
+        button.connect("clicked", callback)
         box.pack_start(button, True, True, 0)
     window.add(box)
     window.connect("destroy", Gtk.main_quit)
     visible = False
 
     def update_visibility():
-        nonlocal visible
+        nonlocal visible, pinned
         should_show = touch_available() and not fullscreen_active()
+        if not should_show and pinned:
+            pinned = False
+            set_keyboard_visible(False)
         if should_show != visible:
             if should_show:
                 window.show_all()
@@ -108,7 +174,13 @@ def main():
             visible = should_show
         return True
 
+    def keep_keyboard_open():
+        if pinned and keyboard_visible() is False:
+            set_keyboard_visible(True)
+        return True
+
     update_visibility()
+    GLib.timeout_add(150, keep_keyboard_open)
     GLib.timeout_add_seconds(2, update_visibility)
     Gtk.main()
 

@@ -155,6 +155,7 @@ def test_phone_text_input_requires_auth_and_never_returns_text(endpoint, monkeyp
     origin = {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"}
     response, _ = request(connection, "POST", "/api/input", json.dumps({"text": "секрет"}), origin)
     assert response.status == 403
+
     _, auth, cookie = login(connection, port)
     headers = command_headers(port, cookie, auth["csrf"])
     response, payload = request(
@@ -172,3 +173,38 @@ def test_phone_text_input_requires_auth_and_never_returns_text(endpoint, monkeyp
     headers["X-CSRF-Token"] = "wrong"
     response, _ = request(connection, "POST", "/api/input", '{"key":"enter"}', headers)
     assert response.status == 403
+
+
+def test_audio_control_requires_pairing_and_csrf(endpoint, monkeypatch):
+    import ad_linux_tv.audio as audio
+    import ad_linux_tv.pages as pages
+    import ad_linux_tv.post_routes as post_routes
+
+    connection, port = endpoint
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    monkeypatch.setattr(pages, "loopback_source", lambda _address: False)
+    monkeypatch.setattr(post_routes, "loopback_source", lambda _address: False)
+    state = {
+        "outputs": [{"id": "hdmi", "name": "HDMI"}],
+        "selected": "hdmi",
+        "volume": 100,
+        "muted": False,
+    }
+    calls = []
+    monkeypatch.setattr(audio, "get_state", lambda: state)
+    monkeypatch.setattr(audio, "apply", lambda command: calls.append(command) or state)
+    response, _ = request(connection, "GET", "/api/audio")
+    assert response.status == 403
+    _, auth, cookie = login(connection, port)
+    response, body = request(connection, "GET", "/api/audio", headers={"Cookie": cookie})
+    assert response.status == 200 and json.loads(body)["volume"] == 100
+    headers = command_headers(port, cookie, "wrong")
+    response, _ = request(connection, "POST", "/api/audio", '{"volume":45}', headers)
+    assert response.status == 403 and not calls
+    headers = command_headers(port, cookie, auth["csrf"])
+    response, body = request(connection, "POST", "/api/audio", '{"volume":45}', headers)
+    assert response.status == 200 and json.loads(body)["selected"] == "hdmi"
+    assert calls == [{"volume": 45}]
+    headers["Origin"] = "http://attacker.example"
+    response, _ = request(connection, "POST", "/api/audio", '{"volume":10}', headers)
+    assert response.status == 403 and calls == [{"volume": 45}]

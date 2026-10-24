@@ -8,6 +8,7 @@ import socket
 from pathlib import Path
 from urllib.parse import urlparse
 
+from . import audio
 from .security import loopback_source, private_source, remote_url
 
 
@@ -49,6 +50,22 @@ def remote_address(handler, config):
 
 def get_response(handler, config, queue, static):
     path = urlparse(handler.path).path
+    if path == "/api/audio":
+        local = (
+            loopback_source(handler.client_address[0])
+            and handler.headers.get("Host") == f"127.0.0.1:{handler.server.server_port}"
+        )
+        if (
+            os.environ.get("AD_LINUX_TV_KIOSK") != "1"
+            or not handler.private()
+            or not (local or handler.authorized())
+            or remote_url(handler.headers.get("Host", ""), handler.server.server_port) is None
+        ):
+            return 403, "{}", "application/json"
+        try:
+            return 200, json.dumps(audio.get_state()), "application/json"
+        except audio.AudioUnavailable:
+            return 503, "{}", "application/json"
     if path == "/api/local-pin":
         expected_host = f"127.0.0.1:{handler.server.server_port}"
         if (

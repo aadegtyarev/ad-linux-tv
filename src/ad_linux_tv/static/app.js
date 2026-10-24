@@ -6,9 +6,64 @@ const settings = document.querySelector("#settings");
 const home = document.querySelector("#home");
 const confirmation = document.querySelector("#confirm-kde");
 const systemStatus = document.querySelector("#system-status");
-const settingsActions = [document.querySelector("#settings-back"), document.querySelector("#open-kde")];
+const audioOutput = document.querySelector("#audio-output");
+const audioVolume = document.querySelector("#audio-volume");
+const audioStatus = document.querySelector("#audio-status");
+const audioMute = document.querySelector("#audio-mute");
+const settingsActions = [document.querySelector("#settings-back"), audioOutput, audioVolume,
+  audioMute, document.querySelector("#audio-refresh"), document.querySelector("#open-kde")];
 const confirmActions = [document.querySelector("#cancel-kde"), document.querySelector("#confirm-kde-yes")];
 let currentRemoteAddress = "";
+
+function showAudio(state) {
+  const names = state.outputs.map(output => output.id).join("\n");
+  if (audioOutput.dataset.outputs !== names) {
+    audioOutput.replaceChildren();
+    for (const output of state.outputs) {
+      const option = document.createElement("option");
+      option.value = output.id;
+      option.textContent = output.name;
+      audioOutput.append(option);
+    }
+    audioOutput.dataset.outputs = names;
+  }
+  audioOutput.value = state.selected;
+  audioVolume.value = state.volume;
+  document.querySelector("#audio-volume-value").textContent = `${state.volume}%`;
+  audioMute.dataset.muted = String(state.muted);
+  audioMute.textContent = state.muted ? "Включить звук" : "Выключить звук";
+  audioStatus.textContent = "";
+}
+
+async function refreshAudio() {
+  try {
+    const response = await fetch("/api/audio");
+    if (!response.ok) throw new Error("audio unavailable");
+    showAudio(await response.json());
+  } catch (_) {
+    audioStatus.textContent = "Звук недоступен. Проверьте подключение выхода и повторите.";
+  }
+}
+
+async function changeAudio(action) {
+  try {
+    const response = await fetch("/api/audio", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(action),
+    });
+    if (!response.ok) throw new Error("audio change failed");
+    showAudio(await response.json());
+  } catch (_) {
+    audioStatus.textContent = "Не удалось изменить звук. Проверьте выход и повторите.";
+  }
+}
+
+document.querySelector("#audio-refresh").onclick = refreshAudio;
+audioOutput.onchange = () => changeAudio({output: audioOutput.value});
+audioVolume.oninput = () => {
+  document.querySelector("#audio-volume-value").textContent = `${audioVolume.value}%`;
+};
+audioVolume.onchange = () => changeAudio({volume: Number(audioVolume.value)});
+audioMute.onclick = () => changeAudio({muted: audioMute.dataset.muted !== "true"});
 
 async function loadPairingPin() {
   if (globalThis.location?.hostname !== "127.0.0.1") return;
@@ -33,6 +88,7 @@ function openSettings() {
   confirmation.hidden = true;
   systemStatus.textContent = "";
   settingsActions[0].focus();
+  void refreshAudio();
 }
 
 function closeSettings() {
@@ -43,7 +99,7 @@ function closeSettings() {
 }
 
 settingsActions[0].onclick = closeSettings;
-settingsActions[1].onclick = () => {
+settingsActions[5].onclick = () => {
   confirmation.hidden = false;
   confirmActions[0].focus();
 };
@@ -78,7 +134,20 @@ document.addEventListener("keydown", event => {
   event.preventDefault();
   const actions = confirmation.hidden ? settingsActions : confirmActions;
   const index = actions.indexOf(document.activeElement);
-  actions[index === 0 ? 1 : 0].focus();
+  if (confirmation.hidden && event.key === "ArrowRight" && document.activeElement === audioVolume) {
+    audioVolume.value = Math.min(100, Number(audioVolume.value) + 5);
+    audioVolume.onchange();
+  } else if (confirmation.hidden && event.key === "ArrowLeft" && document.activeElement === audioVolume) {
+    audioVolume.value = Math.max(0, Number(audioVolume.value) - 5);
+    audioVolume.onchange();
+  } else if (confirmation.hidden && (event.key === "ArrowLeft" || event.key === "ArrowRight") && document.activeElement === audioOutput && audioOutput.options.length) {
+    const change = event.key === "ArrowRight" ? 1 : -1;
+    audioOutput.selectedIndex = (audioOutput.selectedIndex + change + audioOutput.options.length) % audioOutput.options.length;
+    audioOutput.onchange();
+  } else {
+    const change = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
+    actions[(index + change + actions.length) % actions.length].focus();
+  }
 });
 
 const ui = createLauncherUI(send, openSettings);

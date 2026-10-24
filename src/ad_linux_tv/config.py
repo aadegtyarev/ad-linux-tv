@@ -48,8 +48,12 @@ def load_config(path):
             raise ConfigurationError("services must be a non-empty list")
         ids = set()
         for service in services:
-            if not isinstance(service, dict) or set(service) != {"id", "name", "url"}:
-                raise ConfigurationError("each service needs id, name and url")
+            if (
+                not isinstance(service, dict)
+                or not {"id", "name", "url"} <= set(service)
+                or set(service) - {"id", "name", "url", "color"}
+            ):
+                raise ConfigurationError("each service needs id, name and url; color is optional")
             if (
                 not isinstance(service["id"], str)
                 or not re.fullmatch(r"[a-z0-9-]{1,32}", service["id"])
@@ -59,6 +63,11 @@ def load_config(path):
             if not isinstance(service["name"], str) or not 1 <= len(service["name"]) <= 80:
                 raise ConfigurationError("invalid service name")
             validate_service_url(service["url"])
+            if "color" in service and (
+                not isinstance(service["color"], str)
+                or not re.fullmatch(r"#[0-9a-fA-F]{6}", service["color"])
+            ):
+                raise ConfigurationError("service color must be a six-digit hex color")
             ids.add(service["id"])
         return data
     except yaml.YAMLError:

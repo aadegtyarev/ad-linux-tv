@@ -7,6 +7,55 @@ const status = document.querySelector("#status");
 let csrf = "";
 let statusTimer = null;
 let browserService = null;
+const audioOutput = document.querySelector("#audio-output");
+const audioVolume = document.querySelector("#audio-volume");
+const audioStatus = document.querySelector("#audio-status");
+
+function showAudio(state) {
+  const names = state.outputs.map(output => output.id).join("\n");
+  if (audioOutput.dataset.outputs !== names) {
+    audioOutput.replaceChildren();
+    for (const output of state.outputs) {
+      const option = document.createElement("option");
+      option.value = output.id;
+      option.textContent = output.name;
+      audioOutput.append(option);
+    }
+    audioOutput.dataset.outputs = names;
+  }
+  audioOutput.value = state.selected;
+  audioVolume.value = state.volume;
+  document.querySelector("#audio-volume-value").textContent = `${state.volume}%`;
+  document.querySelector("#audio-mute").textContent = state.muted ? "Включить звук" : "Выключить звук";
+  document.querySelector("#audio-mute").dataset.muted = String(state.muted);
+  audioStatus.textContent = "";
+}
+
+async function refreshAudio() {
+  try {
+    const response = await fetch("/api/audio");
+    if (response.status === 403) return requireLogin();
+    if (!response.ok) throw new Error("audio unavailable");
+    showAudio(await response.json());
+  } catch (_) {
+    audioStatus.textContent = "Звук недоступен. Проверьте подключение выхода и повторите.";
+  }
+}
+
+async function changeAudio(action) {
+  try {
+    const response = await fetch("/api/audio", {
+      method: "POST", headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+      body: JSON.stringify(action),
+    });
+    if (response.status === 401 || response.status === 403) return requireLogin();
+    if (!response.ok) throw new Error("audio change failed");
+    showAudio(await response.json());
+  } catch (_) {
+    await refreshAudio();
+    audioStatus.textContent = "Не удалось изменить звук. Проверьте выход и повторите.";
+  }
+}
 
 function say(text, error = false) {
   message.textContent = text;
@@ -85,12 +134,22 @@ loginForm.onsubmit = async event => {
     loginPanel.hidden = true;
     controls.hidden = false;
     say("Телефон подключён.");
+    void refreshAudio();
     void refreshStatus();
     statusTimer = setInterval(refreshStatus, 1000);
   } catch (_) {
     say("Нет связи с Beelink. Проверьте Wi‑Fi и повторите попытку.", true);
   }
 };
+
+document.querySelector("#audio-refresh").onclick = refreshAudio;
+audioOutput.onchange = () => changeAudio({output: audioOutput.value});
+audioVolume.oninput = () => {
+  document.querySelector("#audio-volume-value").textContent = `${audioVolume.value}%`;
+};
+audioVolume.onchange = () => changeAudio({volume: Number(audioVolume.value)});
+document.querySelector("#audio-mute").onclick = () =>
+  changeAudio({muted: document.querySelector("#audio-mute").dataset.muted !== "true"});
 
 document.querySelectorAll("[data-c]").forEach(button => {
   button.onclick = () => post("/api/command", {command: button.dataset.c}, "Команда отправлена.");

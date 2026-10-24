@@ -15,7 +15,13 @@ function launcher({hostname = "192.168.1.4"} = {}) {
     querySelectorAll: () => [],
   };
   class Element {
-    constructor(id) { this.id = id; this.children = []; this.dataset = {}; }
+    constructor(id) {
+      this.id = id; this.children = []; this.dataset = {}; this.selectedIndex = 0;
+      this.classes = new Set(); this.properties = {};
+      this.classList = {add: name => this.classes.add(name), contains: name => this.classes.has(name)};
+      this.style = {setProperty: (name, value) => { this.properties[name] = value; }};
+    }
+    get options() { return this.children; }
     addEventListener(name, fn) { this[`on${name}`] = fn; }
     contains(target) { return target === this || this.children.some(child => child.contains(target)); }
     replaceChildren() {
@@ -30,7 +36,7 @@ function launcher({hostname = "192.168.1.4"} = {}) {
   doc.documentElement = new Element("html");
   doc.activeElement = doc.body;
   const elements = Object.fromEntries(
-    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#pairing-pin", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes"]
+    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#pairing-pin", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status", "#audio-mute", "#audio-refresh"]
       .map(id => [id, new Element(id)])
   );
   elements["#settings"].hidden = true;
@@ -50,7 +56,9 @@ function launcher({hostname = "192.168.1.4"} = {}) {
       calls.push({url, options});
       return {ok:true, status:200, json:async () => url === "/api/services"
         ? {services:serviceData, page_size:12, remote_address:remoteAddress}
-        : url === "/api/local-pin" ? {pin:"1234"} : bridgeData};
+        : url === "/api/local-pin" ? {pin:"1234"}
+          : url === "/api/audio" ? {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false}
+            : bridgeData};
     },
   };
   vm.createContext(context);

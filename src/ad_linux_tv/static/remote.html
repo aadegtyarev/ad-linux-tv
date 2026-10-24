@@ -10,6 +10,11 @@
   </section>
   <section id="controls" hidden>
     <nav class="remote-dock" aria-label="Быстрые действия"><button data-c="home" class="primary-button">⌂ К плиткам</button><button data-c="back">← Назад</button><button data-c="refresh">↻ Обновить</button></nav>
+    <section class="remote-card audio-card"><h2>Звук</h2><p id="audio-status" class="remote-hint" role="status"></p>
+      <label for="audio-output">Выход звука</label><div class="remote-row"><select id="audio-output"></select><button id="audio-refresh" type="button">Обновить</button></div>
+      <label for="audio-volume">Громкость выхода: <span id="audio-volume-value">100%</span></label>
+      <div class="audio-volume-row"><input id="audio-volume" type="range" min="0" max="100" step="5" value="100"><button id="audio-mute" type="button">Выключить звук</button></div>
+    </section>
     <section class="remote-card">
       <h2>Навигация</h2><p id="status" class="remote-hint" role="status"></p>
       <div class="remote-pad"><button data-c="up" aria-label="Вверх">↑</button><button data-c="left" aria-label="Влево">←</button><button data-c="ok" class="primary-button">OK</button><button data-c="right" aria-label="Вправо">→</button><button data-c="down" aria-label="Вниз">↓</button></div>

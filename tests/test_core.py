@@ -38,6 +38,18 @@ def test_valid_config_and_pin(tmp_path):
     assert not verify_pin(1234, data["auth"])
 
 
+def test_optional_tile_color_and_existing_config(tmp_path):
+    data = config_data()
+    data["services"][0].pop("color")
+    assert "color" not in load_config(write_config(tmp_path, data))["services"][0]
+    data["services"][0]["color"] = "#A1b2C3"
+    assert load_config(write_config(tmp_path, data))["services"][0]["color"] == "#A1b2C3"
+    for color in ("red", "#123", "#1234567", "#12345g", 123):
+        data["services"][0]["color"] = color
+        with pytest.raises(ValueError, match="color"):
+            load_config(write_config(tmp_path, data))
+
+
 def test_unknown_keys_and_invalid_service_fields_rejected(tmp_path):
     data = config_data() | {"secret_sentinel": "must-not-leak"}
     path = write_config(tmp_path, data)
