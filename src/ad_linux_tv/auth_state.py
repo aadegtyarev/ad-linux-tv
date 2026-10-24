@@ -7,33 +7,49 @@ from threading import RLock
 
 
 class RateLimiter:
-    def __init__(self, max_clients=1024):
+    def __init__(self, max_clients=1024, max_per_client=2, max_inflight=16):
         self.clients = OrderedDict()
         self.max_clients = max_clients
+        self.max_per_client = max_per_client
+        self.max_inflight = max_inflight
+        self.inflight = 0
         self.lock = RLock()
+
+    def reserve(self, client, now=None):
+        now = time.monotonic() if now is None else now
+        with self.lock:
+            attempts, until, active = self.clients.get(client, (0, 0, 0))
+            if until > now or active >= self.max_per_client or self.inflight >= self.max_inflight:
+                return False
+            if client not in self.clients and len(self.clients) >= self.max_clients:
+                stale = next((key for key, value in self.clients.items() if value[2] == 0), None)
+                if stale is None:
+                    return False
+                del self.clients[stale]
+            self.clients[client] = (attempts, until, active + 1)
+            self.clients.move_to_end(client)
+            self.inflight += 1
+            return True
+
+    def complete(self, client, success, now=None):
+        now = time.monotonic() if now is None else now
+        with self.lock:
+            attempts, until, active = self.clients.get(client, (0, 0, 0))
+            if active:
+                active -= 1
+                self.inflight -= 1
+            if success:
+                attempts, until = 0, 0
+            elif success is False and (not until or until <= now):
+                attempts += 1
+                until = now + min(900, 2 ** min(attempts, 9))
+            self.clients[client] = (attempts, until, active)
+            self.clients.move_to_end(client)
 
     def locked(self, client, now=None):
         now = time.monotonic() if now is None else now
         with self.lock:
-            _, until = self.clients.get(client, (0, 0))
-            if until <= now:
-                return False
-            self.clients.move_to_end(client)
-            return True
-
-    def fail(self, client, now=None):
-        now = time.monotonic() if now is None else now
-        with self.lock:
-            attempts, _ = self.clients.get(client, (0, 0))
-            delay = min(900, 2 ** min(attempts + 1, 9))
-            self.clients[client] = (attempts + 1, now + delay)
-            self.clients.move_to_end(client)
-            while len(self.clients) > self.max_clients:
-                self.clients.popitem(last=False)
-
-    def clear(self, client):
-        with self.lock:
-            self.clients.pop(client, None)
+            return self.clients.get(client, (0, 0, 0))[1] > now
 
 
 class Sessions:

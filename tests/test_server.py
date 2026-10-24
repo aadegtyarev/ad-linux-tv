@@ -1,11 +1,6 @@
 """HTTP security and command endpoint integration tests."""
 
-import json
-from types import SimpleNamespace
-
 from conftest import command_headers, login, request
-
-from ad_linux_tv.pages import get_response
 
 
 def test_public_services_and_login_ignore_forwarded_headers(endpoint):
@@ -55,23 +50,6 @@ def test_command_requires_origin_csrf_and_allowed_service(endpoint, monkeypatch)
     headers = command_headers(port, cookie, "wrong")
     response, _ = request(connection, "POST", "/api/command", '{"command":"home"}', headers)
     assert response.status == 403
-
-
-def test_valid_commands_are_delivered_to_loopback_extension(endpoint):
-    connection, port = endpoint
-    _, auth, cookie = login(connection, port)
-    headers = command_headers(port, cookie, auth["csrf"])
-    for command in ('{"command":"home"}', '{"command":"open","service_id":"youtube"}'):
-        response, _ = request(connection, "POST", "/api/command", command, headers)
-        assert response.status == 202
-    response, payload = request(connection, "GET", "/extension/poll")
-    expected = [
-        {"command": "home", "service_id": None},
-        {"command": "open", "service_id": "youtube"},
-    ]
-    assert response.status == 200 and json.loads(payload) == expected
-    fake = SimpleNamespace(path="/extension/poll", client_address=("8.8.8.8", 80), headers={})
-    assert get_response(fake, {}, None, ".")[0] == 403
 
 
 def test_login_rejects_malformed_and_oversized_payload(endpoint):

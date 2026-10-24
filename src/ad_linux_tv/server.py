@@ -1,16 +1,19 @@
 """HTTP application with LAN-authenticated phone control."""
 
 import json
+import socket
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
 
+from . import security
 from .auth_state import RateLimiter, Sessions
 from .control import CommandQueue
+from .http_errors import BodyTimeout
+from .http_io import DeadlineReader
 from .pages import get_response
 from .post_routes import handle_post
-from .security import loopback_host, private_source, remote_url
 
 
 def make_handler(config):
@@ -20,6 +23,11 @@ def make_handler(config):
     static = Path(__file__).parent / "static"
 
     class Handler(BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.rfile.close()
+            self.rfile = DeadlineReader(self.request, getattr(self.server, "read_timeout", 5.0))
+
         def log_message(self, *_args):
             pass
 
@@ -41,7 +49,15 @@ def make_handler(config):
             self.wfile.write(data)
 
         def private(self):
-            return private_source(self.client_address[0])
+            return security.private_source(self.client_address[0])
+
+        def valid_bridge(self):
+            expected_host = f"127.0.0.1:{self.server.server_port}"
+            return (
+                security.loopback_source(self.client_address[0])
+                and self.headers.get("Host", "") == expected_host
+                and self.headers.get(security.BRIDGE_HEADER) == security.BRIDGE_VALUE
+            )
 
         def authorized(self):
             cookie = SimpleCookie(self.headers.get("Cookie", ""))
@@ -54,8 +70,8 @@ def make_handler(config):
             return (
                 origin.scheme == "http"
                 and origin.netloc.lower() == host.lower()
-                and remote_url(host, self.server.server_port) is not None
-                and (not local_ui or loopback_host(host))
+                and security.remote_url(host, self.server.server_port) is not None
+                and (not local_ui or security.loopback_host(host))
             )
 
         def read_payload(self):
@@ -64,7 +80,11 @@ def make_handler(config):
             length = int(self.headers.get("Content-Length", "-1"))
             if not 0 <= length <= 2048:
                 raise OverflowError("request body exceeds limit")
-            return json.loads(self.rfile.read(length))
+            try:
+                return json.loads(self.rfile.read(length))
+            except socket.timeout as exc:
+                self.close_connection = True
+                raise BodyTimeout from exc
 
         def do_GET(self):
             status, body, kind = get_response(self, config, queue, static)
