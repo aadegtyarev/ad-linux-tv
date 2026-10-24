@@ -9,7 +9,8 @@ The `/remote` web UI on a phone submits browser commands to the TV's Python HTTP
 - `/api/status` reports bridge online, pending count and latest failed/uncertain result. UI polls each second, presents accepted/failure/connection-loss messages and forces relogin after 401/403.
 
 ## Security and privacy
-- Access is limited to private/loopback source addresses; Internet access and forwarded-IP trust are not supported. Login has retry limiting. Remote POSTs require matching HTTP Origin, valid session and CSRF token. Server validates Host against local service address to reduce DNS rebinding.
+- Private/loopback source checks apply to `POST /api/login` and command POSTs, not to GET requests. Publicly reachable GET surfaces include `/`, `/remote`, `/api/services`, `/api/status`, `/health`, `/api/qr`, and static UI assets: any network source able to reach the bound listener can request them. These return UI, the configured service catalogue/advertised address, QR data, or operational status; they do not return the PIN or session/CSRF secrets.
+- Phone login and command POSTs require a private/loopback client source. Phone POSTs also require HTTP Origin to equal Host, a syntactically valid Host, and (for commands) a valid session and CSRF token. This does not verify that the Host address belongs to the server. For loopback local UI POSTs, Host must parse as localhost or a loopback IP. Firefox bridge poll/ack additionally require loopback source, exact `127.0.0.1:<listener-port>` Host, and the bridge header/value.
 - No TLS: use only a trusted private LAN; do not port-forward. Session cookie deliberately lacks Secure for LAN HTTP. PIN is not returned; config contains a salted PBKDF2 verifier. Client status uses fixed outcome/reason codes and excludes URLs, PINs, and exception text. HTTP access logs are suppressed.
 - Local TV launcher command submission is intentionally separate from phone authentication.
 
