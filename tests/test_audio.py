@@ -157,6 +157,19 @@ def test_browser_streams_return_to_neutral_without_changing_output(monkeypatch):
     assert calls == [("set-sink-input-volume", "4", "100%")]
 
 
+def test_non_browser_stream_blocks_sleep(monkeypatch):
+    import json
+
+    streams = [
+        {"properties": {"application.process.binary": "firefox"}},
+        {"properties": {"application.name": "Music Player"}},
+    ]
+    monkeypatch.setattr(audio, "_pactl", lambda *_args: json.dumps(streams))
+    assert audio.non_browser_audio_present() is True
+    streams.pop()
+    assert audio.non_browser_audio_present() is False
+
+
 def test_audio_sample_requires_sound_and_uses_default_sink(monkeypatch):
     calls = []
     monkeypatch.setattr(audio, "get_state", lambda: {"muted": False, "volume": 60})

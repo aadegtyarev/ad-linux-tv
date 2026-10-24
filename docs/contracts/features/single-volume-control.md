@@ -10,7 +10,7 @@ The selected audio output is the one user volume control on the phone, TV System
 
 ## Scenarios and edges
 
-- A new Firefox stream starts at 100% and a playing managed HTML media element is normalized to 100% after a service page loads or starts playing. Changing the selected output keeps the user's output volume choice.
+- A new Firefox stream is normalized to 100% within two seconds; a playing managed HTML media element is normalized to 100% after a service page loads or starts playing. Changing the selected output keeps the user's output volume choice.
 - The site may mute its own player, use WebAudio, or deny injection in a frame. The app does not bypass those site rules; the output slider remains the normal control, and sound errors stay visible.
 - Fixing an internal stage must never force the selected output above the user's setting or affect KDE's user session.
 

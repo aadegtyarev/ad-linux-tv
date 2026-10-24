@@ -1,6 +1,7 @@
 """Display timer safety and authenticated control."""
 
 import json
+from threading import Event, Thread
 
 from conftest import command_headers, login, request
 
@@ -40,6 +41,7 @@ def test_timer_pauses_before_output_off_then_wakes_without_resuming():
     timer = DisplaySleepTimer(
         queue,
         power=lambda enabled: power_calls.append(enabled) or True,
+        other_audio=lambda: False,
         clock=lambda: 100,
         schedule=Scheduled,
     )
@@ -60,6 +62,7 @@ def test_timer_preserves_lit_output_if_playback_cannot_be_paused():
     timer = DisplaySleepTimer(
         queue,
         power=lambda enabled: power_calls.append(enabled) or True,
+        other_audio=lambda: False,
         clock=lambda: 100,
         schedule=Scheduled,
     )
@@ -67,12 +70,19 @@ def test_timer_preserves_lit_output_if_playback_cannot_be_paused():
     timer.job.callback(*timer.job.args)
     assert power_calls == []
     assert timer.status()["error"] == "pause_unavailable"
+    queue.outcome = "completed"
+    timer.other_audio = lambda: True
+    timer.set(15)
+    timer.job.callback(*timer.job.args)
+    assert power_calls == []
+    assert timer.status()["error"] == "audio_active"
+    queue.outcome = "failed"
     queue.reason = "no_media"
     timer.browser_audio = lambda: True
     timer.set(30)
     timer.job.callback(*timer.job.args)
     assert power_calls == []
-    assert timer.status()["error"] == "pause_unavailable"
+    assert timer.status()["error"] == "audio_active"
 
 
 def test_cancelled_deadline_cannot_turn_output_off():
@@ -80,6 +90,7 @@ def test_cancelled_deadline_cannot_turn_output_off():
     timer = DisplaySleepTimer(
         PauseQueue(),
         power=lambda enabled: power_calls.append(enabled) or True,
+        other_audio=lambda: False,
         clock=lambda: 100,
         schedule=Scheduled,
     )
@@ -90,6 +101,93 @@ def test_cancelled_deadline_cannot_turn_output_off():
     old_job.callback(*old_job.args)
     assert power_calls == []
     assert timer.status()["minutes"] == 0
+
+
+def test_wake_during_output_transition_restores_image():
+    off_started = Event()
+    allow_off_to_finish = Event()
+    power_calls = []
+
+    def power(enabled):
+        power_calls.append(enabled)
+        if not enabled:
+            off_started.set()
+            assert allow_off_to_finish.wait(2)
+        return True
+
+    timer = DisplaySleepTimer(
+        PauseQueue(),
+        power=power,
+        other_audio=lambda: False,
+        clock=lambda: 100,
+        schedule=Scheduled,
+    )
+    timer.set(15)
+    job = timer.job
+    expiry = Thread(target=lambda: job.callback(*job.args))
+    expiry.start()
+    assert off_started.wait(2)
+    waking = Thread(target=timer.wake)
+    waking.start()
+    allow_off_to_finish.set()
+    expiry.join(timeout=2)
+    waking.join(timeout=2)
+    assert not expiry.is_alive() and not waking.is_alive()
+    assert power_calls == [False, True]
+    assert timer.status()["phase"] == "idle"
+
+
+def test_phone_action_during_pause_cancels_pending_screen_off():
+    waiting = Event()
+    release = Event()
+    power_calls = []
+
+    class SlowPause(PauseQueue):
+        def result(self, command_id):
+            waiting.set()
+            assert release.wait(2)
+            return super().result(command_id)
+
+    timer = DisplaySleepTimer(
+        SlowPause(),
+        power=lambda enabled: power_calls.append(enabled) or True,
+        other_audio=lambda: False,
+        clock=lambda: 100,
+        schedule=Scheduled,
+    )
+    timer.set(15)
+    job = timer.job
+    expiry = Thread(target=lambda: job.callback(*job.args))
+    expiry.start()
+    assert waiting.wait(2)
+    assert timer.status()["phase"] == "pausing"
+    assert timer.wake()
+    release.set()
+    expiry.join(timeout=2)
+    assert not expiry.is_alive()
+    assert power_calls == []
+    assert timer.status()["phase"] == "idle"
+
+
+def test_uncertain_power_off_is_rolled_back_before_reporting_failure():
+    power_calls = []
+
+    def power(enabled):
+        power_calls.append(enabled)
+        return enabled
+
+    timer = DisplaySleepTimer(
+        PauseQueue(),
+        power=power,
+        other_audio=lambda: False,
+        clock=lambda: 100,
+        schedule=Scheduled,
+    )
+    timer.set(15)
+    timer.job.callback(*timer.job.args)
+    assert power_calls == [False, True]
+    assert timer.status()["asleep"] is False
+    assert timer.status()["error"] == "display_unavailable"
 
 
 def test_display_timer_http_requires_kiosk_and_phone_csrf(endpoint, monkeypatch):

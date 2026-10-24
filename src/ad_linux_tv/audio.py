@@ -35,12 +35,24 @@ def _sinks():
 def _browser_inputs():
     try:
         inputs = json.loads(_pactl("-f", "json", "list", "sink-inputs"))
-        return [
-            item
-            for item in inputs
-            if item.get("properties", {}).get("application.process.binary") == "firefox"
-            or item.get("properties", {}).get("application.name") == "Firefox"
-        ]
+        return [item for item in inputs if _is_firefox(item)]
+    except (TypeError, ValueError, KeyError) as exc:
+        raise AudioUnavailable from exc
+
+
+def _is_firefox(item):
+    properties = item.get("properties", {})
+    return (
+        properties.get("application.process.binary") == "firefox"
+        or properties.get("application.name") == "Firefox"
+    )
+
+
+def non_browser_audio_present():
+    """Be conservative if another application has an output stream."""
+    try:
+        inputs = json.loads(_pactl("-f", "json", "list", "sink-inputs"))
+        return any(not _is_firefox(item) for item in inputs)
     except (TypeError, ValueError, KeyError) as exc:
         raise AudioUnavailable from exc
 

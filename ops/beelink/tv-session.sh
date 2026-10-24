@@ -32,5 +32,5 @@ osk=$!
   done
 ) &
 bar=$!
-trap 'kill "$osk" "$bar" "$idle" 2>/dev/null || true; wait "$osk" "$bar" "$idle" 2>/dev/null || true' EXIT
+trap 'kill "$osk" "$bar" "$idle" 2>/dev/null || true; wait "$osk" "$bar" "$idle" 2>/dev/null || true; /usr/bin/wlopm --on "*" >/dev/null 2>&1 || true' EXIT
 /home/ad-tv/.local/share/ad-linux-tv/run.sh /home/ad-tv/.config/ad-linux-tv/config.yaml

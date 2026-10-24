@@ -93,7 +93,7 @@ function createOwnedTabs(api, fetcher = fetch) {
       if (!found) throw new PermanentCommandError("no_media");
       if (command === "player_pause") {
         await new Promise(resolve => setTimeout(resolve, 700));
-        if ((await api.tabs.get(active.id)).audible === true)
+        if ((await api.tabs.query({audible:true})).some(tab => tab.audible === true))
           throw new PermanentCommandError("audio_active");
       }
       return {volume:found.result};

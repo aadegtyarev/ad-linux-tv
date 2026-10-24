@@ -114,8 +114,12 @@ function showDisplayTimer(state) {
     String(Number(button.dataset.timer) === state.minutes && !state.asleep)));
   if (state.error === "pause_unavailable")
     tvTimerStatus.textContent = "Не удалось остановить воспроизведение. Экран оставлен включённым.";
+  else if (state.error === "audio_active")
+    tvTimerStatus.textContent = "Другой звук ещё играет. Экран оставлен включённым.";
   else if (state.error === "display_unavailable")
     tvTimerStatus.textContent = "Не удалось погасить или включить HDMI. Проверьте монитор.";
+  else if (state.phase === "pausing")
+    tvTimerStatus.textContent = "Останавливаем воспроизведение перед выключением экрана…";
   else if (state.asleep) tvTimerStatus.textContent = "Экран погашен. Коснитесь его или используйте пульт.";
   else if (state.remaining_seconds > 0)
     tvTimerStatus.textContent = `До отключения: ${Math.ceil(state.remaining_seconds / 60)} мин`;

@@ -37,6 +37,7 @@ def _set_output_power(enabled):
         subprocess.TimeoutExpired,
         ValueError,
         KeyError,
+        TypeError,
     ):
         return False
 
@@ -49,6 +50,13 @@ def _browser_audio_active():
         return True
 
 
+def _other_audio_active():
+    try:
+        return audio.non_browser_audio_present()
+    except audio.AudioUnavailable:
+        return True
+
+
 class DisplaySleepTimer:
     def __init__(
         self,
@@ -56,18 +64,21 @@ class DisplaySleepTimer:
         *,
         power=_set_output_power,
         browser_audio=_browser_audio_active,
+        other_audio=_other_audio_active,
         clock=time.monotonic,
         schedule=Timer,
     ):
         self.queue = queue
         self.power = power
         self.browser_audio = browser_audio
+        self.other_audio = other_audio
         self.clock = clock
         self.schedule = schedule
         self.lock = Lock()
         self.deadline = None
         self.minutes = 0
         self.asleep = False
+        self.expiring = False
         self.error = None
         self.generation = 0
         self.job = None
@@ -83,21 +94,33 @@ class DisplaySleepTimer:
             "remaining_seconds": remaining,
             "asleep": self.asleep,
             "error": self.error,
-            "phase": "countdown" if self.deadline else "asleep" if self.asleep else "idle",
+            "phase": (
+                "countdown"
+                if self.deadline
+                else "asleep"
+                if self.asleep
+                else "pausing"
+                if self.expiring
+                else "idle"
+            ),
         }
 
     def set(self, minutes):
         if type(minutes) is not int or minutes not in PRESETS:
             raise ValueError("invalid display timer preset")
-        if self.asleep and not self.wake():
-            return self.status()
         with self.lock:
+            if self.asleep:
+                if not self.power(True):
+                    self.error = "display_unavailable"
+                    return self._status()
+                self.asleep = False
             self.generation += 1
             if self.job is not None:
                 self.job.cancel()
             self.job = None
             self.minutes = minutes
             self.deadline = self.clock() + minutes * 60 if minutes else None
+            self.expiring = False
             self.error = None
             if minutes:
                 generation = self.generation
@@ -108,7 +131,7 @@ class DisplaySleepTimer:
 
     def wake(self):
         with self.lock:
-            if not self.asleep:
+            if not self.asleep and not self.expiring:
                 return True
             self.generation += 1
             if self.job is not None:
@@ -116,31 +139,29 @@ class DisplaySleepTimer:
             self.job = None
             self.deadline = None
             self.minutes = 0
-            asleep = self.asleep
-        if asleep and not self.power(True):
-            with self.lock:
+            self.expiring = False
+            if self.asleep and not self.power(True):
                 self.error = "display_unavailable"
-            return False
-        with self.lock:
+                return False
             self.asleep = False
             self.error = None
-        return True
+            return True
 
     def _pause_playback(self):
         try:
             command_id = self.queue.push("player_pause")
         except QueueFullError:
-            return False
+            return "pause_unavailable"
         for _ in range(40):
             result = self.queue.result(command_id)
             if result:
                 if result["outcome"] == "completed":
-                    return True
+                    return "audio_active" if self.other_audio() else None
                 if result["reason"] == "no_media":
-                    return not self.browser_audio()
-                return False
+                    return "audio_active" if self.browser_audio() or self.other_audio() else None
+                return "pause_unavailable"
             time.sleep(0.2)
-        return False
+        return "pause_unavailable"
 
     def _expire(self, generation):
         with self.lock:
@@ -148,21 +169,25 @@ class DisplaySleepTimer:
                 return
             self.deadline = None
             self.job = None
-        if not self._pause_playback():
+            self.expiring = True
+        pause_error = self._pause_playback()
+        if pause_error is not None:
             with self.lock:
                 if generation == self.generation:
                     self.minutes = 0
-                    self.error = "pause_unavailable"
+                    self.expiring = False
+                    self.error = pause_error
             return
         with self.lock:
             if generation != self.generation:
                 return
-        powered_off = self.power(False)
-        with self.lock:
-            if generation != self.generation:
-                if powered_off:
-                    self.power(True)
-                return
+            powered_off = self.power(False)
             self.minutes = 0
-            self.asleep = powered_off
-            self.error = None if powered_off else "display_unavailable"
+            self.expiring = False
+            if powered_off:
+                self.asleep = True
+                self.error = None
+            else:
+                restored = self.power(True)
+                self.asleep = not restored
+                self.error = "display_unavailable"

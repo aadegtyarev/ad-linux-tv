@@ -112,7 +112,7 @@ def handle_post(handler, config, queue, sessions, failures, display_timer):
             or os.environ.get("AD_LINUX_TV_KIOSK") != "1"
         ):
             return handler.send(403, "{}")
-        if display_timer.status()["asleep"] and not display_timer.wake():
+        if display_timer.status()["phase"] in ("asleep", "pausing") and not display_timer.wake():
             return handler.send(503, "{}")
         return handle_input(handler) if path == "/api/input" else handle_pointer(handler)
     if path == "/api/audio":
@@ -128,7 +128,7 @@ def handle_post(handler, config, queue, sessions, failures, display_timer):
             )
         ):
             return handler.send(403, "{}")
-        if display_timer.status()["asleep"] and not display_timer.wake():
+        if display_timer.status()["phase"] in ("asleep", "pausing") and not display_timer.wake():
             return handler.send(503, "{}")
         try:
             result = audio.apply(handler.read_payload())
@@ -143,7 +143,7 @@ def handle_post(handler, config, queue, sessions, failures, display_timer):
         return handler.send(200, json.dumps(result))
     if not local_ui and not sessions.csrf_valid(token, handler.headers.get("X-CSRF-Token")):
         return handler.send(403, "{}")
-    if display_timer.status()["asleep"] and not display_timer.wake():
+    if display_timer.status()["phase"] in ("asleep", "pausing") and not display_timer.wake():
         return handler.send(503, "{}")
     try:
         data = handler.read_payload()

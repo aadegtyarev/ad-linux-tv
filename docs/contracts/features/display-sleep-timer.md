@@ -12,7 +12,7 @@ The phone Menu and TV System offer Off, 15, 30, 60, 90 and 120-minute presets, r
 
 - A new preset replaces the old deadline; Off cancels it. The remaining time is server-owned, so leaving or reloading the browser page does not lose it.
 - A normal phone command wakes a dark screen before acting. Touch activity also wakes it. Wake never resumes playback automatically.
-- The bridge may report no playing HTML media, or a restricted site may prevent pausing. In that case the timer reports a clear limitation and must not leave audible playback behind a dark screen; screen-off is withheld if playback cannot be safely paused.
+- The bridge may report no playing HTML media, or a restricted site may prevent pausing. Other Firefox tabs or another TV-session app may also remain audible. In these cases the timer reports a clear limitation and must not leave audible playback behind a dark screen; screen-off is withheld if playback cannot be safely paused or checked.
 - A TV session restart cancels the timer and restores output power. The countdown need not survive machine reboot.
 - An offline bridge, unavailable Wayland output-power protocol, or failed pause leaves the screen on and reports an error.
 

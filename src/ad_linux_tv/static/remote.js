@@ -106,8 +106,12 @@ function showPhoneTimer(state) {
     String(Number(button.dataset.phoneTimer) === state.minutes && !state.asleep)));
   if (state.error === "pause_unavailable")
     phoneTimerStatus.textContent = "Не удалось поставить видео на паузу. Экран остался включённым.";
+  else if (state.error === "audio_active")
+    phoneTimerStatus.textContent = "Другой звук ещё играет. Экран остался включённым.";
   else if (state.error === "display_unavailable")
     phoneTimerStatus.textContent = "Не удалось изменить питание HDMI. Проверьте монитор.";
+  else if (state.phase === "pausing")
+    phoneTimerStatus.textContent = "Останавливаем воспроизведение перед выключением экрана…";
   else if (state.asleep) phoneTimerStatus.textContent = "Экран погашен. Коснитесь его или нажмите кнопку пульта.";
   else if (state.remaining_seconds > 0)
     phoneTimerStatus.textContent = `До отключения: ${Math.ceil(state.remaining_seconds / 60)} мин`;
