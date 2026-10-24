@@ -85,7 +85,8 @@ class CommandQueue:
                 }
                 while len(self.results) > MAX_RESULTS:
                     self.results.popitem(last=False)
-            if outcome != "completed":
+            # No playing media is a normal discovery result, not a global remote failure.
+            if outcome != "completed" and not (player and reason == "no_media"):
                 self.last_command_failure = {
                     "outcome": outcome,
                     "reason": reason,
