@@ -18,6 +18,8 @@ Environment=AD_LINUX_TV_PIN_FILE=/home/ad-tv/.config/ad-linux-tv/remote-pin.txt
 Environment=AD_LINUX_TV_AUDIO_FILE=/home/ad-tv/.config/ad-linux-tv/audio-output.txt
 Environment=XDG_SESSION_TYPE=wayland
 Environment=XDG_CURRENT_DESKTOP=labwc
+Environment=XCURSOR_THEME=Oxygen_White
+Environment=XCURSOR_SIZE=72
 Environment=MOZ_ENABLE_WAYLAND=1
 Environment=AD_LINUX_TV_WINDOWED=1
 ExecStartPre=+/usr/bin/chvt 1

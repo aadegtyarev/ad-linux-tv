@@ -14,7 +14,7 @@ preview() {
   printf 'Config: %s\n' /home/ad-tv/.config/ad-linux-tv/config.yaml
   printf 'Firefox profile/XPI: %s\n' /home/ad-tv/snap/firefox/common
   printf 'Optional TV Firefox proxy: %s\n' 127.0.0.1:1081
-  printf 'Compositor/input/audio packages: %s\n' 'labwc squeekboard wtype wlrctl python3-gi gir1.2-gtklayershell-0.1 pulseaudio-utils'
+  printf 'Compositor/input/audio packages: %s\n' 'labwc squeekboard wtype wlrctl oxygen-cursor-theme python3-gi gir1.2-gtklayershell-0.1 pulseaudio-utils'
   printf 'Compositor config: %s\n' /etc/ad-linux-tv/labwc/rc.xml
   printf 'Touch controls: %s\n' /usr/local/libexec/ad-linux-tv/touch-overlay.py
   printf 'Touch keyboard layouts: %s\n' /home/ad-tv/.local/share/squeekboard/keyboards
@@ -53,7 +53,7 @@ if id -u ad-tv >/dev/null 2>&1; then
 else
   useradd --create-home --home-dir /home/ad-tv --shell /usr/sbin/nologin --user-group ad-tv
 fi
-apt-get install -y labwc squeekboard wtype wlrctl python3-gi gir1.2-gtklayershell-0.1 pulseaudio-utils
+apt-get install -y labwc squeekboard wtype wlrctl oxygen-cursor-theme python3-gi gir1.2-gtklayershell-0.1 pulseaudio-utils
 if ! "$ROOT/install-keyboard-layouts.sh" --install; then
   echo 'Custom keyboard labels unavailable; stock Squeekboard remains usable.' >&2
 fi
