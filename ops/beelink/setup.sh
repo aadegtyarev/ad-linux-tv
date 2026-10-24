@@ -66,7 +66,7 @@ else
   echo 'Local Xray proxy unavailable; run configure-firefox.sh --configure when it is ready.'
 fi
 install -d -m 755 /usr/local/libexec/ad-linux-tv
-install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" "$ROOT/tv-session.sh" "$ROOT/touch-controls.sh" "$ROOT/select-audio.sh" "$ROOT/touch-overlay.py" /usr/local/libexec/ad-linux-tv/
+install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" "$ROOT/tv-session.sh" "$ROOT/touch-controls.sh" "$ROOT/select-audio.sh" "$ROOT/touch-overlay.py" "$ROOT/cycle-keyboard-language.sh" /usr/local/libexec/ad-linux-tv/
 install -d -m 755 /etc/ad-linux-tv/labwc
 install -m 644 "$ROOT/labwc/rc.xml" /etc/ad-linux-tv/labwc/rc.xml
 install -m 644 "$ROOT/ad-linux-tv-kiosk.service" "$ROOT/ad-linux-tv-boot.service" "$ROOT/ad-linux-tv-switch-kde.service" /etc/systemd/system/

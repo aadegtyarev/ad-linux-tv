@@ -113,6 +113,20 @@ test("System audio controls load state and submit selected volume", async () => 
   assert.equal(volumes.at(-1), 95);
 });
 
+test("System exposes Firefox stream volume when playback is active", async () => {
+  const ui = launcher({hostname:"127.0.0.1"});
+  ui.audio = {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:75};
+  ui.elements["#system-button"].click();
+  await ready();
+  assert.equal(ui.elements["#browser-volume"].disabled, false);
+  assert.equal(ui.elements["#browser-volume-value"].textContent, "75%");
+  ui.elements["#browser-volume"].value = "60";
+  ui.elements["#browser-volume"].onchange();
+  await ready();
+  assert.equal(ui.calls.some(call => call.url === "/api/audio" &&
+    JSON.parse(call.options?.body || "{}").browser_volume === 60), true);
+});
+
 test("LAN address change updates both shown address and QR image", async () => {
   const ui = launcher();
   await ready();

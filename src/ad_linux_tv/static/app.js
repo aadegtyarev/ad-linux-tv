@@ -8,10 +8,11 @@ const confirmation = document.querySelector("#confirm-kde");
 const systemStatus = document.querySelector("#system-status");
 const audioOutput = document.querySelector("#audio-output");
 const audioVolume = document.querySelector("#audio-volume");
+const browserVolume = document.querySelector("#browser-volume");
 const audioStatus = document.querySelector("#audio-status");
 const audioMute = document.querySelector("#audio-mute");
 const settingsActions = [document.querySelector("#settings-back"), audioOutput, audioVolume,
-  audioMute, document.querySelector("#audio-refresh"), document.querySelector("#open-kde")];
+  browserVolume, audioMute, document.querySelector("#audio-refresh"), document.querySelector("#open-kde")];
 const confirmActions = [document.querySelector("#cancel-kde"), document.querySelector("#confirm-kde-yes")];
 let currentRemoteAddress = "";
 
@@ -30,6 +31,11 @@ function showAudio(state) {
   audioOutput.value = state.selected;
   audioVolume.value = state.volume;
   document.querySelector("#audio-volume-value").textContent = `${state.volume}%`;
+  const browserActive = state.browser_volume != null;
+  browserVolume.disabled = !browserActive;
+  if (browserActive) browserVolume.value = state.browser_volume;
+  document.querySelector("#browser-volume-value").textContent = browserActive ? `${state.browser_volume}%` : "—";
+  document.querySelector("#browser-volume-hint").hidden = browserActive;
   audioMute.dataset.muted = String(state.muted);
   audioMute.textContent = state.muted ? "Включить звук" : "Выключить звук";
   audioStatus.textContent = "";
@@ -63,6 +69,10 @@ audioVolume.oninput = () => {
   document.querySelector("#audio-volume-value").textContent = `${audioVolume.value}%`;
 };
 audioVolume.onchange = () => changeAudio({volume: Number(audioVolume.value)});
+browserVolume.oninput = () => {
+  document.querySelector("#browser-volume-value").textContent = `${browserVolume.value}%`;
+};
+browserVolume.onchange = () => changeAudio({browser_volume: Number(browserVolume.value)});
 audioMute.onclick = () => changeAudio({muted: audioMute.dataset.muted !== "true"});
 
 async function loadPairingPin() {
@@ -99,7 +109,7 @@ function closeSettings() {
 }
 
 settingsActions[0].onclick = closeSettings;
-settingsActions[5].onclick = () => {
+settingsActions[6].onclick = () => {
   confirmation.hidden = false;
   confirmActions[0].focus();
 };
@@ -134,19 +144,21 @@ document.addEventListener("keydown", event => {
   event.preventDefault();
   const actions = confirmation.hidden ? settingsActions : confirmActions;
   const index = actions.indexOf(document.activeElement);
-  if (confirmation.hidden && event.key === "ArrowRight" && document.activeElement === audioVolume) {
-    audioVolume.value = Math.min(100, Number(audioVolume.value) + 5);
-    audioVolume.onchange();
-  } else if (confirmation.hidden && event.key === "ArrowLeft" && document.activeElement === audioVolume) {
-    audioVolume.value = Math.max(0, Number(audioVolume.value) - 5);
-    audioVolume.onchange();
+  if (confirmation.hidden && (event.key === "ArrowRight" || event.key === "ArrowLeft") &&
+      [audioVolume, browserVolume].includes(document.activeElement)) {
+    const slider = document.activeElement;
+    if (slider.disabled) return;
+    slider.value = Math.min(100, Math.max(0, Number(slider.value) + (event.key === "ArrowRight" ? 5 : -5)));
+    slider.onchange();
   } else if (confirmation.hidden && (event.key === "ArrowLeft" || event.key === "ArrowRight") && document.activeElement === audioOutput && audioOutput.options.length) {
     const change = event.key === "ArrowRight" ? 1 : -1;
     audioOutput.selectedIndex = (audioOutput.selectedIndex + change + audioOutput.options.length) % audioOutput.options.length;
     audioOutput.onchange();
   } else {
     const change = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
-    actions[(index + change + actions.length) % actions.length].focus();
+    let target = (index + change + actions.length) % actions.length;
+    while (actions[target].disabled) target = (target + change + actions.length) % actions.length;
+    actions[target].focus();
   }
 });
 

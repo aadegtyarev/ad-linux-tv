@@ -36,17 +36,19 @@ function launcher({hostname = "192.168.1.4"} = {}) {
   doc.documentElement = new Element("html");
   doc.activeElement = doc.body;
   const elements = Object.fromEntries(
-    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#pairing-pin", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status", "#audio-mute", "#audio-refresh"]
+    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#pairing-pin", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes", "#audio-output", "#audio-volume", "#audio-volume-value", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#audio-status", "#audio-mute", "#audio-refresh"]
       .map(id => [id, new Element(id)])
   );
   elements["#settings"].hidden = true;
   elements["#confirm-kde"].hidden = true;
   elements["#pairing-pin"].hidden = true;
+  elements["#browser-volume"].disabled = true;
   doc.querySelector = id => elements[id];
   doc.createElement = name => new Element(name);
   let serviceData = Array.from({length:25}, (_, id) => ({id:`svc-${id}`, name:`Service ${id}`}));
   let remoteAddress = "http://192.168.1.4:8765/remote";
   let bridgeData = {extension_online:true, pending_commands:0, last_command_failure:null};
+  let audioData = {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:null};
   let timer;
   const context = {
     document:doc, innerWidth:1920, location:{hostname},
@@ -57,7 +59,7 @@ function launcher({hostname = "192.168.1.4"} = {}) {
       return {ok:true, status:200, json:async () => url === "/api/services"
         ? {services:serviceData, page_size:12, remote_address:remoteAddress}
         : url === "/api/local-pin" ? {pin:"1234"}
-          : url === "/api/audio" ? {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false}
+          : url === "/api/audio" ? audioData
             : bridgeData};
     },
   };
@@ -72,6 +74,7 @@ function launcher({hostname = "192.168.1.4"} = {}) {
     get remoteAddress() { return remoteAddress; },
     set remoteAddress(value) { remoteAddress = value; },
     set status(value) { bridgeData = value; },
+    set audio(value) { audioData = value; },
     refresh() { timer(); },
   };
 }

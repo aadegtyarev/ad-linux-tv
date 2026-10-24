@@ -35,6 +35,9 @@
       <label for="audio-output">Выход звука</label><div class="system-audio-row"><select id="audio-output"></select><button id="audio-refresh">Обновить список</button></div>
       <label for="audio-volume">Громкость выхода: <span id="audio-volume-value">100%</span></label>
       <div class="system-audio-row"><input id="audio-volume" type="range" min="0" max="100" step="5" value="100"><button id="audio-mute">Выключить звук</button></div>
+      <label for="browser-volume">Громкость Firefox: <span id="browser-volume-value">—</span></label>
+      <div class="system-audio-row"><input id="browser-volume" type="range" min="0" max="100" step="5" value="100" disabled></div>
+      <p id="browser-volume-hint">Начните воспроизведение в Firefox, затем обновите список.</p>
     </div>
     <div class="settings-actions"><button id="open-kde">Выйти из ТВ-режима → KDE</button></div>
     <div id="confirm-kde" hidden><p>Закрыть ТВ-режим и открыть KDE?</p><button id="cancel-kde">Отмена</button><button id="confirm-kde-yes">Да, открыть KDE</button></div>
