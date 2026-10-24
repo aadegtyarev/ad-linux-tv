@@ -65,6 +65,8 @@ test("settings is reachable by remote OK and KDE requires a second confirmation"
   ui.services = [{id:"svc-0", name:"Service 0"}];
   await ready();
   assert.equal(ui.elements[".pagination"].hidden, true);
+  assert.equal(ui.elements["#tiles"].children.length, 1);
+  assert.equal(ui.elements["#system-button"].dataset.settings, "true");
   ui.doc.dispatchEvent({type:"keydown", key:"ArrowRight", preventDefault(){}});
   assert.equal(ui.doc.activeElement.dataset.settings, "true");
   ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
@@ -78,4 +80,15 @@ test("settings is reachable by remote OK and KDE requires a second confirmation"
   ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
   await ready();
   assert.equal(ui.calls.filter(call => call.url === "/api/system/kde").length, 1);
+});
+
+test("LAN address change updates both shown address and QR image", async () => {
+  const ui = launcher();
+  await ready();
+  assert.match(ui.elements["#qr"].src, /192\.168\.1\.4/);
+  ui.remoteAddress = "http://192.168.1.111:8765/remote";
+  ui.refresh();
+  await ready();
+  assert.equal(ui.elements["#address"].textContent, ui.remoteAddress);
+  assert.match(ui.elements["#qr"].src, /192\.168\.1\.111/);
 });

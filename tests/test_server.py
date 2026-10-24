@@ -1,5 +1,6 @@
 """HTTP security and command endpoint integration tests."""
 
+import json
 from subprocess import CompletedProcess
 
 from conftest import command_headers, login, request
@@ -113,3 +114,37 @@ def test_kde_switch_requires_kiosk_loopback_and_exact_host(endpoint, monkeypatch
     response, _ = request(connection, "POST", "/api/system/kde", "{}", headers)
     assert response.status == 403
     assert len(calls) == 1
+
+
+def test_phone_text_input_requires_auth_and_never_returns_text(endpoint, monkeypatch):
+    import ad_linux_tv.post_routes as post_routes
+
+    connection, port = endpoint
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return CompletedProcess(command, 0)
+
+    monkeypatch.setattr(post_routes.subprocess, "run", run)
+    origin = {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"}
+    response, _ = request(connection, "POST", "/api/input", json.dumps({"text": "секрет"}), origin)
+    assert response.status == 403
+    _, auth, cookie = login(connection, port)
+    headers = command_headers(port, cookie, auth["csrf"])
+    response, payload = request(
+        connection, "POST", "/api/input", json.dumps({"text": "Поиск 42"}), headers
+    )
+    assert response.status == 200 and b"\xd0\x9f" not in payload
+    assert calls[-1][0] == ["/usr/bin/wtype", "-"]
+    assert calls[-1][1]["input"] == "Поиск 42".encode()
+    response, _ = request(connection, "POST", "/api/input", '{"key":"address"}', headers)
+    assert response.status == 200
+    assert calls[-1][0] == ["/usr/bin/wtype", "-M", "ctrl", "-k", "l"]
+    response, _ = request(connection, "POST", "/api/input", '{"text":"bad\\ntext"}', headers)
+    assert response.status == 400
+    assert len(calls) == 2
+    headers["X-CSRF-Token"] = "wrong"
+    response, _ = request(connection, "POST", "/api/input", '{"key":"enter"}', headers)
+    assert response.status == 403

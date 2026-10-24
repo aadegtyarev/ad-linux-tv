@@ -2,12 +2,12 @@
 
 1. Review `./install.sh --dry-run`; it previews `~/.local/share/ad-linux-tv`, `~/.config/ad-linux-tv/config.yaml`, `~/snap/firefox/common/ad-linux-tv-profile`, and, by default, `~/.config/autostart/ad-linux-tv.desktop`. Use `--no-autostart` for a separately managed TV session.
 2. Run `./install.sh --install` with a TTY for PIN entry. It uses a user venv and silently prompts for the PIN. Existing config is preserved. The persistent Firefox Snap profile is `~/snap/firefox/common/ad-linux-tv-profile`; no sudo or profile-internal edits are performed. A graphical session is required when opening a signed XPI for confirmation.
-3. Firefox Snap support and persistent profile behavior must be checked on the target Kubuntu system. The bridge extension is not signed yet: the release gate requires AMO unlisted signing and publishing the XPI plus SHA256. Once published, provide `AD_LINUX_TV_XPI_URL` and `AD_LINUX_TV_XPI_SHA256` to install; the installer verifies the digest, saves it in `~/snap/firefox/common`, and opens the XPI for explicit Firefox confirmation. No unattended registration.
+3. Firefox Snap support and persistent profile behavior must be checked on each target Kubuntu system. An AMO-signed XPI was installed interactively on the Beelink target and survived Firefox restarts. For a new target or update, provide an HTTPS URL and SHA256 as `AD_LINUX_TV_XPI_URL` and `AD_LINUX_TV_XPI_SHA256`; the installer verifies the digest, saves it in `~/snap/firefox/common`, and opens the XPI for explicit Firefox confirmation. The public release asset is still pending. No unattended registration.
 4. Update by backing up config and rerunning install. `./uninstall.sh --dry-run` previews removal; `--remove` removes app/autostart and preserves config plus the Firefox Snap profile/XPI.
 
 Manual installed start: `~/.local/share/ad-linux-tv/run.sh ~/.config/ad-linux-tv/config.yaml`; direct server CLI: `~/.local/share/ad-linux-tv/venv/bin/ad-linux-tv --config ~/.config/ad-linux-tv/config.yaml`. Development uses `.venv/bin/ad-linux-tv` after `pip install -e '.[dev]'`.
 
-Troubleshoot: inspect terminal output, validate config with the installed venv CLI above, confirm server and Firefox extension use localhost port 8765, and ensure phone/TV share a private LAN. Plain HTTP and non-DRM/service playback are not guaranteed.
+Troubleshoot: inspect terminal output, validate config with the installed venv CLI above, confirm server and Firefox extension use localhost port 8765, and ensure phone/TV share a private LAN. On Beelink, `systemctl status ad-linux-tv-kiosk.service` and `gui status` show the graphical state; the dedicated Firefox profile uses the local Xray proxy at `127.0.0.1:1081` for external sites. Plain HTTP and non-DRM/service playback are not guaranteed.
 
 ## Firefox command recovery semantics
 

@@ -4,30 +4,32 @@ function createLauncherUI(send, openSettings) {
   let services = [];
   let size = 12;
   let focus = 0;
+  let systemFocused = false;
   const tiles = document.querySelector("#tiles");
-  const entries = () => [...services, {name: "Система", settings: true}];
+  const systemButton = document.querySelector("#system-button");
+  systemButton.dataset.settings = "true";
+  systemButton.onfocus = () => { systemFocused = true; };
+  systemButton.onclick = openSettings;
 
   function render(focusButton = false) {
     const page = Math.floor(focus / size);
     const first = page * size;
     tiles.replaceChildren();
-    MediaLayout.pageItems(entries(), page, size).forEach((service, offset) => {
+    MediaLayout.pageItems(services, page, size).forEach((service, offset) => {
       const index = first + offset;
       const button = document.createElement("button");
       button.textContent = service.name;
       button.dataset.serviceIndex = String(index);
-      if (service.settings) button.dataset.settings = "true";
-      else button.dataset.serviceId = service.id;
+      button.dataset.serviceId = service.id;
       button.tabIndex = index === focus ? 0 : -1;
       button.onfocus = () => setFocus(index);
       button.onclick = () => {
         setFocus(index);
-        if (service.settings) openSettings();
-        else send("open", service.id);
+        send("open", service.id);
       };
       tiles.append(button);
     });
-    const pages = MediaLayout.pageCount(services.length + 1, size);
+    const pages = MediaLayout.pageCount(services.length, size);
     document.querySelector("#page").textContent = `${page + 1} / ${pages}`;
     document.querySelector(".pagination").hidden = pages === 1;
     if (focusButton) tiles.children[focus - first]?.focus();
@@ -35,6 +37,7 @@ function createLauncherUI(send, openSettings) {
 
   function setFocus(index) {
     focus = index;
+    systemFocused = false;
     for (const button of tiles.children) {
       button.tabIndex = Number(button.dataset.serviceIndex) === focus ? 0 : -1;
     }
@@ -55,20 +58,32 @@ function createLauncherUI(send, openSettings) {
     }[event.key];
     if (!direction || !document.querySelector("#settings").hidden) return;
     event.preventDefault();
+    if (systemFocused) {
+      if (direction === "left" || direction === "down") {
+        setFocus(direction === "left" ? services.length - 1 : 0);
+        render(true);
+      }
+      return;
+    }
     const activeIndex = Number(document.activeElement?.dataset?.serviceIndex);
     if (Number.isInteger(activeIndex)) focus = activeIndex;
-    focus = MediaLayout.moveFocus(focus, direction, services.length + 1, columns());
+    if ((direction === "up" && focus < columns()) ||
+        (direction === "right" && focus === services.length - 1)) {
+      systemButton.focus();
+      return;
+    }
+    focus = MediaLayout.moveFocus(focus, direction, services.length, columns());
     render(true);
   });
 
   document.querySelector("#next").onclick = () => {
-    const pages = MediaLayout.pageCount(services.length + 1, size);
-    focus = ((Math.floor(focus / size) + 1) % pages) * size;
+    const pages = MediaLayout.pageCount(services.length, size);
+    setFocus(((Math.floor(focus / size) + 1) % pages) * size);
     render(true);
   };
   document.querySelector("#prev").onclick = () => {
-    const pages = MediaLayout.pageCount(services.length + 1, size);
-    focus = ((Math.floor(focus / size) + pages - 1) % pages) * size;
+    const pages = MediaLayout.pageCount(services.length, size);
+    setFocus(((Math.floor(focus / size) + pages - 1) % pages) * size);
     render(true);
   };
 
@@ -78,8 +93,8 @@ function createLauncherUI(send, openSettings) {
       active.click();
       return null;
     }
-    if (focus === services.length) {
-      Array.from(tiles.children).find(button => button.dataset.settings === "true")?.click();
+    if (systemFocused || active === systemButton) {
+      systemButton.click();
       return null;
     }
     return services[focus]?.id || null;
@@ -90,13 +105,12 @@ function createLauncherUI(send, openSettings) {
     const active = document.activeElement;
     const restoreFocus = tiles.contains(active);
     const selectedId = active?.dataset?.serviceId;
-    const wasSettings = active?.dataset?.settings === "true";
     const previousFocus = focus;
     services = items;
     size = pageSize;
     const selectedIndex = selectedId ? services.findIndex(service => service.id === selectedId) : -1;
-    focus = wasSettings ? services.length : restoreFocus && selectedIndex >= 0
-      ? selectedIndex : Math.min(previousFocus, services.length);
+    focus = restoreFocus && selectedIndex >= 0
+      ? selectedIndex : Math.min(previousFocus, services.length - 1);
     render(restoreFocus);
   }
   return {update, selectForBridge};

@@ -78,6 +78,14 @@ def handle_post(handler, config, queue, sessions, failures):
     token = handler.authorized()
     if not handler.private() or (not local_ui and not token):
         return handler.send(403, "{}")
+    if path == "/api/input":
+        if (
+            not token
+            or not sessions.csrf_valid(token, handler.headers.get("X-CSRF-Token"))
+            or os.environ.get("AD_LINUX_TV_KIOSK") != "1"
+        ):
+            return handler.send(403, "{}")
+        return handle_input(handler)
     if not local_ui and not sessions.csrf_valid(token, handler.headers.get("X-CSRF-Token")):
         return handler.send(403, "{}")
     try:
@@ -99,6 +107,49 @@ def handle_post(handler, config, queue, sessions, failures):
     except Exception:
         return handler.send(400, "{}")
     return handler.send(202, "{}")
+
+
+def handle_input(handler):
+    try:
+        data = handler.read_payload()
+        if not isinstance(data, dict) or len(data) != 1:
+            raise ValueError("invalid input")
+        if "text" in data:
+            value = data["text"]
+            if not isinstance(value, str) or not 1 <= len(value) <= 512 or not value.isprintable():
+                raise ValueError("invalid text")
+            command = ["/usr/bin/wtype", "-"]
+            payload = value.encode("utf-8")
+        elif data.get("key") in ("enter", "backspace", "tab", "shift-tab", "address", "escape"):
+            key = data["key"]
+            command = {
+                "enter": ["/usr/bin/wtype", "-k", "Return"],
+                "backspace": ["/usr/bin/wtype", "-k", "BackSpace"],
+                "tab": ["/usr/bin/wtype", "-k", "Tab"],
+                "shift-tab": ["/usr/bin/wtype", "-M", "shift", "-k", "Tab"],
+                "address": ["/usr/bin/wtype", "-M", "ctrl", "-k", "l"],
+                "escape": ["/usr/bin/wtype", "-k", "Escape"],
+            }[key]
+            payload = None
+        else:
+            raise ValueError("invalid key")
+        result = subprocess.run(
+            command,
+            input=payload,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+    except OverflowError:
+        return handler.send(413, "{}")
+    except BodyTimeout:
+        return handler.send(408, "{}", headers=(("Connection", "close"),))
+    except (OSError, subprocess.TimeoutExpired):
+        return handler.send(503, "{}")
+    except Exception:
+        return handler.send(400, "{}")
+    return handler.send(200 if result.returncode == 0 else 503, "{}")
 
 
 def handle_ack(handler, queue):

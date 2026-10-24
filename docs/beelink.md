@@ -1,30 +1,34 @@
-# Beelink TV session: staged setup
+# Beelink TV session
 
-Beelink is the target. Source lives at `/home/adegtyarev/Develop/Hobby/ad-linux-tv` and must not be used as an installation or removal directory. The installed application and private config belong to the dedicated `ad-tv` user under `/home/ad-tv`. Existing KDE belongs to `adegtyarev` and is started through its current SDDM configuration.
+Beelink is the target. Source lives at `/home/adegtyarev/Develop/Hobby/ad-linux-tv` and is never an installation or removal directory. The installed application and private config belong to `ad-tv` under `/home/ad-tv`; the existing KDE session belongs to `adegtyarev`.
 
-The source checkout, system integration, TV-user deployment, and boot activation are separate steps. None of these steps edits the KDE profile. A physical HDMI screen and a signed Firefox XPI are still required for full validation.
+## Install and update
 
-## Preview and stage
-
-From the source checkout:
+From the source checkout, preview first:
 
 ```sh
 ./ops/beelink/setup.sh --dry-run
 ./ops/beelink/deploy.sh --dry-run
 ```
 
-After reviewing the previews, `sudo ./ops/beelink/setup.sh --install` creates `ad-tv`, installs Weston, copies the TV systemd/PAM helpers, enables a tty2 console, and backs up/replaces the `gui` helper. It does not activate TV at boot. `sudo ./ops/beelink/deploy.sh --install` stages source through a private temporary directory, runs the user-scoped installer for `ad-tv` with `--no-autostart`, and prompts for the remote PIN without echo. The source checkout is preserved. Do not run the deployment command from a noninteractive terminal: PIN entry needs a TTY.
+`sudo ./ops/beelink/setup.sh --install` creates `ad-tv`, installs labwc, Squeekboard, wtype and Waybar, copies the systemd/PAM helpers and enables the tty2 console. It preserves the KDE user's profile and SDDM configuration. When local Xray listens on `127.0.0.1:1081`, it configures only the TV Firefox profile to use that proxy for external websites while excluding localhost and private LAN addresses. `sudo ./ops/beelink/configure-firefox.sh --configure` can reapply that profile setting later. English/Russian on-screen keyboard labels are installed from pinned, checksum-verified Squeekboard source; if download fails, the packaged keyboard remains usable. TV session startup prefers a detected HDMI audio sink; it leaves analog audio available when no HDMI sink exists.
 
-The installed app uses `/home/ad-tv/.local/share/ad-linux-tv`; config is `/home/ad-tv/.config/ad-linux-tv/config.yaml`. Firefox Snap profile and signed XPI are under `/home/ad-tv/snap/firefox/common/`. The installer still needs target testing to confirm Snap access and extension persistence. Current public artifacts do not include the signed XPI, so the TV boot gate remains closed.
+`sudo ./ops/beelink/deploy.sh --install` copies source through a private temporary directory and runs the user-scoped installer for `ad-tv` with `--no-autostart`. The source checkout is preserved. The first installation needs an interactive TTY to enter the phone PIN; updates preserve the existing verifier. Installed app: `/home/ad-tv/.local/share/ad-linux-tv`; config: `/home/ad-tv/.config/ad-linux-tv/config.yaml`; Firefox Snap profile and signed XPI: `/home/ad-tv/snap/firefox/common/`.
 
-## Mode switching and recovery
+The signed XPI must be installed with Firefox's confirmation prompt. The application installer cannot register an unsigned add-on. After installation, `about:addons` should show `ad-linux-tv bridge` active and `/health` should report `extension_online: true` after Firefox starts.
 
-After integration is staged, `gui status` reports the current mode. `gui tv` starts the TV session when a display is connected; `gui kde` starts the existing KDE autologin; `gui off` returns to the tty1 console. Switching away from an active graphical session requires confirmation. `gui on` remains an alias for KDE. The TV launcher shows the phone QR/address immediately. After pairing, open the System tile with arrows and OK on the phone remote, or use a keyboard/mouse. System contains a confirmed "Выйти из ТВ-режима → KDE" action. In TV mode, Ctrl+Alt+F2 opens the tty2 recovery console, where `gui kde` or `gui off` can also be run. SSH remains available.
+## Daily use
 
-Weston kiosk shell runs Firefox fullscreen and stops when the browser exits. The script then stops the local server. The kiosk unit switches to tty2 on exit or failure, leaving a login console. With no monitor at boot, tty1 remains a login console. If a monitor is connected after boot, use `gui tv` to start TV mode manually.
+With HDMI attached, TV mode uses labwc and Firefox in a maximized window. The dedicated Firefox profile hides the browser toolbar until the address field receives focus, while keeping the touch keyboard usable. The home screen shows service tiles, a Browser tile that opens Yandex search, a small System button in the upper right, and the phone QR/address. A touch overlay in the lower right offers «Плитки» to return from a website and «Клавиатура» to toggle Squeekboard. The advertised address and QR refresh when the OS changes the preferred LAN address; the listener remains on `0.0.0.0:8765`.
 
-Only after signed-XPI installation has been confirmed in Firefox and the HDMI session has been manually tested, run `sudo ./ops/beelink/setup.sh --activate`. This enables an attempt to start TV mode at the next boot whenever a monitor is connected. It does not reboot or switch the current session. The boot helper checks for the installed app, config, signed XPI, and a connected physical display before starting the kiosk.
+Scan the QR on a phone in the same trusted LAN and enter the TV PIN. The phone remote keeps `К плиткам`, Back and Refresh at the top, plus service selection and text input using the phone's native keyboard. Use `Следующее поле` to focus a website field, then `Ввести` and `Enter`; the `Открыть адрес сайта` form first opens the managed Browser tab and enters the address. Text is sent only to the focused Firefox window; it is not stored or returned by the server. On a touch display, Squeekboard provides local on-screen typing. Firefox's dedicated non-private profile keeps website cookies across TV session restarts, subject to each website's expiry rules.
 
-## Pending physical checks
+System opens the confirmed KDE switch. `gui status` reports TV/KDE/console; `gui tv` starts TV mode; `gui kde` starts the existing KDE autologin after confirmation if TV is active; `gui off` returns to console after confirmation. `gui on` remains a KDE alias. The text console on tty2 and SSH remain recovery routes. On a television with no keyboard or touch, use the phone remote during normal operation; if the local server itself is unavailable, reconnect by SSH and inspect `systemctl status ad-linux-tv-kiosk.service`, then use `gui tv` after fixing the reported error.
 
-Confirm Firefox Snap can use the dedicated profile, the signed extension remains installed after restart/refresh, the phone reaches the chosen private LAN address, keyboard/phone navigation works, audio and service logins persist, and DRM playback works where supported. Test `gui tv`, Ctrl+Alt+F2, `gui kde`, `gui off`, and a reboot with and without HDMI. See [target checklist](target-checklist.md).
+If Firefox or the server exits unexpectedly, the whole TV session restarts automatically after five seconds. systemd stops repeated failures after six attempts in two minutes; SSH and tty2 remain available. The on-screen opening indicator and phone remote show connection errors or a retry action, while a failed third-party site may still show Firefox's own error page. YouTube requires the local Xray proxy on this target; check `systemctl status xray` and `127.0.0.1:1081` if it times out.
+
+## Start at boot
+
+`sudo ./ops/beelink/setup.sh --activate` enables an attempt to start TV mode on the next boot if a monitor is connected. On this Beelink the unit is enabled. With no display, the boot helper leaves a console. If a monitor is connected later, use `gui tv`. Activation does not reboot or switch the current session.
+
+Ethernet-to-Wi-Fi address failover, the keyboard controls supplied by Yandex and YouTube, opening Squeekboard with the overlay touch button, and an audible HDMI test sound were observed on this target. The remaining checks include physical Home/keyboard dismissal, a real reboot, real-phone pairing and reconnection, a fresh DHCP lease, password-field typing, website playback, service login persistence, and DRM playback without bypasses. See [target checklist](target-checklist.md).

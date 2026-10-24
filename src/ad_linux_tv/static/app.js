@@ -8,6 +8,7 @@ const confirmation = document.querySelector("#confirm-kde");
 const systemStatus = document.querySelector("#system-status");
 const settingsActions = [document.querySelector("#settings-back"), document.querySelector("#open-kde")];
 const confirmActions = [document.querySelector("#cancel-kde"), document.querySelector("#confirm-kde-yes")];
+let currentRemoteAddress = "";
 
 function openSettings() {
   home.hidden = true;
@@ -21,7 +22,7 @@ function closeSettings() {
   settings.hidden = true;
   home.hidden = false;
   confirmation.hidden = true;
-  document.querySelector('[data-settings="true"]')?.focus();
+  document.querySelector("#system-button").focus();
 }
 
 settingsActions[0].onclick = closeSettings;
@@ -80,13 +81,19 @@ async function load() {
     const data = await response.json();
     ui.update(data.services, data.page_size);
     configStatus.textContent = "";
-    document.querySelector("#address").textContent = data.remote_address ||
+    const nextAddress = data.remote_address || "";
+    document.querySelector("#address").textContent = nextAddress ||
       "Адрес в локальной сети не найден.";
     const qr = document.querySelector("#qr");
-    qr.src = data.remote_address ? "/api/qr" : "";
-    qr.hidden = !data.remote_address;
+    if (nextAddress !== currentRemoteAddress) {
+      qr.src = nextAddress ? `/api/qr?address=${encodeURIComponent(nextAddress)}` : "";
+      currentRemoteAddress = nextAddress;
+    }
+    qr.hidden = !nextAddress;
   } catch (cause) {
     configStatus.textContent = `Ошибка конфигурации: ${cause.message}`;
+    currentRemoteAddress = "";
+    document.querySelector("#qr").hidden = true;
   }
 }
 
