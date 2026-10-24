@@ -13,12 +13,10 @@ let statusTimer = null;
 let browserService = null;
 const audioOutput = document.querySelector("#audio-output");
 const audioVolume = document.querySelector("#audio-volume");
-const browserVolume = document.querySelector("#browser-volume");
-const playerVolume = document.querySelector("#player-volume");
-const playerVolumeValue = document.querySelector("#player-volume-value");
-const playerVolumeStatus = document.querySelector("#player-volume-status");
 const audioStatus = document.querySelector("#audio-status");
 let audioTimer = null;
+let displayTimerPoll = null;
+let displayAsleep = false;
 let audioDragging = false;
 let feedbackTimer = null;
 let pressedButton = null;
@@ -68,11 +66,6 @@ function showAudio(state) {
   audioOutput.value = state.selected;
   audioVolume.value = state.volume;
   document.querySelector("#audio-volume-value").textContent = `${state.volume}%`;
-  const browserActive = state.browser_volume != null;
-  browserVolume.disabled = !browserActive;
-  if (browserActive) browserVolume.value = state.browser_volume;
-  document.querySelector("#browser-volume-value").textContent = browserActive ? `${state.browser_volume}%` : "—";
-  document.querySelector("#browser-volume-hint").hidden = browserActive;
   document.querySelector("#audio-mute").textContent = state.muted ? "♩" : "♬";
   document.querySelector("#audio-mute").setAttribute("aria-label", state.muted ? "Включить звук" : "Выключить звук");
   document.querySelector("#audio-mute").dataset.muted = String(state.muted);
@@ -105,47 +98,55 @@ async function changeAudio(action) {
   }
 }
 
-let playerRequest = 0;
-async function playerCommand(command, volume = null) {
-  const requestId = ++playerRequest;
-  playerVolumeStatus.textContent = command === "player_get" ? "Ищем играющий плеер…" : "Меняем громкость плеера…";
+const phoneTimerStatus = document.querySelector("#phone-timer-status");
+const phoneTimerButtons = Array.from(document.querySelectorAll("[data-phone-timer]"));
+function showPhoneTimer(state) {
+  displayAsleep = state.asleep;
+  phoneTimerButtons.forEach(button => button.setAttribute("aria-pressed",
+    String(Number(button.dataset.phoneTimer) === state.minutes && !state.asleep)));
+  if (state.error === "pause_unavailable")
+    phoneTimerStatus.textContent = "Не удалось поставить видео на паузу. Экран остался включённым.";
+  else if (state.error === "display_unavailable")
+    phoneTimerStatus.textContent = "Не удалось изменить питание HDMI. Проверьте монитор.";
+  else if (state.asleep) phoneTimerStatus.textContent = "Экран погашен. Коснитесь его или нажмите кнопку пульта.";
+  else if (state.remaining_seconds > 0)
+    phoneTimerStatus.textContent = `До отключения: ${Math.ceil(state.remaining_seconds / 60)} мин`;
+  else phoneTimerStatus.textContent = "Выключен";
+}
+
+async function refreshDisplayTimer() {
   try {
-    const response = await fetch("/api/command", {
-      method:"POST", headers:{"Content-Type":"application/json", "X-CSRF-Token":csrf},
-      body:JSON.stringify(command === "player_set" ? {command, volume} : {command}),
-    });
+    const response = await fetch("/api/display-timer", {cache:"no-store"});
     if (response.status === 401 || response.status === 403) return requireLogin();
-    if (!response.ok) throw new Error("queue unavailable");
-    const {id} = await response.json();
-    if (typeof id !== "string") throw new Error("missing command id");
-    for (let attempt = 0; attempt < 25; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 300));
-      const resultResponse = await fetch(`/api/command-result?id=${encodeURIComponent(id)}`, {cache:"no-store"});
-      if (resultResponse.status === 401 || resultResponse.status === 403) return requireLogin();
-      if (resultResponse.status === 202) continue;
-      if (!resultResponse.ok) throw new Error("result unavailable");
-      const result = await resultResponse.json();
-      if (requestId !== playerRequest) return;
-      if (result.outcome !== "completed" || !Number.isInteger(result.volume)) {
-        playerVolume.disabled = true;
-        playerVolumeValue.textContent = "—";
-        playerVolumeStatus.textContent = result.reason === "no_media" ?
-          "Начните воспроизведение на сайте и нажмите «Найти плеер»." :
-          "Сайт не дал управлять плеером. Используйте регулятор Firefox выше.";
-        return;
-      }
-      playerVolume.disabled = false;
-      playerVolume.value = result.volume;
-      playerVolumeValue.textContent = `${result.volume}%`;
-      playerVolumeStatus.textContent = "Громкость играющего видео или музыки.";
-      return;
-    }
-    throw new Error("player result timed out");
+    if (!response.ok) throw new Error("timer unavailable");
+    showPhoneTimer(await response.json());
   } catch (_) {
-    if (requestId !== playerRequest) return;
-    playerVolumeStatus.textContent = "Нет ответа от плеера. Проверьте Firefox и повторите.";
+    phoneTimerStatus.textContent = "Нет связи с таймером. Проверьте Wi-Fi.";
   }
 }
+
+async function changeDisplayTimer(action) {
+  phoneTimerStatus.textContent = "Изменяем таймер…";
+  try {
+    const response = await fetch("/api/display-timer", {
+      method:"POST", headers:{"Content-Type":"application/json", "X-CSRF-Token":csrf},
+      body:JSON.stringify(action),
+    });
+    if (response.status === 401 || response.status === 403) return requireLogin();
+    showPhoneTimer(await response.json());
+  } catch (_) {
+    phoneTimerStatus.textContent = "Не удалось изменить таймер. Повторите.";
+  }
+}
+
+for (const button of phoneTimerButtons)
+  button.onclick = () => changeDisplayTimer({minutes:Number(button.dataset.phoneTimer)});
+document.addEventListener("pointerdown", () => {
+  if (displayAsleep && !controls.hidden) {
+    displayAsleep = false;
+    void changeDisplayTimer({wake:true});
+  }
+}, true);
 
 let messageTimer = null;
 function say(text, error = false) {
@@ -172,6 +173,8 @@ function requireLogin() {
   statusTimer = null;
   if (audioTimer !== null) clearInterval(audioTimer);
   audioTimer = null;
+  if (displayTimerPoll !== null) clearInterval(displayTimerPoll);
+  displayTimerPoll = null;
   controls.hidden = true;
   connecting.hidden = true;
   loginPanel.hidden = false;
@@ -248,11 +251,13 @@ async function activateRemote(token, restored = false) {
   showPage("remote");
   if (!restored) say("Телефон подключён.");
   void refreshAudio();
+  void refreshDisplayTimer();
   void refreshStatus();
   if (statusTimer !== null) clearInterval(statusTimer);
   if (audioTimer !== null) clearInterval(audioTimer);
   statusTimer = setInterval(refreshStatus, 1000);
   audioTimer = setInterval(() => { if (!audioDragging) void refreshAudio(); }, 5000);
+  displayTimerPoll = setInterval(refreshDisplayTimer, 5000);
 }
 async function restoreLogin() {
   try {
@@ -309,7 +314,7 @@ document.querySelector("#audio-test").onclick = async () => {
   }
 };
 audioOutput.onchange = () => changeAudio({output: audioOutput.value});
-for (const slider of [audioVolume, browserVolume]) {
+for (const slider of [audioVolume]) {
   slider.addEventListener("pointerdown", () => { audioDragging = true; });
   slider.addEventListener("pointerup", () => { audioDragging = false; });
   slider.addEventListener("pointercancel", () => { audioDragging = false; });
@@ -318,13 +323,6 @@ audioVolume.oninput = () => {
   document.querySelector("#audio-volume-value").textContent = `${audioVolume.value}%`;
 };
 audioVolume.onchange = () => changeAudio({volume: Number(audioVolume.value)});
-browserVolume.oninput = () => {
-  document.querySelector("#browser-volume-value").textContent = `${browserVolume.value}%`;
-};
-browserVolume.onchange = () => changeAudio({browser_volume: Number(browserVolume.value)});
-playerVolume.oninput = () => { playerVolumeValue.textContent = `${playerVolume.value}%`; };
-playerVolume.onchange = () => playerCommand("player_set", Number(playerVolume.value));
-document.querySelector("#player-volume-refresh").onclick = () => playerCommand("player_get");
 document.querySelector("#audio-mute").onclick = () =>
   changeAudio({muted: document.querySelector("#audio-mute").dataset.muted !== "true"});
 
@@ -349,7 +347,7 @@ function showPage(page) {
 document.querySelector("#show-keyboard").onclick = () => showPage("keyboard");
 document.querySelector("#show-menu").onclick = () => {
   showPage("menu");
-  void playerCommand("player_get");
+  void refreshDisplayTimer();
 };
 document.querySelector("#show-system").onclick = async () => {
   if (!await post("/api/command", {command: "home"}, "Открываем Систему…")) return;

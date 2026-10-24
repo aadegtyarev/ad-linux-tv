@@ -49,6 +49,7 @@ function createTabController(api, fetcher = fetch) {
     ensureLauncher:owned.ensureLauncher,
     execute,
     onRemoved:owned.onRemoved,
+    normalizeMedia:owned.normalizeMedia,
     getState:() => ({...owned.getState(), commands:ledger.getState(), maxPrepareAttempts:PREPARE_LIMIT}),
   };
 }

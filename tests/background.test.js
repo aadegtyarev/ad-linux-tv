@@ -6,16 +6,18 @@ const vm = require("node:vm");
 const {LAUNCHER} = require("../extension/tab_storage.js");
 
 test("background listeners precede async initialization and filter launcher URL", () => {
-  const events = {message:null, removed:null, alarm:null, startup:null, installed:null};
+  const events = {message:null, removed:null, updated:null, activated:null, alarm:null, startup:null, installed:null};
   let wakes = 0;
   const browser = {
     runtime: {onMessage:{addListener:fn => {events.message = fn;}},
       onStartup:{addListener:fn => {events.startup = fn;}},
       onInstalled:{addListener:fn => {events.installed = fn;}}},
-    tabs: {onRemoved:{addListener:fn => {events.removed = fn;}}},
+    tabs: {onRemoved:{addListener:fn => {events.removed = fn;}},
+      onUpdated:{addListener:fn => {events.updated = fn;}},
+      onActivated:{addListener:fn => {events.activated = fn;}}},
     alarms: {onAlarm:{addListener:fn => {events.alarm = fn;}}, create() {}},
   };
-  const tabs = {onRemoved:async () => {}, ensureLauncher:async () => {}};
+  const tabs = {onRemoved:async () => {}, normalizeMedia:async () => {}, ensureLauncher:async () => {}};
   const context = {browser, LAUNCHER, createTabController:() => tabs,
     createBridgeController:() => ({wake:() => {wakes++;}})};
   vm.runInNewContext(fs.readFileSync("extension/background.js", "utf8"), context);

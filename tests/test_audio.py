@@ -142,6 +142,21 @@ def test_browser_volume_requires_active_audio(monkeypatch):
         audio.apply({"browser_volume": 50})
 
 
+def test_browser_streams_return_to_neutral_without_changing_output(monkeypatch):
+    calls = []
+    monkeypatch.setattr(audio, "_pactl", lambda *args: calls.append(args))
+    monkeypatch.setattr(
+        audio,
+        "_browser_inputs",
+        lambda: [
+            {"index": 4, "volume": {"front-left": {"value_percent": "55%"}}},
+            {"index": 5, "volume": {"front-left": {"value_percent": "100%"}}},
+        ],
+    )
+    audio.normalize_browser_volume()
+    assert calls == [("set-sink-input-volume", "4", "100%")]
+
+
 def test_audio_sample_requires_sound_and_uses_default_sink(monkeypatch):
     calls = []
     monkeypatch.setattr(audio, "get_state", lambda: {"muted": False, "volume": 60})

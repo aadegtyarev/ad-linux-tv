@@ -12,7 +12,7 @@ from .http_errors import BodyTimeout
 from .security import loopback_source
 
 
-def handle_post(handler, config, queue, sessions, failures):
+def handle_post(handler, config, queue, sessions, failures, display_timer):
     path = urlparse(handler.path).path
     if path == "/extension/ack":
         return handle_ack(handler, queue)
@@ -80,6 +80,31 @@ def handle_post(handler, config, queue, sessions, failures):
     token = handler.authorized()
     if not handler.private() or (not local_ui and not token):
         return handler.send(403, "{}")
+    if path == "/api/display-timer":
+        exact_local = local_ui and handler.headers.get("Host") == (
+            f"127.0.0.1:{handler.server.server_port}"
+        )
+        if os.environ.get("AD_LINUX_TV_KIOSK") != "1" or not (
+            exact_local
+            or (token and sessions.csrf_valid(token, handler.headers.get("X-CSRF-Token")))
+        ):
+            return handler.send(403, "{}")
+        try:
+            action = handler.read_payload()
+            if action == {"wake": True}:
+                okay = display_timer.wake()
+            elif isinstance(action, dict) and set(action) == {"minutes"}:
+                result = display_timer.set(action["minutes"])
+                okay = result["error"] is None
+            else:
+                raise ValueError("invalid timer action")
+        except OverflowError:
+            return handler.send(413, "{}")
+        except BodyTimeout:
+            return handler.send(408, "{}", headers=(("Connection", "close"),))
+        except (TypeError, ValueError):
+            return handler.send(400, "{}")
+        return handler.send(200 if okay else 503, json.dumps(display_timer.status()))
     if path in ("/api/input", "/api/pointer"):
         if (
             not token
@@ -87,6 +112,8 @@ def handle_post(handler, config, queue, sessions, failures):
             or os.environ.get("AD_LINUX_TV_KIOSK") != "1"
         ):
             return handler.send(403, "{}")
+        if display_timer.status()["asleep"] and not display_timer.wake():
+            return handler.send(503, "{}")
         return handle_input(handler) if path == "/api/input" else handle_pointer(handler)
     if path == "/api/audio":
         local_audio = local_ui and handler.headers.get("Host") == (
@@ -101,6 +128,8 @@ def handle_post(handler, config, queue, sessions, failures):
             )
         ):
             return handler.send(403, "{}")
+        if display_timer.status()["asleep"] and not display_timer.wake():
+            return handler.send(503, "{}")
         try:
             result = audio.apply(handler.read_payload())
         except OverflowError:
@@ -114,6 +143,8 @@ def handle_post(handler, config, queue, sessions, failures):
         return handler.send(200, json.dumps(result))
     if not local_ui and not sessions.csrf_valid(token, handler.headers.get("X-CSRF-Token")):
         return handler.send(403, "{}")
+    if display_timer.status()["asleep"] and not display_timer.wake():
+        return handler.send(503, "{}")
     try:
         data = handler.read_payload()
         if set(data) - {"command", "service_id", "volume"}:

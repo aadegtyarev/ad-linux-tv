@@ -92,6 +92,14 @@ test("player volume targets only the active managed service tab and reports its 
     {tabId:managed, allFrames:true}, {tabId:managed, allFrames:true},
   ]);
   assert.deepEqual(scripts[1][1].args, ["set", 40]);
+  const paused = await command(controller, "player_pause");
+  assert.equal(paused.volume, 75);
+  assert.deepEqual(mock.calls.filter(call => call[0] === "script").at(-1)[1].args,
+    ["pause", null]);
+  mock.tabs.get(managed).audible = true;
+  assert.deepEqual(await command(controller, "player_pause"),
+    {outcome:"failed", reason:"operation"});
+  mock.tabs.get(managed).audible = false;
   mock.setScriptingResults([{result:null}, {result:32}]);
   assert.equal((await command(controller, "player_get")).volume, 32);
   mock.setScriptingResults([{result:null}]);
@@ -101,4 +109,19 @@ test("player volume targets only the active managed service tab and reports its 
   assert.deepEqual(await command(controller, "player_set", {volume:0}),
     {outcome:"failed", reason:"no_media"});
   assert.equal(mock.calls.filter(call => call[0] === "script").length, before);
+});
+
+test("volume normalization injects only into the active launcher-owned tab", async () => {
+  const mock = browserMock([{id:1, windowId:1, url:LAUNCHER}]);
+  const controller = createTabController(mock.api, mock.fetcher);
+  await controller.restore();
+  await command(controller, "open", {service_id:"one"});
+  const managed = controller.getState().managed.one.tabId;
+  await controller.normalizeMedia(managed);
+  const scripts = mock.calls.filter(call => call[0] === "script");
+  assert.equal(scripts.length, 1);
+  assert.deepEqual(scripts[0][1].target, {tabId:managed, allFrames:true});
+  await mock.api.tabs.create({url:"https://unrelated.example/",active:true});
+  await controller.normalizeMedia(managed);
+  assert.equal(mock.calls.filter(call => call[0] === "script").length, 1);
 });

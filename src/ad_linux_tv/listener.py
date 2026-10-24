@@ -1,10 +1,13 @@
 """Start configured LAN and loopback-only bridge listeners."""
 
 import ipaddress
+import os
 import socket
+import time
 from http.server import ThreadingHTTPServer
 from threading import Semaphore, Thread
 
+from . import audio
 from .server import make_handler
 
 
@@ -64,4 +67,15 @@ def serve(config):
         servers.append(make_server("127.0.0.1", config["port"], handler, worker_slots))
     for listener in servers[1:]:
         Thread(target=listener.serve_forever, daemon=True).start()
+    if os.environ.get("AD_LINUX_TV_KIOSK") == "1":
+
+        def keep_browser_gain_neutral():
+            while True:
+                try:
+                    audio.normalize_browser_volume()
+                except audio.AudioUnavailable:
+                    pass
+                time.sleep(2)
+
+        Thread(target=keep_browser_gain_neutral, daemon=True).start()
     servers[0].serve_forever()

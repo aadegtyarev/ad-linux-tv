@@ -12,7 +12,7 @@ function launcher({hostname = "192.168.1.4"} = {}) {
       events[name] = previous ? event => { previous(event); fn(event); } : fn;
     },
     dispatchEvent(event) { event.target ||= this; events[event.type](event); },
-    querySelectorAll: () => [],
+    querySelectorAll: selector => selector === "#settings [data-timer]" ? timerButtons : [],
   };
   class Element {
     constructor(id) {
@@ -31,14 +31,20 @@ function launcher({hostname = "192.168.1.4"} = {}) {
     append(child) { child.parent = this; this.children.push(child); }
     focus() { doc.activeElement = this; this.onfocus?.(); this.parent?.onfocusin?.({target:this}); }
     click() { this.onclick?.(); }
+    setAttribute(name, value) { this[name] = value; }
   }
   doc.body = new Element("body");
   doc.documentElement = new Element("html");
   doc.activeElement = doc.body;
   const elements = Object.fromEntries(
-    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#pairing-pin", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes", "#audio-output", "#audio-volume", "#audio-volume-value", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#audio-status", "#audio-mute", "#audio-refresh", "#audio-test"]
+    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#pairing-pin", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes", "#audio-output", "#audio-volume", "#audio-volume-value", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#audio-status", "#audio-mute", "#audio-refresh", "#audio-test", "#tv-timer-status"]
       .map(id => [id, new Element(id)])
   );
+  const timerButtons = [0, 15, 30, 60, 90, 120].map(minutes => {
+    const button = new Element(`timer-${minutes}`);
+    button.dataset.timer = String(minutes);
+    return button;
+  });
   elements["#settings"].hidden = true;
   elements["#confirm-kde"].hidden = true;
   elements["#pairing-pin"].hidden = true;
@@ -60,6 +66,7 @@ function launcher({hostname = "192.168.1.4"} = {}) {
         ? {services:serviceData, page_size:12, remote_address:remoteAddress}
         : url === "/api/local-pin" ? {pin:"1234"}
           : url === "/api/audio" ? audioData
+            : url === "/api/display-timer" ? {minutes:0,remaining_seconds:0,asleep:false,error:null,phase:"idle"}
             : bridgeData};
     },
   };

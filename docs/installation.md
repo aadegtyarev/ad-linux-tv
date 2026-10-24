@@ -9,9 +9,11 @@ Manual installed start: `~/.local/share/ad-linux-tv/run.sh ~/.config/ad-linux-tv
 
 Troubleshoot: inspect terminal output, validate config with the installed venv CLI above, confirm server and Firefox extension use localhost port 8765, and ensure phone/TV share a private LAN. On Beelink, `systemctl status ad-linux-tv-kiosk.service` and `gui status` show the graphical state; the dedicated Firefox profile uses the local Xray proxy at `127.0.0.1:1081` for external sites. Plain HTTP and non-DRM/service playback are not guaranteed.
 
-## Player-volume extension update
+## Firefox bridge update
 
-`extension/package.sh` builds an unsigned archive. Submit it as a new version of the existing add-on in AMO, download the resulting signed XPI, and install that XPI interactively in the dedicated TV Firefox profile. Version 0.2.0 requests scripting permission and HTTP(S) site access; it uses these only in the active TV-managed service tab to read or set playing HTML audio/video volume. Firefox may ask to approve the new permissions when updating. The phone and TV player sliders require both this signed XPI and the matching server update. The output and Firefox-stream sliders remain available if a site's media is inaccessible (for example, in a restricted frame or custom player).
+`extension/package.sh` builds an unsigned archive. Submit it as a new version of the existing add-on in AMO, download the resulting signed XPI, and install that XPI interactively in the dedicated TV Firefox profile. Version 0.3.0 uses the existing scripting and HTTP(S) site permissions only in launcher-owned tabs: it pauses active HTML media for the display timer and keeps managed media at 100% while the selected audio output is the user's one volume control. Firefox may ask to approve the update. The display timer requires both this signed XPI and the matching server update. A site's own mute, WebAudio gain, or restricted frame may still limit control; the timer leaves HDMI on if it cannot establish that playback was paused.
+
+On Beelink, `ops/beelink/setup.sh` also installs `wlopm` and `swayidle`. The TV System and phone Menu expose Off, 15, 30, 60, 90 and 120-minute display timers. At expiry, the server pauses managed playback before powering off the HDMI output through `wlopm`; touch or a phone command wakes the output without resuming media. The Beelink remains running and the KDE recovery path is unchanged.
 
 ## Firefox command recovery semantics
 

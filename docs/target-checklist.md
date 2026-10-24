@@ -28,7 +28,8 @@ Still to verify on the actual setup:
 - [ ] Change the DHCP lease to an unrelated address and confirm the QR/address refreshes and an already paired phone can reconnect; test packet loss during the change.
 - [ ] Test no-HDMI console fallback, Ctrl+Alt+F2, `gui kde`, `gui off`, and `gui tv` after reboot.
 - [ ] Test TV navigation with a remote or touch only, including all service tiles and third-party site controls.
-- [ ] Touch the sound icon and adjust both output and Firefox sliders during playback; confirm the panel stays open while dragging. Then check HDMI volume 100%, remote/System volume and mute, and output selection with a connected Bluetooth speaker or other output. Confirm website playback audio, service logins/cookies across reboot, and DRM availability without bypasses; confirm behavior after Firefox updates.
+- [ ] Touch the sound icon and adjust the single output slider during playback; confirm the panel stays open while dragging. Check the same level in remote/System, mute, and output selection with a connected Bluetooth speaker or other output. Confirm Firefox stream and managed HTML media are normalized to 100% while the chosen output level stays unchanged. Confirm website playback audio, service logins/cookies across reboot, and DRM availability without bypasses; confirm behavior after Firefox updates.
+- [ ] Set, replace and cancel the display timer from both phone Menu and TV System. During playing video, confirm it pauses before HDMI turns off; wake with touch and with a phone command, and confirm the video does not resume. Check that an unavailable bridge/player leaves HDMI lit with a useful message.
 - [ ] Complete signed XPI release/update and digest verification from the published artifact.
 
 Treat the built-in HTTP remote as trusted-LAN only; keep its port off the public internet.

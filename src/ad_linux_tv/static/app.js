@@ -8,11 +8,13 @@ const confirmation = document.querySelector("#confirm-kde");
 const systemStatus = document.querySelector("#system-status");
 const audioOutput = document.querySelector("#audio-output");
 const audioVolume = document.querySelector("#audio-volume");
-const browserVolume = document.querySelector("#browser-volume");
 const audioStatus = document.querySelector("#audio-status");
 const audioMute = document.querySelector("#audio-mute");
+const timerButtons = Array.from(document.querySelectorAll("#settings [data-timer]"));
+const tvTimerStatus = document.querySelector("#tv-timer-status");
 const settingsActions = [document.querySelector("#settings-back"), audioOutput, audioVolume,
-  browserVolume, audioMute, document.querySelector("#audio-refresh"), document.querySelector("#audio-test"), document.querySelector("#open-kde")];
+  audioMute, document.querySelector("#audio-refresh"),
+  document.querySelector("#audio-test"), ...timerButtons, document.querySelector("#open-kde")];
 const confirmActions = [document.querySelector("#cancel-kde"), document.querySelector("#confirm-kde-yes")];
 let currentRemoteAddress = "";
 function showSystemForTouch() {
@@ -59,11 +61,6 @@ function showAudio(state) {
   audioOutput.value = state.selected;
   audioVolume.value = state.volume;
   document.querySelector("#audio-volume-value").textContent = `${state.volume}%`;
-  const browserActive = state.browser_volume != null;
-  browserVolume.disabled = !browserActive;
-  if (browserActive) browserVolume.value = state.browser_volume;
-  document.querySelector("#browser-volume-value").textContent = browserActive ? `${state.browser_volume}%` : "—";
-  document.querySelector("#browser-volume-hint").hidden = browserActive;
   audioMute.dataset.muted = String(state.muted);
   audioMute.textContent = state.muted ? "Включить звук" : "Выключить звук";
   audioStatus.textContent = "";
@@ -110,11 +107,43 @@ audioVolume.oninput = () => {
   document.querySelector("#audio-volume-value").textContent = `${audioVolume.value}%`;
 };
 audioVolume.onchange = () => changeAudio({volume: Number(audioVolume.value)});
-browserVolume.oninput = () => {
-  document.querySelector("#browser-volume-value").textContent = `${browserVolume.value}%`;
-};
-browserVolume.onchange = () => changeAudio({browser_volume: Number(browserVolume.value)});
 audioMute.onclick = () => changeAudio({muted: audioMute.dataset.muted !== "true"});
+
+function showDisplayTimer(state) {
+  timerButtons.forEach(button => button.setAttribute("aria-pressed",
+    String(Number(button.dataset.timer) === state.minutes && !state.asleep)));
+  if (state.error === "pause_unavailable")
+    tvTimerStatus.textContent = "Не удалось остановить воспроизведение. Экран оставлен включённым.";
+  else if (state.error === "display_unavailable")
+    tvTimerStatus.textContent = "Не удалось погасить или включить HDMI. Проверьте монитор.";
+  else if (state.asleep) tvTimerStatus.textContent = "Экран погашен. Коснитесь его или используйте пульт.";
+  else if (state.remaining_seconds > 0)
+    tvTimerStatus.textContent = `До отключения: ${Math.ceil(state.remaining_seconds / 60)} мин`;
+  else tvTimerStatus.textContent = "Выключен";
+}
+
+async function refreshDisplayTimer() {
+  try {
+    const response = await fetch("/api/display-timer", {cache:"no-store"});
+    if (!response.ok) throw new Error("timer unavailable");
+    showDisplayTimer(await response.json());
+  } catch (_) {
+    tvTimerStatus.textContent = "Таймер недоступен. Проверьте ТВ-сервер.";
+  }
+}
+
+for (const button of timerButtons) button.onclick = async () => {
+  tvTimerStatus.textContent = "Устанавливаем таймер…";
+  try {
+    const response = await fetch("/api/display-timer", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({minutes:Number(button.dataset.timer)}),
+    });
+    showDisplayTimer(await response.json());
+  } catch (_) {
+    tvTimerStatus.textContent = "Не удалось изменить таймер. Повторите.";
+  }
+};
 
 async function loadPairingPin() {
   if (globalThis.location?.hostname !== "127.0.0.1") return;
@@ -140,6 +169,7 @@ function openSettings() {
   systemStatus.textContent = "";
   settingsActions[0].focus();
   void refreshAudio();
+  void refreshDisplayTimer();
 }
 
 function closeSettings() {
@@ -193,7 +223,7 @@ document.addEventListener("keydown", event => {
   const actions = confirmation.hidden ? settingsActions : confirmActions;
   const index = actions.indexOf(document.activeElement);
   if (confirmation.hidden && (event.key === "ArrowRight" || event.key === "ArrowLeft") &&
-      [audioVolume, browserVolume].includes(document.activeElement)) {
+      document.activeElement === audioVolume) {
     const slider = document.activeElement;
     if (slider.disabled) return;
     slider.value = Math.min(100, Math.max(0, Number(slider.value) + (event.key === "ArrowRight" ? 5 : -5)));
@@ -281,4 +311,5 @@ checkStatus();
 setInterval(() => {
   checkStatus();
   load();
+  if (!settings.hidden) refreshDisplayTimer();
 }, 5000);

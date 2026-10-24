@@ -1,6 +1,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const {launcher, ready} = require("./helpers/launcher_mock.js");
 
 test("launcher focus uses actual columns and carries arrows across pages", async () => {
@@ -98,7 +99,9 @@ test("System opens via F8 and KDE requires a second confirmation", async () => {
   assert.notEqual(ui.doc.activeElement.dataset.settings, "true");
   ui.doc.dispatchEvent({type:"keydown", key:"F8", preventDefault(){}});
   assert.equal(ui.elements["#settings"].hidden, false);
-  for (let i = 0; i < 6; i += 1) ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", preventDefault(){}});
+  for (let i = 0; i < 14 && ui.doc.activeElement !== ui.elements["#open-kde"]; i += 1)
+    ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", preventDefault(){}});
+  assert.equal(ui.doc.activeElement, ui.elements["#open-kde"]);
   ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
   assert.equal(ui.elements["#confirm-kde"].hidden, false);
   assert.equal(ui.calls.filter(call => call.url === "/api/system/kde").length, 0);
@@ -129,6 +132,18 @@ test("System audio controls load state and submit selected volume", async () => 
   assert.equal(volumes.at(-1), 95);
 });
 
+test("System timer presets send loopback request and remain reachable by arrows", async () => {
+  const ui = launcher({hostname:"127.0.0.1"});
+  await ready();
+  ui.doc.dispatchEvent({type:"keydown", key:"F8", preventDefault(){}});
+  const timerButton = ui.doc.querySelectorAll("#settings [data-timer]")[1];
+  timerButton.click();
+  await ready();
+  const request = ui.calls.find(call => call.url === "/api/display-timer" && call.options?.method === "POST");
+  assert.equal(JSON.parse(request.options.body).minutes, 15);
+  assert.equal(ui.elements["#settings"].hidden, false);
+});
+
 test("System sound check stays in System and does not open KDE", async () => {
   const ui = launcher({hostname:"127.0.0.1"});
   ui.elements["#system-button"].click();
@@ -142,18 +157,16 @@ test("System sound check stays in System and does not open KDE", async () => {
   assert.ok(sample);
 });
 
-test("System exposes Firefox stream volume when playback is active", async () => {
+test("System keeps one visible volume slider during playback", async () => {
   const ui = launcher({hostname:"127.0.0.1"});
   ui.audio = {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:75};
   ui.elements["#system-button"].click();
   await ready();
-  assert.equal(ui.elements["#browser-volume"].disabled, false);
-  assert.equal(ui.elements["#browser-volume-value"].textContent, "75%");
-  ui.elements["#browser-volume"].value = "60";
-  ui.elements["#browser-volume"].onchange();
-  await ready();
+  const html = fs.readFileSync("src/ad_linux_tv/static/index.html", "utf8");
+  assert.equal((html.match(/type="range"/g) || []).length, 1);
+  assert.equal(ui.elements["#audio-volume"].value, 100);
   assert.equal(ui.calls.some(call => call.url === "/api/audio" &&
-    JSON.parse(call.options?.body || "{}").browser_volume === 60), true);
+    JSON.parse(call.options?.body || "{}").browser_volume !== undefined), false);
 });
 
 test("LAN address change updates both shown address and QR image", async () => {

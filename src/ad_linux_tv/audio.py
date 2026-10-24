@@ -53,6 +53,19 @@ def _volume_percent(item):
         raise AudioUnavailable from exc
 
 
+def normalize_browser_volume():
+    """Keep Firefox stream gain neutral; the selected sink is the user's volume control."""
+    for item in _browser_inputs():
+        try:
+            channel = next(iter(item["volume"].values()))
+            level = int(channel["value_percent"].rstrip("%"))
+            index = str(int(item["index"]))
+        except (KeyError, StopIteration, ValueError, TypeError) as exc:
+            raise AudioUnavailable from exc
+        if level != 100:
+            _pactl("set-sink-input-volume", index, "100%")
+
+
 def get_state():
     sinks = _sinks()
     selected = _pactl("get-default-sink")
