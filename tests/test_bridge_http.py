@@ -28,19 +28,29 @@ def test_bridge_requires_custom_header_exact_host_and_orders_acknowledgements(en
     assert response.getheader("Access-Control-Allow-Origin") is None
     assert request(connection, "GET", "/extension/poll", headers=bridge)[1] == b"[]"
     ack_headers = {**bridge, "Content-Type": "application/json"}
-    response, _ = request(
-        connection, "POST", "/extension/ack", json.dumps({"id": first["id"]}), ack_headers
-    )
+
+    def acknowledge(command_id, outcome="completed", reason=None):
+        body = json.dumps({"id": command_id, "outcome": outcome, "reason": reason})
+        return request(connection, "POST", "/extension/ack", body, ack_headers)[0]
+
+    response = acknowledge(first["id"])
     assert response.status == 200
     assert json.loads(request(connection, "GET", "/api/status")[1])["pending_commands"] == 1
 
     response, payload = request(connection, "GET", "/extension/poll", headers=bridge)
     second = json.loads(payload)[0]
     assert second["command"] == "open"
-    response, _ = request(
-        connection, "POST", "/extension/ack", json.dumps({"id": second["id"]}), ack_headers
-    )
+    response = acknowledge(second["id"])
     assert response.status == 200
     assert request(connection, "GET", "/extension/poll", headers=bridge)[1] == b"[]"
     final_status = json.loads(request(connection, "GET", "/api/status")[1])
     assert final_status["extension_online"] and final_status["pending_commands"] == 0
+    for command in ('{"command":"home"}', '{"command":"back"}'):
+        assert request(connection, "POST", "/api/command", command, headers)[0].status == 202
+    failed = json.loads(request(connection, "GET", "/extension/poll", headers=bridge)[1])[0]
+    assert acknowledge(failed["id"], "failed", "operation").status == 200
+    status = json.loads(request(connection, "GET", "/api/status")[1])
+    assert status["last_command_failure"] == {"outcome": "failed", "reason": "operation"}
+    assert "service_id" not in status["last_command_failure"]
+    following = json.loads(request(connection, "GET", "/extension/poll", headers=bridge)[1])[0]
+    assert following["command"] == "back"

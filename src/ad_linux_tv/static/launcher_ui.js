@@ -15,6 +15,7 @@ function createLauncherUI(send) {
       const button = document.createElement("button");
       button.textContent = service.name;
       button.dataset.serviceIndex = String(index);
+      button.dataset.serviceId = service.id;
       button.tabIndex = index === focus ? 0 : -1;
       button.onfocus = () => setFocus(index);
       button.onclick = () => {
@@ -79,10 +80,17 @@ function createLauncherUI(send) {
   };
 
   function update(items, pageSize) {
+    if (size === pageSize && JSON.stringify(services) === JSON.stringify(items)) return;
+    const active = document.activeElement;
+    const restoreFocus = tiles.contains(active);
+    const selectedId = active?.dataset?.serviceId;
+    const previousFocus = focus;
     services = items;
     size = pageSize;
-    focus = Math.min(focus, Math.max(0, services.length - 1));
-    render(false);
+    const selectedIndex = selectedId ? services.findIndex(service => service.id === selectedId) : -1;
+    focus = restoreFocus && selectedIndex >= 0
+      ? selectedIndex : Math.min(previousFocus, Math.max(0, services.length - 1));
+    render(restoreFocus);
   }
   return {update};
 }

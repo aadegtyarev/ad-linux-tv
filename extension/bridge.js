@@ -12,10 +12,11 @@ function createBridgeController(tabs, fetcher = fetch, logger = console) {
     if (!response.ok) throw new Error("bridge poll rejected");
     for (const item of await response.json()) {
       try {
-        await tabs.execute(item);
+        const result = await tabs.execute(item);
+        if (result.retry) return;
         const ack = await fetcher(`${BRIDGE_BASE}/extension/ack`, {
           method: "POST", headers: {...headers, "Content-Type": "application/json"},
-          body: JSON.stringify({id: item.id}),
+          body: JSON.stringify({id: item.id, outcome: result.outcome, reason: result.reason || null}),
         });
         if (!ack.ok) {
           logger.error("Browser command acknowledgement failed; command remains queued.");

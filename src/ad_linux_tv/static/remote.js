@@ -2,13 +2,32 @@
 const message = document.querySelector("#message");
 const loginForm = document.querySelector("#login");
 const controls = document.querySelector("#controls");
+const status = document.querySelector("#status");
 let csrf = "";
+let statusTimer = null;
 
 function requireLogin() {
   csrf = "";
+  if (statusTimer !== null) clearInterval(statusTimer);
+  statusTimer = null;
   controls.hidden = true;
   loginForm.hidden = false;
   message.textContent = "Session expired; log in again.";
+}
+
+async function refreshStatus() {
+  try {
+    const response = await fetch("/api/status");
+    if (!response.ok) throw new Error("status unavailable");
+    const value = await response.json();
+    status.textContent = value.pending_commands
+      ? "Command awaiting Firefox acknowledgement."
+      : value.last_command_failure
+        ? `Last command failed (${value.last_command_failure.reason}).`
+        : value.extension_online ? "Firefox bridge online." : "Firefox bridge offline.";
+  } catch (_) {
+    status.textContent = "TV server unavailable.";
+  }
 }
 
 async function post(command, service_id) {
@@ -20,6 +39,7 @@ async function post(command, service_id) {
     });
     if (response.status === 401 || response.status === 403) return requireLogin();
     if (!response.ok) message.textContent = `Command failed (${response.status})`;
+    else message.textContent = "Command accepted.";
   } catch (_) {
     message.textContent = "Connection lost; check the TV server and retry.";
   }
@@ -53,6 +73,8 @@ loginForm.onsubmit = async event => {
     loginForm.hidden = true;
     controls.hidden = false;
     message.textContent = "";
+    void refreshStatus();
+    statusTimer = setInterval(refreshStatus, 1000);
   } catch (_) {
     message.textContent = "Connection lost; check the TV server and retry.";
   }

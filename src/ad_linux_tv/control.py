@@ -19,6 +19,7 @@ class CommandQueue:
         self.last_seen = None
         self.lease_until = 0
         self.lease_seconds = 15
+        self.last_command_failure = None
 
     def push(self, command, service_id=None):
         if command not in COMMANDS or (command == "open") != (service_id is not None):
@@ -43,17 +44,25 @@ class CommandQueue:
             self.lease_until = now + self.lease_seconds
             return [dict(self.items[0])]
 
-    def acknowledge(self, command_id):
+    def acknowledge(self, command_id, outcome="completed", reason=None):
         with self.lock:
             if not self.items or self.items[0]["id"] != command_id:
                 return False
             self.items.popleft()
             self.lease_until = 0
             self.last_seen = time.time()
+            self.last_command_failure = (
+                None if outcome == "completed" else {"outcome": outcome, "reason": reason}
+            )
             return True
 
     def status(self):
         with self.lock:
             online = self.last_seen is not None and time.time() - self.last_seen < 30
             pending = len(self.items)
-        return {"extension_online": online, "pending_commands": pending}
+            failure = dict(self.last_command_failure) if self.last_command_failure else None
+        return {
+            "extension_online": online,
+            "pending_commands": pending,
+            "last_command_failure": failure,
+        }

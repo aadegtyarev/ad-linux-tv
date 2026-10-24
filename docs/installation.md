@@ -8,3 +8,9 @@
 Manual installed start: `~/.local/share/ad-linux-tv/run.sh ~/.config/ad-linux-tv/config.yaml`; direct server CLI: `~/.local/share/ad-linux-tv/venv/bin/ad-linux-tv --config ~/.config/ad-linux-tv/config.yaml`. Development uses `.venv/bin/ad-linux-tv` after `pip install -e '.[dev]'`.
 
 Troubleshoot: inspect terminal output, validate config with the installed venv CLI above, confirm server and Firefox extension use localhost port 8765, and ensure phone/TV share a private LAN. Plain HTTP and non-DRM/service playback are not guaranteed.
+
+## Firefox command recovery semantics
+
+Managed tab ownership lives in Firefox `storage.session`: it survives background event-page unload/reload, but is cleared by browser restart or extension reload/update/disable. After that boundary, pre-existing service tabs are intentionally treated as unmanaged; Home/Back/Refresh/Open will not claim them by URL or reused tab ID. The bounded 256-entry command deduplication ledger is mirrored to `storage.local` so an unacknowledged command cannot repeat across a browser restart; it contains command IDs, states, and fixed reason codes only.
+
+Commands are at-most-once after the extension records an execution claim. If Firefox loses the event page or browser in the claim/effect/ack window, recovery avoids replaying a potentially non-idempotent action; that action may be lost and is surfaced as an uncertain command result. Acknowledgement loss after the effect does not repeat completed effects. Preparation-only failures retry at most three total attempts; a terminal browser operation failure is reported and acknowledged so FIFO delivery can continue. The launcher and phone remote show pending and failed command status; failure details contain only fixed reason codes, not URLs, PINs, or exception text.

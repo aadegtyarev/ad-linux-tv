@@ -10,7 +10,7 @@
     }
   },
   "permissions": ["tabs", "storage", "alarms"],
-  "host_permissions": ["http://127.0.0.1:8765/*"],
-  "background": {"scripts": ["tabs.js", "bridge.js", "background.js"]},
-  "content_scripts": [{"matches": ["http://127.0.0.1:8765/*"], "js": ["launcher.js"]}]
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": {"scripts": ["tab_storage.js", "owned_tabs.js", "command_ledger.js", "tabs.js", "bridge.js", "background.js"]},
+  "content_scripts": [{"matches": ["http://127.0.0.1/*"], "js": ["launcher.js"]}]
 }

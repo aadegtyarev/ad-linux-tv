@@ -1,50 +1,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const vm = require("node:vm");
-
-function launcher() {
-  const events = {};
-  const calls = [];
-  const doc = {
-    activeElement: null,
-    addEventListener: (name, fn) => (events[name] = fn),
-    dispatchEvent(event) { event.target = this; events[event.type](event); },
-    querySelectorAll: () => [],
-  };
-  class Element {
-    constructor(id) { this.id = id; this.children = []; this.dataset = {}; }
-    addEventListener(name, fn) { this[`on${name}`] = fn; }
-    replaceChildren() { this.children = []; }
-    append(child) { child.parent = this; this.children.push(child); }
-    focus() { doc.activeElement = this; this.onfocus?.(); this.parent?.onfocusin?.({target:this}); }
-    click() { this.onclick?.(); }
-  }
-  const elements = Object.fromEntries(["#tiles", "#error", "#address", "#qr", "#page", "#next", "#prev"]
-    .map(id => [id, new Element(id)]));
-  doc.querySelector = id => elements[id];
-  doc.createElement = name => new Element(name);
-  const services = Array.from({length: 25}, (_, id) => ({id:`svc-${id}`, name:`Service ${id}`}));
-  const context = {
-    document: doc, innerWidth: 1920,
-    getComputedStyle: () => ({gridTemplateColumns:"300px 300px 300px 300px"}),
-    setInterval() {}, console,
-    fetch: async (url, options) => {
-      calls.push({url, options});
-      return {ok:true, status:200, json:async () => url === "/api/services"
-        ? {services, page_size:12, remote_address:"http://192.168.1.4:8765/remote"}
-        : {extension_online:true}};
-    },
-  };
-  vm.createContext(context);
-  vm.runInContext(fs.readFileSync("src/ad_linux_tv/static/layout.js", "utf8"), context);
-  vm.runInContext(fs.readFileSync("src/ad_linux_tv/static/launcher_ui.js", "utf8"), context);
-  vm.runInContext(fs.readFileSync("src/ad_linux_tv/static/app.js", "utf8"), context);
-  return {doc, elements, events, calls, services};
-}
-
-async function ready() { await new Promise(resolve => setImmediate(resolve)); }
+const {launcher, ready} = require("./helpers/launcher_mock.js");
 
 test("launcher focus uses actual columns and carries arrows across pages", async () => {
   const ui = launcher();
@@ -59,6 +16,33 @@ test("launcher focus uses actual columns and carries arrows across pages", async
   ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", isTrusted:true, preventDefault(){}});
   assert.equal(ui.doc.activeElement.dataset.serviceIndex, "16");
   assert.equal(ui.elements["#page"].textContent, "2 / 3");
+});
+
+test("periodic refresh preserves grid focus and skips unchanged DOM replacement", async () => {
+  const ui = launcher();
+  await ready();
+  ui.elements["#tiles"].children[5].focus();
+  const selected = ui.doc.activeElement;
+  ui.refresh();
+  await ready();
+  assert.equal(ui.doc.activeElement, selected);
+  ui.services = [ui.services[5], ...ui.services.filter((_, index) => index !== 5)];
+  ui.refresh();
+  await ready();
+  assert.equal(ui.doc.activeElement.dataset.serviceId, "svc-5");
+  assert.equal(ui.doc.activeElement.dataset.serviceIndex, "0");
+});
+
+test("services refresh does not clear offline or pending command status", async () => {
+  const ui = launcher();
+  await ready();
+  ui.status = {extension_online:false, pending_commands:1, last_command_failure:null};
+  ui.elements["#config-status"].textContent = "old configuration error";
+  ui.refresh();
+  await ready();
+  assert.equal(ui.elements["#config-status"].textContent, "");
+  assert.equal(ui.elements["#bridge-status"].textContent, "Firefox bridge offline; check the extension.");
+  assert.equal(ui.elements["#command-status"].textContent, "Browser command awaiting Firefox acknowledgement.");
 });
 
 test("Tab/click focus remains the item activated by bridge OK", async () => {

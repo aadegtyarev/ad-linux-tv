@@ -71,9 +71,17 @@ def handle_ack(handler, queue):
         return handler.send(403, "{}")
     try:
         data = handler.read_payload()
-        if not isinstance(data, dict) or set(data) != {"id"}:
+        if not isinstance(data, dict) or set(data) != {"id", "outcome", "reason"}:
             raise ValueError("invalid acknowledgement")
-        if not queue.acknowledge(data["id"]):
+        outcome, reason = data["outcome"], data["reason"]
+        reasons = {"invalid_id", "invalid_command", "retry_exhausted", "interrupted", "operation"}
+        if outcome not in {"completed", "failed", "uncertain"}:
+            raise ValueError("invalid acknowledgement outcome")
+        if (outcome == "completed" and reason is not None) or (
+            outcome != "completed" and reason not in reasons
+        ):
+            raise ValueError("invalid acknowledgement reason")
+        if not isinstance(data["id"], str) or not queue.acknowledge(data["id"], outcome, reason):
             return handler.send(409, "{}")
     except OverflowError:
         return handler.send(413, "{}")

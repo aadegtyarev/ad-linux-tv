@@ -1,5 +1,7 @@
 "use strict";
-const error = document.querySelector("#error");
+const configStatus = document.querySelector("#config-status");
+const bridgeStatus = document.querySelector("#bridge-status");
+const commandStatus = document.querySelector("#command-status");
 const ui = createLauncherUI(send);
 
 async function load() {
@@ -8,28 +10,33 @@ async function load() {
     if (!response.ok) throw new Error("Server unavailable");
     const data = await response.json();
     ui.update(data.services, data.page_size);
-    error.textContent = "";
+    configStatus.textContent = "";
     document.querySelector("#address").textContent = data.remote_address ||
       "No LAN listener is available; choose a LAN bind address.";
     const qr = document.querySelector("#qr");
     qr.src = data.remote_address ? "/api/qr" : "";
     qr.hidden = !data.remote_address;
   } catch (cause) {
-    error.textContent = `Configuration/connection error: ${cause.message}`;
+    configStatus.textContent = `Configuration error: ${cause.message}`;
   }
 }
 
-async function checkBridge() {
+async function checkStatus() {
   try {
     const response = await fetch("/api/status");
     if (!response.ok) throw new Error("status unavailable");
     const status = await response.json();
-    if (status.pending_commands) error.textContent = "Browser command awaiting Firefox acknowledgement.";
-    else if (!status.extension_online) error.textContent = "Firefox bridge offline; check the extension.";
-    else if (error.textContent.startsWith("Firefox bridge offline") ||
-             error.textContent.startsWith("Browser command awaiting")) error.textContent = "";
+    bridgeStatus.textContent = status.extension_online
+      ? "Firefox bridge online." : "Firefox bridge offline; check the extension.";
+    if (status.pending_commands) {
+      commandStatus.textContent = "Browser command awaiting Firefox acknowledgement.";
+    } else if (status.last_command_failure) {
+      commandStatus.textContent = `Last browser command failed (${status.last_command_failure.reason}).`;
+    } else {
+      commandStatus.textContent = "";
+    }
   } catch (_) {
-    error.textContent = "Server connection lost; restart ad-linux-tv.";
+    bridgeStatus.textContent = "Server connection lost; restart ad-linux-tv.";
   }
 }
 
@@ -40,15 +47,16 @@ async function send(command, service_id) {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({command, service_id}),
     });
-    if (!response.ok) error.textContent = `Browser bridge unavailable (${response.status})`;
+    if (!response.ok) commandStatus.textContent = `Command failed (${response.status}).`;
+    else commandStatus.textContent = "Command queued.";
   } catch (_) {
-    error.textContent = "Server connection lost; restart ad-linux-tv.";
+    commandStatus.textContent = "Server connection lost; retry the command.";
   }
 }
 
 load();
-checkBridge();
+checkStatus();
 setInterval(() => {
-  checkBridge();
+  checkStatus();
   load();
 }, 5000);
