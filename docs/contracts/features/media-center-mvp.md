@@ -1,6 +1,6 @@
 # Feature contract: media-center MVP
 
-- Status: Approved
+- Status: Implemented — target/release verification pending
 - Date: 2026-10-24
 
 ## Goal
@@ -33,11 +33,13 @@ Local mpv/files, physical remote control, and circumventing DRM/ads/subscription
 
 ## Affected surfaces
 
-No existing surfaces. Expected new durable contracts after implementation:
-- `docs/contracts/surfaces/tv-launcher.md`
-- `docs/contracts/surfaces/phone-remote.md`
-- `docs/contracts/surfaces/configuration.md`
-- `docs/contracts/surfaces/kubuntu-operation.md`
+Affected durable surface contracts:
+- [TV launcher](../surfaces/tv-launcher.md)
+- [Phone remote](../surfaces/phone-remote.md)
+- [Configuration](../surfaces/configuration.md)
+- [Kubuntu operation](../surfaces/kubuntu-operation.md)
+
+Implementation and independent source review are approved; target/release gates remain pending. This feature contract is intentionally retained and is not Complete.
 
 ## Interfaces and constraints
 
