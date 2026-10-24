@@ -4,6 +4,10 @@ import ipaddress
 import re
 from urllib.parse import urlsplit
 
+# This non-simple header blocks ordinary cross-site requests; it is not an authentication secret.
+BRIDGE_HEADER = "X-AD-Linux-TV-Bridge"
+BRIDGE_VALUE = "ad-linux-tv-v1"
+
 
 def private_source(value):
     try:
