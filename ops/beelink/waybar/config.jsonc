@@ -1,10 +1,9 @@
 {
   "layer": "overlay",
   "position": "bottom",
-  "height": 48,
-  "width": 184,
+  "height": 64,
+  "width": 312,
   "margin-bottom": 12,
-  "margin-left": 12,
   "exclusive": false,
   "modules-left": ["custom/home", "custom/keyboard"],
   "custom/home": {
@@ -13,7 +12,7 @@
     "on-click": "/usr/local/libexec/ad-linux-tv/touch-controls.sh home"
   },
   "custom/keyboard": {
-    "format": "⌨ Клав.",
+    "format": "⌨ Клавиатура",
     "tooltip": "Показать или скрыть экранную клавиатуру",
     "on-click": "/usr/local/libexec/ad-linux-tv/touch-controls.sh keyboard"
   }

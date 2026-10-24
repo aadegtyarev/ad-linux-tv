@@ -1,4 +1,4 @@
-* { font-family: sans-serif; font-size: 15px; }
-window#waybar { background: rgba(13, 27, 48, 0.82); color: #fff; border-radius: 14px; }
-#custom-home, #custom-keyboard { padding: 0 8px; min-height: 46px; }
+* { font-family: sans-serif; font-size: 19px; }
+window#waybar { background: rgba(13, 27, 48, 0.88); color: #fff; border-radius: 14px; }
+#custom-home, #custom-keyboard { padding: 6px 10px; min-height: 58px; }
 #custom-home:hover, #custom-keyboard:hover { background: rgba(92, 164, 255, 0.45); border-radius: 12px; }
