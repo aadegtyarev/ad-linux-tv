@@ -340,19 +340,22 @@ document.querySelector("#menu-shift-tab").onclick = () =>
   post("/api/input", {key:"shift-tab"}, "Фокус на предыдущем элементе.");
 const remoteFace = document.querySelector("#remote-face");
 const keyboardPage = document.querySelector("#remote-keyboard-page");
+const timerPage = document.querySelector("#remote-timer-page");
 const menuPage = document.querySelector("#remote-menu-page");
 function showPage(page) {
   remoteFace.hidden = page !== "remote";
   keyboardPage.hidden = page !== "keyboard";
+  timerPage.hidden = page !== "timer";
   menuPage.hidden = page !== "menu";
   window.scrollTo(0, 0);
   if (page === "keyboard") document.querySelector("#remote-text").focus();
 }
 document.querySelector("#show-keyboard").onclick = () => showPage("keyboard");
-document.querySelector("#show-menu").onclick = () => {
-  showPage("menu");
+document.querySelector("#show-timer").onclick = () => {
+  showPage("timer");
   void refreshDisplayTimer();
 };
+document.querySelector("#show-menu").onclick = () => showPage("menu");
 document.querySelector("#show-system").onclick = async () => {
   if (!await post("/api/command", {command: "home"}, "Открываем Систему…")) return;
   let ready = false;

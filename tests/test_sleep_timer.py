@@ -41,6 +41,7 @@ def test_timer_pauses_before_output_off_then_wakes_without_resuming():
     timer = DisplaySleepTimer(
         queue,
         power=lambda enabled: power_calls.append(enabled) or True,
+        browser_audio=lambda: False,
         other_audio=lambda: False,
         clock=lambda: 100,
         schedule=Scheduled,
@@ -148,6 +149,7 @@ def test_wake_during_output_transition_restores_image():
     timer = DisplaySleepTimer(
         PauseQueue(),
         power=power,
+        browser_audio=lambda: False,
         other_audio=lambda: False,
         clock=lambda: 100,
         schedule=Scheduled,
@@ -209,6 +211,7 @@ def test_uncertain_power_off_is_rolled_back_before_reporting_failure():
     timer = DisplaySleepTimer(
         PauseQueue(),
         power=power,
+        browser_audio=lambda: False,
         other_audio=lambda: False,
         clock=lambda: 100,
         schedule=Scheduled,

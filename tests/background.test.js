@@ -28,7 +28,7 @@ test("background listeners precede async initialization and filter launcher URL"
   events.message({type:"launcher-pulse"}, {url:LAUNCHER});
   events.alarm({name:"bridge-poll"});
   assert.equal(wakes, 2);
-  events.updated(3, {audible:true});
+  events.updated(3, {status:"complete"});
   events.activated({tabId:4});
   assert.deepEqual(normalized, [3, 4]);
 });

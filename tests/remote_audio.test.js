@@ -20,7 +20,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
     focus() {}
   }
   const ids = ["#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#touch-indicator", "#touch-indicator-2", "#pin", "#pin-visibility",
-    "#services", "#history-back", "#history-forward", "#remote-face", "#remote-keyboard-page", "#remote-menu-page", "#show-keyboard", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
+    "#services", "#history-back", "#history-forward", "#remote-face", "#remote-keyboard-page", "#remote-timer-page", "#remote-menu-page", "#show-keyboard", "#show-timer", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
     "#audio-mute", "#audio-refresh", "#audio-test", "#menu-tab", "#menu-shift-tab", "#open", "#text-form", "#remote-text", "#url-form",
     "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address", "#phone-timer-status"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
@@ -68,6 +68,11 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   assert.equal(elements["#controls"].hidden, false);
   assert.equal(elements["#connecting"].hidden, true);
   assert.equal(calls.filter(call => call.url === "/api/login").length, loginsBeforeRestore);
+  const commandsBeforeTimer = calls.filter(call => call.url === "/api/command").length;
+  elements["#show-timer"].onclick();
+  assert.equal(elements["#remote-timer-page"].hidden, false);
+  assert.equal(elements["#remote-face"].hidden, true);
+  assert.equal(calls.filter(call => call.url === "/api/command").length, commandsBeforeTimer);
   await timerButtons[1].onclick();
   const timerRequest = calls.find(call => call.url === "/api/display-timer" && call.options.method === "POST");
   assert.equal(timerRequest.options.headers["X-CSRF-Token"], "test-csrf");
