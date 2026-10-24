@@ -10,7 +10,7 @@ The paired phone opens a compact, familiar remote: Home, Back, a large shared to
 
 ## Scenarios and edges
 
-- Short taps on the four visible edge arrows send keys to the active Firefox page; dragging anywhere on the surface moves the TV cursor, the center OK tap activates the focused item, a tap elsewhere clicks the cursor position, and a two-finger swipe scrolls. A drag beginning on an arrow remains a pointer drag. When Firefox is not active, the phone explains that the TV window must be opened.
+- Short taps on the four visible edge arrows send keys to the active Firefox page; dragging anywhere on the surface moves the TV cursor, a separate OK button below the pad activates the focused item after arrows or clicks at the cursor after pointer movement after arrows or clicks at the cursor after pointer movement, a tap elsewhere clicks the cursor position, and a two-finger swipe scrolls. A drag beginning on an arrow remains a pointer drag. When Firefox is not active, the phone explains that the TV window must be opened.
 - The main remote preserves Home, Back, volume and mute, and fast phone-keyboard text entry. The menu retains service launch, URL entry, audio output, Firefox stream volume, Forward and Refresh. It offers a video-fullscreen shortcut for sites that support F and an Escape button; for other sites the touchpad can click the player fullscreen control.
 - A short or narrow viewport keeps tap targets reachable; landscape may scroll. Status and errors stay visible without displacing the pad.
 - Pairing still uses PIN, show/hide eye, session and CSRF. Reconnection requires login again if the session expires.

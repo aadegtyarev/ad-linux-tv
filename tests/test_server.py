@@ -234,12 +234,18 @@ def test_phone_touchpad_is_authenticated_bounded_and_targets_firefox(endpoint, m
     for payload, expected in (
         ({"dx": 60, "dy": -15}, ["/usr/bin/wlrctl", "pointer", "move", "60", "-15"]),
         ({"click": True}, ["/usr/bin/wlrctl", "pointer", "click"]),
-        ({"scroll": 3}, ["/usr/bin/wlrctl", "pointer", "scroll", "3", "0"]),
+        ({"scroll": 64}, ["/usr/bin/wlrctl", "pointer", "scroll", "64", "0"]),
     ):
         response, _ = request(connection, "POST", "/api/pointer", json.dumps(payload), headers)
         assert response.status == 200
         assert calls[-1] == expected
-    for payload in ({"dx": 601, "dy": 0}, {"click": "yes"}, {"scroll": 0}, {"dx": True, "dy": 1}):
+    for payload in (
+        {"dx": 601, "dy": 0},
+        {"click": "yes"},
+        {"scroll": 0},
+        {"scroll": 65},
+        {"dx": True, "dy": 1},
+    ):
         response, _ = request(connection, "POST", "/api/pointer", json.dumps(payload), headers)
         assert response.status == 400
     assert len(calls) == 6

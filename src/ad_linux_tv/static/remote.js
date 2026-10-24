@@ -321,18 +321,25 @@ document.querySelectorAll(".return-remote").forEach(button => {
   button.onclick = () => showPage("remote");
 });
 let navigationSequence = Promise.resolve();
+let inputMode = "keys";
 function sendArrow(key) {
+  if (key !== "ok") inputMode = "keys";
   navigationSequence = navigationSequence.then(() => post("/api/input", {key}, ""));
   return navigationSequence;
 }
 const touchpad = document.querySelector("#remote-touchpad");
-const touchIndicator = document.querySelector("#touch-indicator");
+document.querySelector("#remote-ok").onclick = () => {
+  if (inputMode === "pointer") void drainPointer().then(() => sendPointer({click: true}));
+  else void sendArrow("ok");
+};
+const touchIndicators = [document.querySelector("#touch-indicator"), document.querySelector("#touch-indicator-2")];
 const fingers = new Map();
 let pendingX = 0;
 let pendingY = 0;
 let pendingScroll = 0;
 let drainTimer = null;
-let draining = null;
+const pointerInflight = new Set();
+const maxPointerInflight = 4;
 let scrollFraction = 0;
 let pointerErrorShown = false;
 async function sendPointer(action) {
@@ -353,51 +360,66 @@ async function sendPointer(action) {
 function hasPointerWork() {
   return Math.abs(pendingX) >= 1 || Math.abs(pendingY) >= 1 || pendingScroll !== 0;
 }
-function drainPointer() {
+function dispatchPointer(action) {
+  const request = sendPointer(action);
+  pointerInflight.add(request);
+  void request.finally(() => {
+    pointerInflight.delete(request);
+    pumpPointer();
+  });
+}
+function pumpPointer() {
   if (drainTimer !== null) clearTimeout(drainTimer);
   drainTimer = null;
-  if (draining) return draining;
-  draining = (async () => {
-    while (hasPointerWork()) {
-      if (Math.abs(pendingX) >= 1 || Math.abs(pendingY) >= 1) {
-        const dx = Math.max(-600, Math.min(600, Math.round(pendingX)));
-        const dy = Math.max(-600, Math.min(600, Math.round(pendingY)));
-        pendingX -= dx;
-        pendingY -= dy;
-        if (dx || dy) await sendPointer({dx, dy});
-      }
-      if (pendingScroll) {
-        const scroll = Math.max(-8, Math.min(8, pendingScroll));
-        pendingScroll -= scroll;
-        await sendPointer({scroll});
-      }
-    }
-  })().finally(() => {
-    draining = null;
-    if (hasPointerWork()) schedulePointerDrain();
-  });
-  return draining;
+  while (pointerInflight.size < maxPointerInflight &&
+      (Math.abs(pendingX) >= 1 || Math.abs(pendingY) >= 1)) {
+    const dx = Math.max(-600, Math.min(600, Math.round(pendingX)));
+    const dy = Math.max(-600, Math.min(600, Math.round(pendingY)));
+    pendingX -= dx;
+    pendingY -= dy;
+    if (dx || dy) dispatchPointer({dx, dy});
+  }
+  // Finish cursor movement before wheel events so the correct element scrolls.
+  if (pointerInflight.size === 0 && pendingScroll) {
+    const scroll = Math.max(-64, Math.min(64, pendingScroll));
+    pendingScroll -= scroll;
+    dispatchPointer({scroll});
+  }
+}
+async function drainPointer() {
+  pumpPointer();
+  while (hasPointerWork() || pointerInflight.size) {
+    if (pointerInflight.size) await Promise.race(pointerInflight);
+    else pumpPointer();
+  }
 }
 function schedulePointerDrain() {
-  if (drainTimer === null && !draining) drainTimer = setTimeout(() => { void drainPointer(); }, 35);
+  if (drainTimer === null && pointerInflight.size < maxPointerInflight)
+    drainTimer = setTimeout(pumpPointer, 16);
 }
 function schedulePointerMove(dx, dy) {
-  pendingX = Math.max(-600, Math.min(600, pendingX + dx * 3));
-  pendingY = Math.max(-600, Math.min(600, pendingY + dy * 3));
+  pendingX = Math.max(-4800, Math.min(4800, pendingX + dx * 3));
+  pendingY = Math.max(-4800, Math.min(4800, pendingY + dy * 3));
   schedulePointerDrain();
 }
 function schedulePointerScroll(dy) {
-  scrollFraction -= dy / 3.5;
+  inputMode = "pointer";
+  scrollFraction -= dy * 3;
   const steps = Math.trunc(scrollFraction);
   scrollFraction -= steps;
-  pendingScroll = Math.max(-16, Math.min(16, pendingScroll + steps));
+  pendingScroll = Math.max(-240, Math.min(240, pendingScroll + steps));
   schedulePointerDrain();
 }
-function showTouch(event) {
+function showTouches() {
   const rect = touchpad.getBoundingClientRect();
-  touchIndicator.style.left = `${event.clientX - rect.left}px`;
-  touchIndicator.style.top = `${event.clientY - rect.top}px`;
-  touchIndicator.hidden = false;
+  const active = Array.from(fingers.values());
+  touchIndicators.forEach((indicator, index) => {
+    const finger = active[index];
+    indicator.hidden = !finger;
+    if (!finger) return;
+    indicator.style.left = `${finger.x - rect.left}px`;
+    indicator.style.top = `${finger.y - rect.top}px`;
+  });
 }
 touchpad.addEventListener("pointerdown", event => {
   event.preventDefault();
@@ -408,7 +430,7 @@ touchpad.addEventListener("pointerdown", event => {
     time: Date.now(), moved: false, multi: false, arrow,
   });
   if (fingers.size > 1) for (const finger of fingers.values()) finger.multi = true;
-  showTouch(event);
+  showTouches();
   touchpad.classList.add("touch-active");
 });
 touchpad.addEventListener("pointermove", event => {
@@ -424,20 +446,35 @@ touchpad.addEventListener("pointermove", event => {
   } else if (!finger.multi) {
     // Keep a painted key press despite normal finger jitter; a deliberate drag still moves the cursor.
     const dragDistance = finger.arrow ? 32 : 9;
+    const wasMoving = finger.moved;
     if (Math.hypot(event.clientX - finger.startX, event.clientY - finger.startY) > dragDistance) finger.moved = true;
-    if (finger.moved) schedulePointerMove(dx, dy);
+    if (finger.moved) {
+      inputMode = "pointer";
+      schedulePointerMove(
+      wasMoving ? dx : event.clientX - finger.startX,
+      wasMoving ? dy : event.clientY - finger.startY,
+      );
+    }
   }
-  showTouch(event);
+  showTouches();
 });
 function finishTouch(event, cancelled = false) {
   const finger = fingers.get(event.pointerId);
   if (!finger) return;
   event.preventDefault();
   fingers.delete(event.pointerId);
-  if (!fingers.size) {
-    touchpad.classList.remove("touch-active");
-    setTimeout(() => { touchIndicator.hidden = true; }, 160);
+  if (!fingers.size) touchpad.classList.remove("touch-active");
+  if (fingers.size === 1) {
+    const remaining = fingers.values().next().value;
+    if (remaining.multi) {
+      remaining.multi = false;
+      remaining.moved = true;
+      remaining.arrow = null;
+      remaining.startX = remaining.x;
+      remaining.startY = remaining.y;
+    }
   }
+  showTouches();
   if (cancelled) {
     if (drainTimer !== null) clearTimeout(drainTimer);
     drainTimer = null;
@@ -451,17 +488,17 @@ function finishTouch(event, cancelled = false) {
   if (finger.moved) return void drainPointer();
   if (!finger.arrow && Date.now() - finger.time > 650) return;
   if (finger.arrow) void sendArrow(finger.arrow);
-  else void drainPointer().then(() => sendPointer({click: true}));
+  else { inputMode = "pointer"; void drainPointer().then(() => sendPointer({click: true})); }
 }
 touchpad.addEventListener("pointerup", event => finishTouch(event));
 touchpad.addEventListener("pointercancel", event => finishTouch(event, true));
 touchpad.addEventListener("keydown", event => {
   const key = {ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right"}[event.key];
   if (key) { event.preventDefault(); void sendArrow(key); }
-  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void drainPointer().then(() => sendPointer({click: true})); }
+  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inputMode = "pointer"; void drainPointer().then(() => sendPointer({click: true})); }
 });
 document.querySelectorAll("[data-c]").forEach(button => {
-  button.onclick = () => post("/api/command", {command: button.dataset.c}, "");
+  button.onclick = () => { if (button.dataset.c === "home") inputMode = "keys"; return post("/api/command", {command: button.dataset.c}, ""); };
 });
 document.querySelector("#open").onclick = () =>
   post("/api/command", {command: "open", service_id: document.querySelector("#services").value}, "Открываем сервис…");
