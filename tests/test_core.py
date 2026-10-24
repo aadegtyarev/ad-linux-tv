@@ -71,3 +71,26 @@ def test_port_and_page_size_are_bounded(tmp_path, field, value):
     data[field] = value
     with pytest.raises(ValueError, match="Invalid configuration"):
         load_config(write_config(tmp_path, data))
+
+
+def test_cli_starts_server_without_init_config(tmp_path, monkeypatch):
+    import ad_linux_tv.cli as cli
+
+    path = write_config(tmp_path, config_data())
+    served = []
+    monkeypatch.setattr("sys.argv", ["ad-linux-tv", "--config", str(path)])
+    monkeypatch.setattr(cli, "serve", served.append)
+    cli.main()
+    assert len(served) == 1
+    assert served[0]["port"] == 8765
+
+
+def test_cli_init_config_creates_usable_private_config(tmp_path, monkeypatch):
+    import ad_linux_tv.cli as cli
+
+    path = tmp_path / "new-config.yaml"
+    monkeypatch.setattr("sys.argv", ["ad-linux-tv", "init-config", "--config", str(path)])
+    monkeypatch.setattr(cli.getpass, "getpass", lambda _prompt: "test-pin-1234")
+    cli.main()
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert verify_pin("test-pin-1234", load_config(path)["auth"])

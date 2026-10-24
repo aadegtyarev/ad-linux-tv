@@ -20,7 +20,7 @@ def main():
         "--config",
         default=os.environ.get("AD_LINUX_TV_CONFIG", "~/.config/ad-linux-tv/config.yaml"),
     )
-    parser.add_argument("init-config", nargs="?", choices=["init-config"])
+    parser.add_argument("init_config", nargs="?", choices=["init-config"], metavar="init-config")
     args = parser.parse_args()
     path = Path(args.config).expanduser()
     if args.init_config:
