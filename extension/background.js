@@ -11,4 +11,4 @@ async function execute(item) {
   else if (["up","down","left","right","ok"].includes(item.command)) { const tabs=await browser.tabs.query({}); const t=tabs.find(x=>x.id===launcher); if(t) await browser.tabs.sendMessage(t.id,{command:item.command}).catch(()=>{}); }
 }
 async function poll() { try { const r=await fetch(`${BASE}/extension/poll`); for(const item of await r.json()) await execute(item); await fetch(`${BASE}/extension/heartbeat`); } catch (_) {} }
-browser.alarms.create("poll",{periodInMinutes:0.05});browser.alarms.onAlarm.addListener(poll);browser.runtime.onStartup.addListener(launcherTab);browser.runtime.onInstalled.addListener(launcherTab);poll();
+browser.runtime.onStartup.addListener(launcherTab);browser.runtime.onInstalled.addListener(launcherTab);setInterval(poll,1000);poll();

@@ -52,6 +52,8 @@ def load_config(path):
                 raise ValueError("service URLs must be safe HTTPS URLs")
             ids.add(service["id"])
         return data
+    except yaml.YAMLError:
+        raise ValueError("Invalid configuration: invalid YAML syntax") from None
     except Exception as exc:
         raise ValueError(f"Invalid configuration: {type(exc).__name__}: {exc}") from None
 

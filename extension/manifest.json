@@ -3,7 +3,7 @@
   "name": "ad-linux-tv bridge",
   "version": "0.1.0",
   "browser_specific_settings": {"gecko": {"id": "ad-linux-tv@aadegtyarev.github.io", "strict_min_version": "157.0"}},
-  "permissions": ["tabs", "alarms"],
+  "permissions": ["tabs"],
   "host_permissions": ["http://127.0.0.1:8765/*", "http://localhost:8765/*"],
   "background": {"scripts": ["background.js"]},
   "content_scripts": [{"matches": ["http://127.0.0.1:8765/*", "http://localhost:8765/*"], "js": ["launcher.js"]}]
