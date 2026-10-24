@@ -7,8 +7,9 @@ python3 - <<'PY' "$ROOT/manifest.json"
 import json, sys
 m=json.load(open(sys.argv[1], encoding="utf-8"))
 assert m["manifest_version"] == 3
-assert "background/scripts" not in m and m["background"].get("scripts")
-assert m["browser_specific_settings"]["gecko"]["strict_min_version"] >= "157.0"
+assert m["background"].get("scripts") and "service_worker" not in m["background"]
+version = tuple(map(int, m["browser_specific_settings"]["gecko"]["strict_min_version"].split(".")))
+assert version >= (157, 0)
 PY
 (cd "$ROOT" && zip -q -j "$OUT" manifest.json background.js launcher.js)
 sha256sum "$OUT"

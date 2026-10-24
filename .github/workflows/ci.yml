@@ -8,11 +8,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - run: python -m pip install -e '.[dev]'
-      - run: pytest
+      - run: pytest -q
+      - run: node --test tests/layout.test.js
       - run: ruff check .
       - run: ruff format --check .
       - run: python -m json.tool extension/manifest.json
-      - run: bash -n install.sh uninstall.sh extension/package.sh
+      - run: bash -n install.sh uninstall.sh run.sh extension/package.sh
       - run: ./install.sh --dry-run
       - run: ./uninstall.sh --dry-run

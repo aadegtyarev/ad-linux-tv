@@ -15,6 +15,6 @@
 - Stack / product: Kubuntu media center `ad-linux-tv`; Firefox-based; application implementation is not yet started.
 - Contract paths: `docs/contracts/features/media-center-mvp.md`; expected future durable surfaces: `docs/contracts/surfaces/tv-launcher.md`, `phone-remote.md`, `configuration.md`, `kubuntu-operation.md`.
 - Python 3.12 package in `src/ad_linux_tv/`; install dev dependencies with `python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'`.
-- Tests: `.venv/bin/pytest`; lint/format: `.venv/bin/ruff check . && .venv/bin/ruff format --check .`; extension: `python3 -m json.tool extension/manifest.json`; shell validation: `bash -n install.sh uninstall.sh`.
+- Tests: `.venv/bin/pytest -q` and `node --test tests/layout.test.js`; lint/format: `.venv/bin/ruff check . && .venv/bin/ruff format --check .`; extension: `python3 -m json.tool extension/manifest.json`; shell validation: `bash -n install.sh uninstall.sh run.sh extension/package.sh`.
 - Static launcher/remote are vanilla HTML/CSS/JS; Firefox MV3 bridge lives in `extension/`.
 - Constraints: keep service settings in a single `config.yaml`; do not expose secrets in client configuration or logs; no DRM circumvention.
