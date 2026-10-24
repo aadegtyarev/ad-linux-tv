@@ -80,3 +80,9 @@ html[data-touchscreen="true"] #system-button{display:inline-flex}
 .remote-connection[data-feedback="success"]{background:#176991;color:#fff}.remote-connection[data-feedback="error"]{background:#a3433e;color:#fff}
 .remote-login-error{min-height:2.5em;margin:8px 0 0;color:#ffb5a8;font-size:13px;line-height:1.25}
 #tiles button.tv-pressed,#system-button.tv-pressed,.settings-actions button.tv-pressed,.system-audio button.tv-pressed,#confirm-kde button.tv-pressed,.pagination button.tv-pressed{background:#277ca5!important;border-color:#a7e8ff!important;box-shadow:0 0 0 5px #7dd9ff55,inset 0 0 22px #a7e8ff33!important;transform:scale(.96)!important;transition:none!important}
+/* Keep touch instructions on the surface; the middle hint doubles as OK. */
+.remote-pad-wrap .remote-touchpad .touch-guide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(54%,215px);display:flex;flex-direction:column;gap:11px;pointer-events:none}
+.remote-pad-wrap .remote-touchpad .touch-guide>span{display:flex;align-items:center;justify-content:flex-start;gap:8px;min-width:0;padding:4px 6px;border:0;background:none;color:#e9f5ff;font-size:13px;text-align:left;white-space:nowrap}
+
+.remote-ok-button{flex:none;width:100%;min-height:52px;border:1px solid #78c9e8;border-radius:16px;background:#176991;color:#fff;font-size:20px;font-weight:800;letter-spacing:.05em}
+.remote-ok-button:active{background:#2c95bc;transform:scale(.98)}

@@ -173,7 +173,7 @@ def handle_pointer(handler):
             command = ["/usr/bin/wlrctl", "pointer", "click"]
         elif set(data) == {"scroll"}:
             amount = data["scroll"]
-            if type(amount) is not int or not -8 <= amount <= 8 or amount == 0:
+            if type(amount) is not int or not -64 <= amount <= 64 or amount == 0:
                 raise ValueError("invalid pointer scroll")
             command = ["/usr/bin/wlrctl", "pointer", "scroll", str(amount), "0"]
         else:

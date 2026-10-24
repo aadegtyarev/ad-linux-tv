@@ -8,18 +8,18 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   const calls = [];
   let savedSession = false;
   let holdMove = false;
-  let releaseMove = null;
+  const releaseMoves = [];
   class Element {
     constructor() { this.dataset = {}; this.children = []; this.value = ""; this.hidden = false; this.listeners = {}; this.style = {}; this.classes = new Set(); this.classList = {add: value => this.classes.add(value), remove: value => this.classes.delete(value)}; }
     replaceChildren() { this.children = []; }
     append(item) { this.children.push(item); }
     addEventListener(name, callback) { this.listeners[name] = callback; }
     setPointerCapture() {}
-    getBoundingClientRect() { return {left:0, top:0}; }
+    getBoundingClientRect() { return {left:0, top:0, width:300, height:300}; }
     setAttribute(name, value) { this[name] = value; }
     focus() {}
   }
-  const ids = ["#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#touch-indicator", "#pin", "#pin-visibility",
+  const ids = ["#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#remote-ok", "#touch-indicator", "#touch-indicator-2", "#pin", "#pin-visibility",
     "#services", "#history-back", "#history-forward", "#video-fullscreen", "#video-exit", "#remote-face", "#remote-keyboard-page", "#remote-menu-page", "#show-keyboard", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
     "#audio-mute", "#audio-refresh", "#audio-test", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#open", "#text-form", "#remote-text", "#url-form",
     "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address"];
@@ -31,7 +31,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
     fetch: async (url, options = {}) => {
       calls.push({url, options});
       if (url === "/api/pointer" && holdMove && JSON.parse(options.body).dx !== undefined) {
-        await new Promise(resolve => { releaseMove = resolve; });
+        await new Promise(resolve => { releaseMoves.push(resolve); });
       }
       if (url === "/api/session") return {ok:savedSession, status:savedSession ? 200 : 401, json:async () => ({csrf:"test-csrf"})};
       const data = url === "/api/login" ? {csrf:"test-csrf"}
@@ -79,13 +79,14 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   touchpad.listeners.pointerdown(touch(1, 100, 100, "up"));
   touchpad.listeners.pointerup(touch(1, 100, 100, "up"));
   await new Promise(resolve => setImmediate(resolve));
-  touchpad.listeners.pointerdown(touch(8, 100, 100, "ok"));
-  vm.runInContext("fingers.get(8).time -= 1000", context);
-  touchpad.listeners.pointermove(touch(8, 114, 104, "ok"));
-  touchpad.listeners.pointerup(touch(8, 114, 104, "ok"));
+  elements["#remote-ok"].onclick();
+  touchpad.listeners.pointerdown(touch(8, 150, 150));
+  touchpad.listeners.pointerup(touch(8, 150, 150));
   await new Promise(resolve => setImmediate(resolve));
   touchpad.listeners.pointerdown(touch(2, 100, 100));
   touchpad.listeners.pointerup(touch(2, 100, 100));
+  await new Promise(resolve => setImmediate(resolve));
+  elements["#remote-ok"].onclick();
   await new Promise(resolve => setImmediate(resolve));
   touchpad.listeners.pointerdown(touch(3, 50, 50));
   touchpad.listeners.pointermove(touch(3, 70, 55));
@@ -93,40 +94,47 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   await new Promise(resolve => setImmediate(resolve));
   const pointerActions = calls.filter(call => call.url === "/api/pointer")
     .map(call => JSON.parse(call.options.body));
-  assert.deepEqual(pointerActions, [{click:true}, {dx:60, dy:15}]);
+  assert.deepEqual(pointerActions, [{click:true}, {click:true}, {click:true}, {dx:60, dy:15}]);
   touchpad.listeners.pointerdown(touch(4, 100, 100));
   touchpad.listeners.pointerdown(touch(5, 120, 100));
+  assert.equal(elements["#touch-indicator"].hidden, false);
+  assert.equal(elements["#touch-indicator-2"].hidden, false);
   touchpad.listeners.pointermove(touch(4, 100, 114));
   touchpad.listeners.pointermove(touch(5, 120, 114));
   touchpad.listeners.pointerup(touch(4, 100, 114));
-  touchpad.listeners.pointermove(touch(5, 120, 128));
-  touchpad.listeners.pointerup(touch(5, 120, 128));
+  touchpad.listeners.pointermove(touch(5, 130, 130));
+  touchpad.listeners.pointerup(touch(5, 130, 130));
   await new Promise(resolve => setTimeout(resolve, 70));
   const scrolls = calls.filter(call => call.url === "/api/pointer")
     .map(call => JSON.parse(call.options.body).scroll).filter(value => value !== undefined);
-  assert.deepEqual(scrolls, [-4]);
+  assert.deepEqual(scrolls, [-42]);
+  assert.equal(elements["#touch-indicator-2"].hidden, true);
+  assert.equal(elements["#touch-indicator"].hidden, true);
   touchpad.listeners.pointerdown(touch(6, 50, 50));
   touchpad.listeners.pointermove(touch(6, 70, 50));
   touchpad.listeners.pointercancel(touch(6, 70, 50));
   await new Promise(resolve => setTimeout(resolve, 70));
   const moves = calls.filter(call => call.url === "/api/pointer")
     .map(call => JSON.parse(call.options.body).dx).filter(value => value !== undefined);
-  assert.deepEqual(moves, [60]);
+  assert.deepEqual(moves, [60, 30]);
   holdMove = true;
   touchpad.listeners.pointerdown(touch(7, 20, 20));
   touchpad.listeners.pointermove(touch(7, 40, 20));
   await new Promise(resolve => setTimeout(resolve, 60));
-  for (let x = 50; x <= 200; x += 10) touchpad.listeners.pointermove(touch(7, x, 20));
-  touchpad.listeners.pointerup(touch(7, 200, 20));
+  for (let x = 50; x <= 420; x += 10) touchpad.listeners.pointermove(touch(7, x, 20));
+  touchpad.listeners.pointerup(touch(7, 420, 20));
   const countWhileHeld = calls.filter(call => call.url === "/api/pointer" &&
     JSON.parse(call.options.body).dx !== undefined).length;
-  assert.equal(countWhileHeld, 2);
+  assert.ok(countWhileHeld <= 6);
   holdMove = false;
-  releaseMove();
+  for (const release of releaseMoves) release();
   await new Promise(resolve => setTimeout(resolve, 70));
   const countAfter = calls.filter(call => call.url === "/api/pointer" &&
     JSON.parse(call.options.body).dx !== undefined).length;
-  assert.ok(countAfter <= 3);
+  assert.ok(countAfter <= 7);
+  const movedPixels = calls.filter(call => call.url === "/api/pointer")
+    .map(call => JSON.parse(call.options.body).dx || 0).reduce((total, dx) => total + dx, 0);
+  assert.equal(movedPixels, 60 + 30 + 1200);
   await elements["#history-back"].onclick();
   await elements["#history-forward"].onclick();
   await elements["#video-fullscreen"].onclick();
