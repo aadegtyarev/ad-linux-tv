@@ -18,6 +18,16 @@ test("launcher focus uses actual columns and carries arrows across pages", async
   assert.equal(ui.elements["#page"].textContent, "2 / 3");
 });
 
+test("service tile uses configured color and neutral tile stays neutral", async () => {
+  const ui = launcher();
+  ui.services = [{id:"colored", name:"Colored", color:"#FF6600"}, {id:"plain", name:"Plain"}];
+  ui.refresh();
+  await ready();
+  assert.equal(ui.elements["#tiles"].children[0].properties["--tile-color"], "#FF6600");
+  assert.equal(ui.elements["#tiles"].children[0].classList.contains("colored-tile"), true);
+  assert.equal(ui.elements["#tiles"].children[1].classList.contains("colored-tile"), false);
+});
+
 test("periodic refresh preserves grid focus and skips unchanged DOM replacement", async () => {
   const ui = launcher();
   await ready();
@@ -72,7 +82,7 @@ test("settings is reachable by remote OK and KDE requires a second confirmation"
   ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
   assert.equal(ui.elements["#settings"].hidden, false);
   assert.equal(ui.doc.documentElement.dataset.bridgeServiceId, "");
-  ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", preventDefault(){}});
+  for (let i = 0; i < 5; i += 1) ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", preventDefault(){}});
   ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
   assert.equal(ui.elements["#confirm-kde"].hidden, false);
   assert.equal(ui.calls.filter(call => call.url === "/api/system/kde").length, 0);
@@ -80,6 +90,27 @@ test("settings is reachable by remote OK and KDE requires a second confirmation"
   ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
   await ready();
   assert.equal(ui.calls.filter(call => call.url === "/api/system/kde").length, 1);
+});
+
+test("System audio controls load state and submit selected volume", async () => {
+  const ui = launcher({hostname:"127.0.0.1"});
+  await ready();
+  ui.elements["#system-button"].click();
+  await ready();
+  assert.equal(ui.elements["#audio-output"].value, "hdmi");
+  assert.equal(ui.elements["#audio-volume-value"].textContent, "100%");
+  ui.elements["#audio-volume"].value = "45";
+  ui.elements["#audio-volume"].onchange();
+  await ready();
+  const request = ui.calls.find(call => call.url === "/api/audio" && call.options?.method === "POST");
+  assert.equal(JSON.parse(request.options.body).volume, 45);
+  ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", preventDefault(){}});
+  ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", preventDefault(){}});
+  ui.doc.dispatchEvent({type:"keydown", key:"ArrowLeft", preventDefault(){}});
+  await ready();
+  const volumes = ui.calls.filter(call => call.url === "/api/audio" && call.options?.method === "POST")
+    .map(call => JSON.parse(call.options.body).volume);
+  assert.equal(volumes.at(-1), 95);
 });
 
 test("LAN address change updates both shown address and QR image", async () => {

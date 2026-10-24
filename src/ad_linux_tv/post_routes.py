@@ -5,6 +5,7 @@ import os
 import subprocess
 from urllib.parse import urlparse
 
+from . import audio
 from .config import verify_pin
 from .control import QueueFullError
 from .http_errors import BodyTimeout
@@ -86,6 +87,30 @@ def handle_post(handler, config, queue, sessions, failures):
         ):
             return handler.send(403, "{}")
         return handle_input(handler)
+    if path == "/api/audio":
+        local_audio = local_ui and handler.headers.get("Host") == (
+            f"127.0.0.1:{handler.server.server_port}"
+        )
+        if (
+            os.environ.get("AD_LINUX_TV_KIOSK") != "1"
+            or not (local_audio or token)
+            or (
+                not local_audio
+                and not sessions.csrf_valid(token, handler.headers.get("X-CSRF-Token"))
+            )
+        ):
+            return handler.send(403, "{}")
+        try:
+            result = audio.apply(handler.read_payload())
+        except OverflowError:
+            return handler.send(413, "{}")
+        except BodyTimeout:
+            return handler.send(408, "{}", headers=(("Connection", "close"),))
+        except audio.AudioUnavailable:
+            return handler.send(503, "{}")
+        except Exception:
+            return handler.send(400, "{}")
+        return handler.send(200, json.dumps(result))
     if not local_ui and not sessions.csrf_valid(token, handler.headers.get("X-CSRF-Token")):
         return handler.send(403, "{}")
     try:

@@ -30,7 +30,13 @@
   </section>
   <section id="settings" hidden>
     <p class="eyebrow">ad-linux-tv</p><h1>Система</h1>
-    <div class="settings-actions"><button id="settings-back">← К сервисам</button><button id="open-kde">Выйти из ТВ-режима → KDE</button></div>
+    <div class="settings-actions"><button id="settings-back">← К сервисам</button></div>
+    <div class="system-audio"><h2>Звук</h2><p id="audio-status" role="status"></p>
+      <label for="audio-output">Выход звука</label><div class="system-audio-row"><select id="audio-output"></select><button id="audio-refresh">Обновить список</button></div>
+      <label for="audio-volume">Громкость выхода: <span id="audio-volume-value">100%</span></label>
+      <div class="system-audio-row"><input id="audio-volume" type="range" min="0" max="100" step="5" value="100"><button id="audio-mute">Выключить звук</button></div>
+    </div>
+    <div class="settings-actions"><button id="open-kde">Выйти из ТВ-режима → KDE</button></div>
     <div id="confirm-kde" hidden><p>Закрыть ТВ-режим и открыть KDE?</p><button id="cancel-kde">Отмена</button><button id="confirm-kde-yes">Да, открыть KDE</button></div>
     <p id="system-status" role="status"></p>
   </section>

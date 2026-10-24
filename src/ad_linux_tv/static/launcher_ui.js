@@ -21,6 +21,10 @@ function createLauncherUI(send, openSettings) {
       button.textContent = service.name;
       button.dataset.serviceIndex = String(index);
       button.dataset.serviceId = service.id;
+      if (service.color) {
+        button.classList.add("colored-tile");
+        button.style.setProperty("--tile-color", service.color);
+      }
       button.tabIndex = index === focus ? 0 : -1;
       button.onfocus = () => setFocus(index);
       button.onclick = () => {
