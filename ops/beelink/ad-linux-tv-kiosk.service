@@ -1,5 +1,5 @@
 [Unit]
-Description=ad-linux-tv Firefox kiosk on tty1
+Description=ad-linux-tv Firefox kiosk on tty1 (Weston)
 After=systemd-user-sessions.service systemd-logind.service getty@tty1.service
 Wants=systemd-logind.service dbus.socket
 Conflicts=getty@tty1.service sddm.service
@@ -13,7 +13,8 @@ PAMName=ad-linux-tv-kiosk
 Environment=HOME=/home/ad-tv
 Environment=AD_LINUX_TV_KIOSK=1
 Environment=XDG_SESSION_TYPE=wayland
-ExecStart=/usr/bin/cage -s -- /home/ad-tv/.local/share/ad-linux-tv/run.sh /home/ad-tv/.config/ad-linux-tv/config.yaml
+Environment=MOZ_ENABLE_WAYLAND=1
+ExecStart=/usr/bin/weston --backend=drm --shell=kiosk-shell.so --no-config --continue-without-input -- /home/ad-tv/.local/share/ad-linux-tv/run.sh /home/ad-tv/.config/ad-linux-tv/config.yaml
 ExecStartPost=+/usr/bin/chvt 1
 ExecStopPost=+/usr/bin/chvt 2
 StandardInput=tty-fail

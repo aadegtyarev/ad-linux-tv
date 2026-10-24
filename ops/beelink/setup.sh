@@ -13,7 +13,7 @@ preview() {
   printf 'Application: %s\n' /home/ad-tv/.local/share/ad-linux-tv
   printf 'Config: %s\n' /home/ad-tv/.config/ad-linux-tv/config.yaml
   printf 'Firefox profile/XPI: %s\n' /home/ad-tv/snap/firefox/common
-  printf 'Compositor package: %s\n' cage
+  printf 'Compositor package: %s\n' weston
   printf 'System units: %s\n' /etc/systemd/system/ad-linux-tv-kiosk.service /etc/systemd/system/ad-linux-tv-boot.service
   printf 'KDE switch unit: %s\n' /etc/systemd/system/ad-linux-tv-switch-kde.service
   printf 'PAM: %s\n' /etc/pam.d/ad-linux-tv-kiosk
@@ -49,9 +49,9 @@ if id -u ad-tv >/dev/null 2>&1; then
 else
   useradd --create-home --home-dir /home/ad-tv --shell /usr/sbin/nologin --user-group ad-tv
 fi
-apt-get install -y cage
+apt-get install -y weston
 install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/.config/ad-linux-tv
-install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/snap/firefox/common
+install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/snap /home/ad-tv/snap/firefox /home/ad-tv/snap/firefox/common
 install -d -m 755 /usr/local/libexec/ad-linux-tv
 install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" /usr/local/libexec/ad-linux-tv/
 install -m 644 "$ROOT/ad-linux-tv-kiosk.service" "$ROOT/ad-linux-tv-boot.service" "$ROOT/ad-linux-tv-switch-kde.service" /etc/systemd/system/

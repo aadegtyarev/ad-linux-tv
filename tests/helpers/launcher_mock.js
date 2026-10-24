@@ -30,7 +30,7 @@ function launcher() {
   doc.documentElement = new Element("html");
   doc.activeElement = doc.body;
   const elements = Object.fromEntries(
-    ["#tiles", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes"]
+    ["#tiles", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes"]
       .map(id => [id, new Element(id)])
   );
   elements["#settings"].hidden = true;

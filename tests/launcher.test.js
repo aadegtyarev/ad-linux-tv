@@ -42,9 +42,9 @@ test("services refresh does not clear offline or pending command status", async 
   ui.refresh();
   await ready();
   assert.equal(ui.elements["#config-status"].textContent, "");
-  assert.equal(ui.elements["#bridge-status"].textContent, "Firefox bridge offline; check the extension.");
+  assert.equal(ui.elements["#bridge-status"].textContent, "Расширение Firefox не подключено.");
   assert.equal(ui.elements["#command-status"].textContent,
-    "Browser command awaiting Firefox acknowledgement. Last browser command uncertain (interrupted).");
+    "Команда ожидает ответа Firefox. Последняя команда: uncertain (interrupted).");
 });
 
 test("physical tile click still posts Open and pagination stays local", async () => {
@@ -64,6 +64,7 @@ test("settings is reachable by remote OK and KDE requires a second confirmation"
   const ui = launcher();
   ui.services = [{id:"svc-0", name:"Service 0"}];
   await ready();
+  assert.equal(ui.elements[".pagination"].hidden, true);
   ui.doc.dispatchEvent({type:"keydown", key:"ArrowRight", preventDefault(){}});
   assert.equal(ui.doc.activeElement.dataset.settings, "true");
   ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});

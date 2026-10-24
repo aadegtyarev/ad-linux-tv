@@ -76,35 +76,35 @@ document.addEventListener("ad-linux-tv-select-for-bridge", () => {
 async function load() {
   try {
     const response = await fetch("/api/services");
-    if (!response.ok) throw new Error("Server unavailable");
+    if (!response.ok) throw new Error("сервер недоступен");
     const data = await response.json();
     ui.update(data.services, data.page_size);
     configStatus.textContent = "";
     document.querySelector("#address").textContent = data.remote_address ||
-      "No LAN listener is available; choose a LAN bind address.";
+      "Адрес в локальной сети не найден.";
     const qr = document.querySelector("#qr");
     qr.src = data.remote_address ? "/api/qr" : "";
     qr.hidden = !data.remote_address;
   } catch (cause) {
-    configStatus.textContent = `Configuration error: ${cause.message}`;
+    configStatus.textContent = `Ошибка конфигурации: ${cause.message}`;
   }
 }
 
 async function checkStatus() {
   try {
     const response = await fetch("/api/status");
-    if (!response.ok) throw new Error("status unavailable");
+    if (!response.ok) throw new Error("статус недоступен");
     const status = await response.json();
     bridgeStatus.textContent = status.extension_online
-      ? "Firefox bridge online." : "Firefox bridge offline; check the extension.";
+      ? "Расширение Firefox подключено." : "Расширение Firefox не подключено.";
     const messages = [];
-    if (status.pending_commands) messages.push("Browser command awaiting Firefox acknowledgement.");
+    if (status.pending_commands) messages.push("Команда ожидает ответа Firefox.");
     if (status.last_command_failure) {
-      messages.push(`Last browser command ${status.last_command_failure.outcome} (${status.last_command_failure.reason}).`);
+      messages.push(`Последняя команда: ${status.last_command_failure.outcome} (${status.last_command_failure.reason}).`);
     }
     commandStatus.textContent = messages.join(" ");
   } catch (_) {
-    bridgeStatus.textContent = "Server connection lost; restart ad-linux-tv.";
+    bridgeStatus.textContent = "Соединение с сервером потеряно; перезапустите ТВ-режим.";
   }
 }
 
@@ -115,10 +115,10 @@ async function send(command, service_id) {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({command, service_id}),
     });
-    if (!response.ok) commandStatus.textContent = `Command failed (${response.status}).`;
+    if (!response.ok) commandStatus.textContent = `Команда не выполнена (${response.status}).`;
     else void checkStatus();
   } catch (_) {
-    commandStatus.textContent = "Server connection lost; retry the command.";
+    commandStatus.textContent = "Связь с сервером потеряна; повторите команду.";
   }
 }
 
