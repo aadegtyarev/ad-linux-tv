@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <theme><maximizedDecoration>none</maximizedDecoration></theme>
+  <windowRules>
+    <windowRule identifier="*firefox*" type="normal" serverDecoration="no">
+      <action name="Maximize"/>
+    </windowRule>
+  </windowRules>
+</labwc_config>

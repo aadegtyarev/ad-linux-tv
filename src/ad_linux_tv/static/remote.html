@@ -1,2 +1,24 @@
 <!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Remote</title><link rel="stylesheet" href="/style.css"><main><h1>Remote</h1><form id="login"><input type="password" autocomplete="current-password" placeholder="PIN" required><button>Login</button></form><section id="controls" hidden><div><button data-c="up">↑</button></div><button data-c="left">←</button><button data-c="ok">OK</button><button data-c="right">→</button><div><button data-c="down">↓</button></div><button data-c="home">Home</button><button data-c="back">Back</button><button data-c="refresh">Refresh</button><select id="services"></select><button id="open">Open service</button></section><p id="message"></p><p id="status"></p></main><script src="/remote.js"></script></html>
+<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Пульт ad-linux-tv</title><link rel="stylesheet" href="/style.css">
+<main class="remote-main">
+  <header class="remote-header"><p class="eyebrow">ad-linux-tv</p><h1>Пульт</h1><p class="subtitle">Управление Beelink с телефона</p></header>
+  <p id="message" role="status" class="remote-message"></p>
+  <section id="login-panel" class="remote-card">
+    <h2>Подключить телефон</h2><p class="remote-hint">Введите PIN, заданный при установке ТВ-режима.</p>
+    <form id="login"><label for="pin">PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="off" required><button type="submit" class="primary-button">Подключиться</button></form>
+  </section>
+  <section id="controls" hidden>
+    <section class="remote-card">
+      <h2>Навигация</h2><p id="status" class="remote-hint" role="status"></p>
+      <div class="remote-pad"><button data-c="up" aria-label="Вверх">↑</button><button data-c="left" aria-label="Влево">←</button><button data-c="ok" class="primary-button">OK</button><button data-c="right" aria-label="Вправо">→</button><button data-c="down" aria-label="Вниз">↓</button></div>
+      <div class="remote-actions"><button data-c="home" class="primary-button">⌂ К плиткам</button><button data-c="back">← Назад</button><button data-c="refresh">↻ Обновить</button></div>
+    </section>
+    <section class="remote-card"><h2>Открыть сервис</h2><div class="remote-row"><select id="services" aria-label="Сервис"></select><button id="open">Открыть</button></div></section>
+    <section class="remote-card"><h2>Ввод текста</h2><p class="remote-hint">Кнопкой «Следующее поле» выберите поле на телевизоре. Для произвольного сайта откройте адресную строку. Ввод идёт в активное поле Firefox.</p>
+      <div class="remote-actions"><button id="key-tab">Следующее поле</button><button id="key-shift-tab">Предыдущее поле</button><button id="key-address">Адресная строка</button></div>
+      <form id="text-form"><label for="remote-text">Текст</label><div class="remote-row"><input id="remote-text" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="512" placeholder="Поиск или логин"><button type="submit" class="primary-button">Ввести</button></div></form>
+      <div class="remote-actions"><button id="key-backspace">⌫ Стереть символ</button><button id="key-enter">↵ Enter</button></div>
+    </section>
+  </section>
+</main><script src="/remote.js"></script></html>

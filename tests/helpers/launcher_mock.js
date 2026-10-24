@@ -30,15 +30,15 @@ function launcher() {
   doc.documentElement = new Element("html");
   doc.activeElement = doc.body;
   const elements = Object.fromEntries(
-    ["#tiles", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes"]
+    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes"]
       .map(id => [id, new Element(id)])
   );
   elements["#settings"].hidden = true;
   elements["#confirm-kde"].hidden = true;
-  doc.querySelector = id => id === '[data-settings="true"]'
-    ? elements["#tiles"].children.find(child => child.dataset.settings === "true") : elements[id];
+  doc.querySelector = id => elements[id];
   doc.createElement = name => new Element(name);
   let serviceData = Array.from({length:25}, (_, id) => ({id:`svc-${id}`, name:`Service ${id}`}));
+  let remoteAddress = "http://192.168.1.4:8765/remote";
   let bridgeData = {extension_online:true, pending_commands:0, last_command_failure:null};
   let timer;
   const context = {
@@ -48,7 +48,7 @@ function launcher() {
     fetch:async (url, options) => {
       calls.push({url, options});
       return {ok:true, status:200, json:async () => url === "/api/services"
-        ? {services:serviceData, page_size:12, remote_address:"http://192.168.1.4:8765/remote"}
+        ? {services:serviceData, page_size:12, remote_address:remoteAddress}
         : bridgeData};
     },
   };
@@ -60,6 +60,8 @@ function launcher() {
     doc, elements, events, calls, context,
     get services() { return serviceData; },
     set services(value) { serviceData = value; },
+    get remoteAddress() { return remoteAddress; },
+    set remoteAddress(value) { remoteAddress = value; },
     set status(value) { bridgeData = value; },
     refresh() { timer(); },
   };

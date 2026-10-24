@@ -13,7 +13,11 @@ preview() {
   printf 'Application: %s\n' /home/ad-tv/.local/share/ad-linux-tv
   printf 'Config: %s\n' /home/ad-tv/.config/ad-linux-tv/config.yaml
   printf 'Firefox profile/XPI: %s\n' /home/ad-tv/snap/firefox/common
-  printf 'Compositor package: %s\n' weston
+  printf 'Optional TV Firefox proxy: %s\n' 127.0.0.1:1081
+  printf 'Compositor/input packages: %s\n' 'labwc squeekboard wtype waybar'
+  printf 'Compositor config: %s\n' /etc/ad-linux-tv/labwc/rc.xml
+  printf 'Touch controls: %s\n' /etc/ad-linux-tv/waybar
+  printf 'Touch keyboard layouts: %s\n' /home/ad-tv/.local/share/squeekboard/keyboards
   printf 'System units: %s\n' /etc/systemd/system/ad-linux-tv-kiosk.service /etc/systemd/system/ad-linux-tv-boot.service
   printf 'KDE switch unit: %s\n' /etc/systemd/system/ad-linux-tv-switch-kde.service
   printf 'PAM: %s\n' /etc/pam.d/ad-linux-tv-kiosk
@@ -49,11 +53,24 @@ if id -u ad-tv >/dev/null 2>&1; then
 else
   useradd --create-home --home-dir /home/ad-tv --shell /usr/sbin/nologin --user-group ad-tv
 fi
-apt-get install -y weston
+apt-get install -y labwc squeekboard wtype waybar
+if ! "$ROOT/install-keyboard-layouts.sh" --install; then
+  echo 'Custom keyboard labels unavailable; stock Squeekboard remains usable.' >&2
+fi
+install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/.config
 install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/.config/ad-linux-tv
 install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/snap /home/ad-tv/snap/firefox /home/ad-tv/snap/firefox/common
+if python3 -c 'import socket; s=socket.socket(); s.settimeout(1); result=s.connect_ex(("127.0.0.1",1081)); s.close(); raise SystemExit(result)' ; then
+  "$ROOT/configure-firefox.sh" --configure
+else
+  echo 'Local Xray proxy unavailable; run configure-firefox.sh --configure when it is ready.'
+fi
 install -d -m 755 /usr/local/libexec/ad-linux-tv
-install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" /usr/local/libexec/ad-linux-tv/
+install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" "$ROOT/tv-session.sh" "$ROOT/touch-controls.sh" /usr/local/libexec/ad-linux-tv/
+install -d -m 755 /etc/ad-linux-tv/labwc
+install -m 644 "$ROOT/labwc/rc.xml" /etc/ad-linux-tv/labwc/rc.xml
+install -d -m 755 /etc/ad-linux-tv/waybar
+install -m 644 "$ROOT/waybar/config.jsonc" "$ROOT/waybar/style.css" /etc/ad-linux-tv/waybar/
 install -m 644 "$ROOT/ad-linux-tv-kiosk.service" "$ROOT/ad-linux-tv-boot.service" "$ROOT/ad-linux-tv-switch-kde.service" /etc/systemd/system/
 install -m 644 "$ROOT/ad-linux-tv-kiosk.pam" /etc/pam.d/ad-linux-tv-kiosk
 visudo -cf "$ROOT/98-ad-linux-tv-gui.sudoers" >/dev/null

@@ -97,7 +97,7 @@ def test_kiosk_run_stops_server_when_firefox_exits(tmp_path):
     firefox.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$FIREFOX_ARGS"\n', encoding="utf-8")
     for script in (server, python, firefox):
         script.chmod(0o755)
-    subprocess.run(
+    result = subprocess.run(
         [BASH, str(ROOT / "run.sh")],
         env={
             **os.environ,
@@ -109,9 +109,10 @@ def test_kiosk_run_stops_server_when_firefox_exits(tmp_path):
         },
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
         timeout=10,
     )
+    assert result.returncode == 1
     assert stopped.read_text(encoding="utf-8") == "stopped"
     browser_args = args.read_text(encoding="utf-8")
     assert "--kiosk" in browser_args

@@ -8,11 +8,14 @@
   <section id="home">
     <header class="topbar">
       <div><p class="eyebrow">ad-linux-tv</p><h1>Медиацентр</h1><p class="subtitle">Выберите сервис</p></div>
-      <div class="status-area"><p id="config-status"></p><p id="bridge-status"></p><p id="command-status"></p></div>
+      <div class="topbar-right">
+        <button id="system-button" type="button" aria-label="Открыть систему">⚙ Система</button>
+        <div class="status-area"><p id="config-status"></p><p id="bridge-status"></p><p id="command-status"></p></div>
+      </div>
     </header>
     <div class="home-content">
       <div class="services-area">
-        <nav id="tiles" aria-label="Сервисы и система"></nav>
+        <nav id="tiles" aria-label="Сервисы"></nav>
         <div class="pagination"><button id="prev">← Предыдущая</button><span id="page"></span><button id="next">Следующая →</button></div>
       </div>
       <aside id="remote-setup">
