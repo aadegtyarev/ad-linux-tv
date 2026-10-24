@@ -6,14 +6,15 @@
 
 ## Goal and user-visible behavior
 
-The TV System menu and paired phone remote show the currently selected TV audio output and let the user choose an available output, adjust its volume from 0 to 100%, and mute or unmute. HDMI and the current Firefox audio stream start at 100%; website player volume remains under the user’s control.
+The TV System menu and paired phone remote show the currently selected TV audio output and let the user choose an available output, adjust its volume from 0 to 100%, mute or unmute, and separately adjust active Firefox-stream volume. HDMI and the current Firefox audio stream start at 100%; website player volume remains under the user’s control.
 
 ## Scenarios and edges
 
 - Outputs appear by readable name only when PulseAudio/PipeWire reports them. Selecting one makes it the default output and moves current TV audio streams to it.
 - A selected output is remembered for the dedicated `ad-tv` TV user. If absent when the TV session starts, an attached HDMI sink is preferred, then the available system default. The saved preference is retained so the user can select the device again when it reconnects.
 - If audio services are unavailable, the remote shows an actionable error without changing browser commands or the KDE user’s audio settings.
-- A manual keyboard button keeps Squeekboard visible through transient focus loss while entering a multi-digit code, until the user closes it with «Клав.», returns Home, or enters fullscreen.
+- A three-icon touch panel includes a sound button that reveals separate output and active Firefox-stream volume sliders, then collapses after inactivity. The output slider uses the same local audio API and saves the TV-user choice; the Firefox slider adjusts only active Firefox audio streams, with a no-playback hint otherwise. The panel stays open for 15 seconds after the last touch change.
+- A manual keyboard button keeps Squeekboard visible through transient focus loss while entering a multi-digit code, until the user closes it with the keyboard icon, returns Home, or enters fullscreen.
 
 ## Non-goals
 
@@ -32,7 +33,7 @@ The TV System menu and paired phone remote show the currently selected TV audio 
 
 ## Acceptance criteria
 
-- The TV System menu and remote display available outputs and current volume/mute state, changes the selected output and moves active Firefox audio, and persists the choice across a TV session restart.
+- The TV System menu and phone remote display available outputs and current volume/mute state, select an output, move active Firefox audio, and persist the choice across a TV session restart. The touch sound panel and both web UIs separately adjust output and active Firefox-stream volume.
 - Unauthenticated, cross-origin, malformed and out-of-range audio requests are denied without changing audio.
 - On Beelink, HDMI sink and Firefox stream are 100%, and manually opened Squeekboard remains visible across transient focus loss.
 
@@ -42,4 +43,4 @@ The TV System menu and paired phone remote show the currently selected TV audio 
 
 ## Observed validation
 
-- 49 Python and 26 Node tests passed, plus Ruff and shell checks. On Beelink, paired LAN requests read audio state and successfully set 100% volume, unmute and reselect HDMI; the output preference file is private. HDMI remains at 100%. Bluetooth output and repeated-digit touch input still need physical testing.
+- 51 Python and 27 Node tests passed, plus Ruff and shell checks. On Beelink, paired LAN requests read audio state and successfully set 100% volume, unmute and reselect HDMI; the output preference file is private. HDMI remains at 100%. Bluetooth output and repeated-digit touch input still need physical testing.

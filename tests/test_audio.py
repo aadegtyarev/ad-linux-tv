@@ -102,3 +102,40 @@ def test_volume_change_remembers_current_output(monkeypatch, tmp_path):
     assert audio.apply({"volume": 45})["volume"] == 45
     assert ("set-sink-volume", "@DEFAULT_SINK@", "45%") in calls
     assert preference.read_text() == "hdmi\n"
+
+
+def test_browser_volume_targets_only_firefox_streams(monkeypatch):
+    calls = []
+    items = [
+        {
+            "index": 7,
+            "properties": {"application.name": "Firefox"},
+            "volume": {"left": {"value_percent": "75%"}},
+        },
+        {
+            "index": 8,
+            "properties": {"application.name": "Other"},
+            "volume": {"left": {"value_percent": "20%"}},
+        },
+    ]
+
+    def pactl(*args):
+        calls.append(args)
+        if args == ("-f", "json", "list", "sink-inputs"):
+            return json.dumps(items)
+        return ""
+
+    monkeypatch.setattr(audio, "_pactl", pactl)
+    monkeypatch.setattr(audio, "get_state", lambda: {"browser_volume": 55})
+    assert audio.apply({"browser_volume": 55})["browser_volume"] == 55
+    assert ("set-sink-input-volume", "7", "55%") in calls
+    assert not any(call[0] == "set-sink-input-volume" and call[1] == "8" for call in calls)
+    for value in (-1, 101, True, "55"):
+        with pytest.raises(ValueError):
+            audio.apply({"browser_volume": value})
+
+
+def test_browser_volume_requires_active_audio(monkeypatch):
+    monkeypatch.setattr(audio, "_pactl", lambda *_args: "[]")
+    with pytest.raises(audio.AudioUnavailable):
+        audio.apply({"browser_volume": 50})

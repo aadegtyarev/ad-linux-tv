@@ -10,10 +10,11 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
     constructor() { this.dataset = {}; this.children = []; this.value = ""; this.hidden = false; }
     replaceChildren() { this.children = []; }
     append(item) { this.children.push(item); }
+    addEventListener() {}
   }
   const ids = ["#message", "#login", "#login-panel", "#controls", "#status", "#pin",
     "#services", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
-    "#audio-mute", "#audio-refresh", "#open", "#text-form", "#remote-text", "#url-form",
+    "#audio-mute", "#audio-refresh", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#open", "#text-form", "#remote-text", "#url-form",
     "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const context = {
@@ -23,7 +24,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
       calls.push({url, options});
       const data = url === "/api/login" ? {csrf:"test-csrf"}
         : url === "/api/services" ? {services:[{id:"browser",name:"Браузер"}]}
-          : url === "/api/audio" ? {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false}
+          : url === "/api/audio" ? {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:75}
             : {extension_online:true,pending_commands:0,last_command_failure:null};
       return {ok:true,status:200,json:async () => data};
     },
@@ -39,4 +40,9 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   const request = calls.find(call => call.url === "/api/audio" && call.options.method === "POST");
   assert.equal(request.options.headers["X-CSRF-Token"], "test-csrf");
   assert.equal(JSON.parse(request.options.body).volume, 55);
+  elements["#browser-volume"].value = "60";
+  await elements["#browser-volume"].onchange();
+  const browser = calls.find(call => call.url === "/api/audio" &&
+    JSON.parse(call.options.body || "{}").browser_volume === 60);
+  assert.equal(browser.options.headers["X-CSRF-Token"], "test-csrf");
 });

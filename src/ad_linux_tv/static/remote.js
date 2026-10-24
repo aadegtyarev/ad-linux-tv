@@ -9,7 +9,10 @@ let statusTimer = null;
 let browserService = null;
 const audioOutput = document.querySelector("#audio-output");
 const audioVolume = document.querySelector("#audio-volume");
+const browserVolume = document.querySelector("#browser-volume");
 const audioStatus = document.querySelector("#audio-status");
+let audioTimer = null;
+let audioDragging = false;
 
 function showAudio(state) {
   const names = state.outputs.map(output => output.id).join("\n");
@@ -26,6 +29,11 @@ function showAudio(state) {
   audioOutput.value = state.selected;
   audioVolume.value = state.volume;
   document.querySelector("#audio-volume-value").textContent = `${state.volume}%`;
+  const browserActive = state.browser_volume != null;
+  browserVolume.disabled = !browserActive;
+  if (browserActive) browserVolume.value = state.browser_volume;
+  document.querySelector("#browser-volume-value").textContent = browserActive ? `${state.browser_volume}%` : "—";
+  document.querySelector("#browser-volume-hint").hidden = browserActive;
   document.querySelector("#audio-mute").textContent = state.muted ? "Включить звук" : "Выключить звук";
   document.querySelector("#audio-mute").dataset.muted = String(state.muted);
   audioStatus.textContent = "";
@@ -66,6 +74,8 @@ function requireLogin() {
   csrf = "";
   if (statusTimer !== null) clearInterval(statusTimer);
   statusTimer = null;
+  if (audioTimer !== null) clearInterval(audioTimer);
+  audioTimer = null;
   controls.hidden = true;
   loginPanel.hidden = false;
   say("Сеанс пульта истёк. Введите PIN ещё раз.", true);
@@ -137,6 +147,7 @@ loginForm.onsubmit = async event => {
     void refreshAudio();
     void refreshStatus();
     statusTimer = setInterval(refreshStatus, 1000);
+    audioTimer = setInterval(() => { if (!audioDragging) void refreshAudio(); }, 5000);
   } catch (_) {
     say("Нет связи с Beelink. Проверьте Wi‑Fi и повторите попытку.", true);
   }
@@ -144,10 +155,19 @@ loginForm.onsubmit = async event => {
 
 document.querySelector("#audio-refresh").onclick = refreshAudio;
 audioOutput.onchange = () => changeAudio({output: audioOutput.value});
+for (const slider of [audioVolume, browserVolume]) {
+  slider.addEventListener("pointerdown", () => { audioDragging = true; });
+  slider.addEventListener("pointerup", () => { audioDragging = false; });
+  slider.addEventListener("pointercancel", () => { audioDragging = false; });
+}
 audioVolume.oninput = () => {
   document.querySelector("#audio-volume-value").textContent = `${audioVolume.value}%`;
 };
 audioVolume.onchange = () => changeAudio({volume: Number(audioVolume.value)});
+browserVolume.oninput = () => {
+  document.querySelector("#browser-volume-value").textContent = `${browserVolume.value}%`;
+};
+browserVolume.onchange = () => changeAudio({browser_volume: Number(browserVolume.value)});
 document.querySelector("#audio-mute").onclick = () =>
   changeAudio({muted: document.querySelector("#audio-mute").dataset.muted !== "true"});
 

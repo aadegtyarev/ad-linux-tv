@@ -32,6 +32,27 @@ def _sinks():
         raise AudioUnavailable from exc
 
 
+def _browser_inputs():
+    try:
+        inputs = json.loads(_pactl("-f", "json", "list", "sink-inputs"))
+        return [
+            item
+            for item in inputs
+            if item.get("properties", {}).get("application.process.binary") == "firefox"
+            or item.get("properties", {}).get("application.name") == "Firefox"
+        ]
+    except (TypeError, ValueError, KeyError) as exc:
+        raise AudioUnavailable from exc
+
+
+def _volume_percent(item):
+    try:
+        channel = next(iter(item["volume"].values()))
+        return min(int(channel["value_percent"].rstrip("%")), 100)
+    except (KeyError, StopIteration, ValueError, TypeError) as exc:
+        raise AudioUnavailable from exc
+
+
 def get_state():
     sinks = _sinks()
     selected = _pactl("get-default-sink")
@@ -39,11 +60,10 @@ def get_state():
         raise AudioUnavailable
     sink = sinks[selected]
     try:
-        channel = next(iter(sink["volume"].values()))
-        volume = int(channel["value_percent"].rstrip("%"))
         mute = bool(sink["mute"])
-    except (KeyError, StopIteration, ValueError, TypeError) as exc:
+    except KeyError as exc:
         raise AudioUnavailable from exc
+    browser = _browser_inputs()
 
     def label(name, item):
         description = item.get("description")
@@ -60,8 +80,9 @@ def get_state():
     return {
         "outputs": [{"id": name, "name": label(name, item)} for name, item in sinks.items()],
         "selected": selected,
-        "volume": min(volume, 100),
+        "volume": _volume_percent(sink),
         "muted": mute,
+        "browser_volume": _volume_percent(browser[0]) if browser else None,
     }
 
 
@@ -132,6 +153,14 @@ def apply(action):
             raise ValueError("invalid volume")
         _pactl("set-sink-volume", "@DEFAULT_SINK@", f"{value}%")
         _remember_output(_pactl("get-default-sink"))
+    elif key == "browser_volume":
+        if type(value) is not int or not 0 <= value <= 100:
+            raise ValueError("invalid browser volume")
+        inputs = _browser_inputs()
+        if not inputs:
+            raise AudioUnavailable
+        for item in inputs:
+            _pactl("set-sink-input-volume", str(int(item["index"])), f"{value}%")
     elif key == "muted":
         if type(value) is not bool:
             raise ValueError("invalid mute")

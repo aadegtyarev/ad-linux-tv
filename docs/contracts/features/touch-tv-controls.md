@@ -2,7 +2,7 @@
 
 - Status: Implemented; real-phone, DHCP lease and numeric keyboard checks pending
 - Date: 2026-10-24
-- Approval: User requested virtual keyboard for logins/search, phone text entry on a TV without touch, a browser tile opening Yandex search, a discreet System control away from service tiles, and QR/IP refresh when Ethernet changes to Wi-Fi. Later user requests added touch controls, removal of the visible Firefox toolbar, better phone-only navigation, and HDMI audio. On physical testing, the lower controls obstructed video scrubbing; user chose two adjacent upper-right controls that hide when a window enters fullscreen and when no touchscreen is connected.
+- Approval: User requested virtual keyboard for logins/search, phone text entry on a TV without touch, a browser tile opening Yandex search, a discreet System control away from service tiles, and QR/IP refresh when Ethernet changes to Wi-Fi. Later user requests added touch controls, removal of the visible Firefox toolbar, better phone-only navigation, and HDMI audio. On physical testing, the lower controls obstructed video scrubbing; user chose compact upper-right controls that hide when a window enters fullscreen and when no touchscreen is connected.
 
 ## Goal and user-visible behavior
 
@@ -10,13 +10,13 @@ The TV session supports text entry from the touchscreen in Firefox pages, includ
 
 ## Scenarios and edges
 
-- Touching a text field brings up a keyboard; the keyboard can enter Latin letters, Cyrillic letters, digits and symbols needed for accounts and search, then be dismissed. Manually opening Squeekboard from the touch control keeps it visible during temporary focus loss in numeric code fields until the user closes it with «Клав.».
+- Touching a text field brings up a keyboard; the keyboard can enter Latin letters, Cyrillic letters, digits and symbols needed for accounts and search, then be dismissed. Manually opening Squeekboard from the touch control keeps it visible during temporary focus loss in numeric code fields until the user closes it with the keyboard icon.
 - The authenticated phone remote can send text, Enter and Backspace to the focused Firefox field using the phone’s own keyboard; no typed text is retained by the TV server.
 - The Browser tile opens `https://ya.ru/`; Home from the phone remote returns to the launcher and closes the managed browser tab as with other services.
 - System remains reachable by touch and the phone remote's arrows/OK. Its KDE action still requires a second confirmation.
 - A failed server process must not leave a working looking browser pointing at a dead localhost page.
 - When the active LAN address changes, the displayed address and QR image change without restarting the TV session.
-- The TV profile hides browser chrome while keeping the screen keyboard usable. The two touch controls sit next to each other at the upper right, occupy only their own small input area, and hide when a window enters fullscreen or no touchscreen is connected. The phone remote can open a managed Browser tab and navigate directly to an HTTP(S) address using its native keyboard.
+- The TV profile hides browser chrome while keeping the screen keyboard usable. The Home, keyboard and sound touch controls sit next to each other at the upper right, occupy only their own small input area, and hide when a window enters fullscreen or no touchscreen is connected. The phone remote can open a managed Browser tab and navigate directly to an HTTP(S) address using its native keyboard.
 - A detected HDMI audio sink is selected for the TV user, without changing the KDE user's default audio device.
 
 ## Non-goals

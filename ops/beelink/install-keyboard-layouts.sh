@@ -11,8 +11,8 @@ printf '%s labeled English/Russian keyboard layouts in %s\n' "$MODE" "$TARGET"
 [[ "$MODE" == --dry-run ]] && exit 0
 (( EUID == 0 )) || { echo 'Run with sudo for --install.' >&2; exit 1; }
 
-# Source: Debian squeekboard 1.43.1-1, GPL-3+. Only labels replace SVG icons
-# because the icon loader fails in this target's lightweight TV session.
+# Source: Debian squeekboard 1.43.1-1, GPL-3+. Labels replace SVG icons,
+# and the language key emits F12 for the dedicated labwc cycle binding.
 declare -A digest=(
   [us]=bf985df2f4136e3050ce473c072d8147a70f7c0744ed5bd1478c6030b0e03159
   [us_wide]=376ae74706f26a2f098ad2d5bd00630d7959ba86d6ef04e57ee0e8662309d2e4
@@ -30,10 +30,18 @@ for name in us us_wide ru ru_wide; do
   printf '%s  %s\n' "${digest[$name]}" "$original" | sha256sum --check --status || {
     echo "Layout checksum mismatch: $name" >&2; exit 1;
   }
+  case "$name" in
+    us*) language_label='EN → RU' ;;
+    ru*) language_label='RU → EN' ;;
+  esac
   sed -e 's/icon: "key-shift"/label: "⇧"/' \
       -e 's/icon: "edit-clear-symbolic"/label: "⌫"/' \
       -e 's/icon: "keyboard-mode-symbolic"/label: "Язык"/' \
-      -e 's/icon: "key-enter"/label: "↵"/' "$original" > "$modified"
+      -e 's/icon: "key-enter"/label: "↵"/' \
+      -e 's/action: "show_prefs"/keysym: "F12"/' \
+      -e '/^    preferences:/,/^    show_numbers:/ s/outline: "special[^"]*"/outline: "change-view-2"/' \
+      -e "s/label: \"Язык\"/label: \"$language_label\"/" \
+      "$original" > "$modified"
   install -o ad-tv -g ad-tv -m 644 "$modified" "$TARGET/$name.yaml"
   rm -f "$original" "$modified"
   trap - EXIT

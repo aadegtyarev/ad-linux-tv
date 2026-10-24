@@ -22,13 +22,13 @@ Observed on Beelink SER10 Max with HDMI (2026-10-24):
 
 Still to verify on the actual setup:
 
-- [ ] Enter several digits in a third-party code field after manually opening the keyboard; confirm it stays visible until closed. Confirm physical touch on «Плитки» and repeat «Клавиатура» to dismiss it; test both keyboard languages, digits, symbols, and password fields on the touch monitor.
+- [ ] Tap the on-keyboard `EN → RU` / `RU → EN` key and confirm both directions, then enter several digits in a third-party code field after manually opening the keyboard; confirm it stays visible until closed. Confirm physical touch on «Плитки» and repeat «Клавиатура» to dismiss it; test both keyboard languages, digits, symbols, and password fields on the touch monitor.
 - [ ] Confirm the overlay hides when the touchscreen is unplugged and that YouTube's own fullscreen video triggers the same behavior as F11.
 - [ ] Pair a real phone by QR, type with its native keyboard, use Home/Back/Refresh, test retry lockout and deny access from outside the trusted LAN.
 - [ ] Change the DHCP lease to an unrelated address and confirm the QR/address refreshes and an already paired phone can reconnect; test packet loss during the change.
 - [ ] Test no-HDMI console fallback, Ctrl+Alt+F2, `gui kde`, `gui off`, and `gui tv` after reboot.
 - [ ] Test TV navigation with a remote or touch only, including all service tiles and third-party site controls.
-- [ ] Check HDMI volume 100%, remote/System volume and mute, and output selection with a connected Bluetooth speaker or other output. Confirm website playback audio, service logins/cookies across reboot, and DRM availability without bypasses; confirm behavior after Firefox updates.
+- [ ] Touch the sound icon and adjust both output and Firefox sliders during playback; confirm the panel stays open while dragging. Then check HDMI volume 100%, remote/System volume and mute, and output selection with a connected Bluetooth speaker or other output. Confirm website playback audio, service logins/cookies across reboot, and DRM availability without bypasses; confirm behavior after Firefox updates.
 - [ ] Complete signed XPI release/update and digest verification from the published artifact.
 
 Treat the built-in HTTP remote as trusted-LAN only; keep its port off the public internet.
