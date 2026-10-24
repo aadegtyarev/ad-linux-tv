@@ -8,14 +8,31 @@ test("launcher focus uses actual columns and carries arrows across pages", async
   await ready();
   assert.equal(ui.elements["#tiles"].children.length, 12);
   assert.equal(ui.elements["#page"].textContent, "1 / 3");
+  const firstTile = ui.elements["#tiles"].children[0];
   ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", isTrusted:true, preventDefault(){}});
   assert.equal(ui.doc.activeElement.dataset.serviceIndex, "4");
+  assert.equal(ui.elements["#tiles"].children[0], firstTile);
   ui.elements["#next"].onclick();
   assert.equal(ui.doc.activeElement.dataset.serviceIndex, "12");
   assert.equal(ui.elements["#page"].textContent, "2 / 3");
   ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", isTrusted:true, preventDefault(){}});
   assert.equal(ui.doc.activeElement.dataset.serviceIndex, "16");
   assert.equal(ui.elements["#page"].textContent, "2 / 3");
+});
+
+test("physical touch reveals the System button", async () => {
+  const ui = launcher();
+  await ready();
+  ui.doc.dispatchEvent({type:"pointerdown", pointerType:"touch"});
+  assert.equal(ui.doc.documentElement.dataset.touchscreen, "true");
+});
+
+test("TV buttons show immediate touch feedback", async () => {
+  const ui = launcher();
+  await ready();
+  const button = ui.elements["#system-button"];
+  ui.doc.dispatchEvent({type:"pointerdown", pointerType:"touch", target:{closest:() => button}});
+  assert.equal(button.classList.contains("tv-pressed"), true);
 });
 
 test("service tile uses configured color and neutral tile stays neutral", async () => {
@@ -70,7 +87,7 @@ test("physical tile click still posts Open and pagination stays local", async ()
   assert.equal(ui.doc.activeElement.dataset.serviceIndex, "12");
 });
 
-test("settings is reachable by remote OK and KDE requires a second confirmation", async () => {
+test("System opens via F8 and KDE requires a second confirmation", async () => {
   const ui = launcher();
   ui.services = [{id:"svc-0", name:"Service 0"}];
   await ready();
@@ -78,11 +95,10 @@ test("settings is reachable by remote OK and KDE requires a second confirmation"
   assert.equal(ui.elements["#tiles"].children.length, 1);
   assert.equal(ui.elements["#system-button"].dataset.settings, "true");
   ui.doc.dispatchEvent({type:"keydown", key:"ArrowRight", preventDefault(){}});
-  assert.equal(ui.doc.activeElement.dataset.settings, "true");
-  ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
+  assert.notEqual(ui.doc.activeElement.dataset.settings, "true");
+  ui.doc.dispatchEvent({type:"keydown", key:"F8", preventDefault(){}});
   assert.equal(ui.elements["#settings"].hidden, false);
-  assert.equal(ui.doc.documentElement.dataset.bridgeServiceId, "");
-  for (let i = 0; i < 5; i += 1) ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", preventDefault(){}});
+  for (let i = 0; i < 6; i += 1) ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", preventDefault(){}});
   ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
   assert.equal(ui.elements["#confirm-kde"].hidden, false);
   assert.equal(ui.calls.filter(call => call.url === "/api/system/kde").length, 0);
@@ -111,6 +127,19 @@ test("System audio controls load state and submit selected volume", async () => 
   const volumes = ui.calls.filter(call => call.url === "/api/audio" && call.options?.method === "POST")
     .map(call => JSON.parse(call.options.body).volume);
   assert.equal(volumes.at(-1), 95);
+});
+
+test("System sound check stays in System and does not open KDE", async () => {
+  const ui = launcher({hostname:"127.0.0.1"});
+  ui.elements["#system-button"].click();
+  await ready();
+  ui.elements["#audio-test"].click();
+  await ready();
+  assert.equal(ui.elements["#confirm-kde"].hidden, true);
+  assert.equal(ui.calls.filter(call => call.url === "/api/system/kde").length, 0);
+  const sample = ui.calls.find(call => call.url === "/api/audio" &&
+    JSON.parse(call.options?.body || "{}").test === true);
+  assert.ok(sample);
 });
 
 test("System exposes Firefox stream volume when playback is active", async () => {

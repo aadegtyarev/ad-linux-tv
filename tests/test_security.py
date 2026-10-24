@@ -1,5 +1,6 @@
 """Authentication state, network policy, and QR response tests."""
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
@@ -52,3 +53,18 @@ def test_private_source_and_ipv6_host_validation():
     assert remote_url("[2001:db8::1]:8765", 8765) == "http://[2001:db8::1]:8765/remote"
     assert remote_url("bad.example/path", 8765) is None
     assert remote_url("bad..example", 8765) is None
+
+
+def test_sessions_survive_restart_and_pin_rotation_invalidates_them(tmp_path):
+    path = tmp_path / "remote-sessions.json"
+    first = Sessions(storage_path=path, auth_tag="old-verifier")
+    token, csrf = first.create(now=time.time())
+    assert path.stat().st_mode & 0o777 == 0o600
+    restored = Sessions(storage_path=path, auth_tag="old-verifier")
+    assert restored.valid(token)
+    assert restored.csrf_for(token) == csrf
+    rotated = Sessions(storage_path=path, auth_tag="new-verifier")
+    assert not rotated.valid(token)
+    path.chmod(0o644)
+    insecure = Sessions(storage_path=path, auth_tag="old-verifier")
+    assert not insecure.valid(token)

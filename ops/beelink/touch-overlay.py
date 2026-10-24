@@ -5,8 +5,11 @@
 # ruff: noqa: E402, I001
 
 import json
+import os
 import subprocess
+import tempfile
 from glob import glob
+from pathlib import Path
 from urllib import request
 
 import gi
@@ -23,7 +26,10 @@ window { background: transparent; }
 .touch-button { background-image: none; background-color: transparent; color: white;
   border: 0; box-shadow: none; border-radius: 8px; font: 26px sans-serif;
   min-width: 50px; min-height: 53px; padding: 0; }
-.touch-button:hover, .touch-button:active { background-color: rgba(92, 164, 255, 0.45); }
+.drag-handle { color: #dcefff; background-color: rgba(105, 153, 188, 0.23);
+  border-radius: 8px; min-width: 62px; min-height: 53px; font: 30px sans-serif; }
+.touch-button:hover, .touch-button:active, .touch-button.touch-flash {
+  background-color: rgba(92, 164, 255, 0.65); }
 .volume-row { padding: 5px 5px 2px; }
 .volume-name, .volume-label { color: white; font: 13px sans-serif; }
 .volume-name { min-width: 58px; }
@@ -31,6 +37,42 @@ window { background: transparent; }
 """
 
 AUDIO_URL = "http://127.0.0.1:8765/api/audio"
+POSITION_FILE = Path.home() / ".config/ad-linux-tv/touch-panel-position.json"
+
+
+def clamp_position(top, right, panel_width, panel_height, screen_width, screen_height):
+    return {
+        "top": max(0, min(top, max(0, screen_height - panel_height - 8))),
+        "right": max(0, min(right, max(0, screen_width - panel_width - 8))),
+    }
+
+
+def load_position():
+    try:
+        value = json.loads(POSITION_FILE.read_text())
+        if set(value) != {"top", "right"}:
+            raise ValueError("invalid position")
+        if any(type(value[key]) is not int or not 0 <= value[key] <= 10000 for key in value):
+            raise ValueError("invalid position")
+        return value
+    except (OSError, TypeError, ValueError):
+        return {"top": 2, "right": 12}
+
+
+def save_position(value):
+    POSITION_FILE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", dir=POSITION_FILE.parent, delete=False
+        ) as stream:
+            temporary = Path(stream.name)
+            json.dump(value, stream)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, POSITION_FILE)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def audio_request(action=None):
@@ -42,6 +84,14 @@ def audio_request(action=None):
     response = request.Request(AUDIO_URL, data=payload, headers=headers)
     with request.urlopen(response, timeout=1) as reply:
         return json.load(reply)
+
+
+def history(direction):
+    subprocess.Popen(
+        ["/usr/local/libexec/ad-linux-tv/touch-controls.sh", direction],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def home():
@@ -142,8 +192,15 @@ def main():
     GtkLayerShell.set_layer(window, GtkLayerShell.Layer.OVERLAY)
     GtkLayerShell.set_anchor(window, GtkLayerShell.Edge.TOP, True)
     GtkLayerShell.set_anchor(window, GtkLayerShell.Edge.RIGHT, True)
-    GtkLayerShell.set_margin(window, GtkLayerShell.Edge.TOP, 2)
-    GtkLayerShell.set_margin(window, GtkLayerShell.Edge.RIGHT, 12)
+    position = load_position()
+    primary = Gdk.Display.get_default().get_primary_monitor()
+    if primary is not None:
+        geometry = primary.get_geometry()
+        position = clamp_position(
+            position["top"], position["right"], 340, 180, geometry.width, geometry.height
+        )
+    GtkLayerShell.set_margin(window, GtkLayerShell.Edge.TOP, position["top"])
+    GtkLayerShell.set_margin(window, GtkLayerShell.Edge.RIGHT, position["right"])
     GtkLayerShell.set_exclusive_zone(window, 0)
     GtkLayerShell.set_keyboard_mode(window, GtkLayerShell.KeyboardMode.NONE)
 
@@ -157,6 +214,70 @@ def main():
     buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
     buttons.set_halign(Gtk.Align.END)
     panel.pack_start(buttons, False, False, 0)
+    handle = Gtk.EventBox()
+    handle.get_style_context().add_class("drag-handle")
+    handle.set_tooltip_text("Перетащить панель")
+    handle.add(Gtk.Label(label="⋮⋮"))
+    buttons.pack_start(handle, False, False, 0)
+
+    def apply_position(top, right):
+        nonlocal position
+        monitor = (
+            window.get_display().get_monitor_at_window(window.get_window())
+            if window.get_window()
+            else window.get_display().get_primary_monitor()
+        )
+        if monitor is not None:
+            geometry = monitor.get_geometry()
+            position = clamp_position(
+                top,
+                right,
+                panel.get_allocated_width(),
+                panel.get_allocated_height(),
+                geometry.width,
+                geometry.height,
+            )
+        else:
+            position = {"top": max(0, top), "right": max(0, right)}
+        if GtkLayerShell.get_margin(window, GtkLayerShell.Edge.TOP) != position["top"]:
+            GtkLayerShell.set_margin(window, GtkLayerShell.Edge.TOP, position["top"])
+        if GtkLayerShell.get_margin(window, GtkLayerShell.Edge.RIGHT) != position["right"]:
+            GtkLayerShell.set_margin(window, GtkLayerShell.Edge.RIGHT, position["right"])
+        return False
+
+    drag_origin = {"top": position["top"], "right": position["right"]}
+    dragging = False
+    drag = Gtk.GestureDrag.new(handle)
+
+    def drag_begin(_gesture, _x, _y):
+        nonlocal dragging
+        dragging = True
+        drag_origin.update(position)
+
+    def drag_update(_gesture, offset_x, offset_y):
+        apply_position(
+            drag_origin["top"] + round(offset_y),
+            drag_origin["right"] - round(offset_x),
+        )
+
+    def drag_end(_gesture, _offset_x, _offset_y):
+        nonlocal dragging
+        dragging = False
+        apply_position(position["top"], position["right"])
+        try:
+            save_position(position)
+        except OSError:
+            pass
+
+    drag.connect("drag-begin", drag_begin)
+    drag.connect("drag-update", drag_update)
+    drag.connect("drag-end", drag_end)
+
+    def on_panel_allocate(_widget, _allocation):
+        if not dragging:
+            GLib.idle_add(apply_position, position["top"], position["right"])
+
+    panel.connect("size-allocate", on_panel_allocate)
     pinned = False
     volume_timer = None
     volume_commits = {"volume": None, "browser_volume": None}
@@ -268,6 +389,7 @@ def main():
             loading_volume = False
         volume_panel.set_no_show_all(False)
         volume_panel.show_all()
+        GLib.idle_add(apply_position, position["top"], position["right"])
         delay_volume_close()
 
     def on_home(_button):
@@ -276,6 +398,14 @@ def main():
         close_volume()
         set_keyboard_visible(False)
         home()
+
+    def on_back(_button):
+        close_volume()
+        history("back")
+
+    def on_forward(_button):
+        close_volume()
+        history("forward")
 
     def on_keyboard(_button):
         nonlocal pinned
@@ -286,15 +416,28 @@ def main():
         if not set_keyboard_visible(pinned):
             pinned = False
 
+    def on_touch_click(button, callback):
+        context = button.get_style_context()
+        context.add_class("touch-flash")
+
+        def clear_flash():
+            context.remove_class("touch-flash")
+            return False
+
+        GLib.timeout_add(360, clear_flash)
+        callback(button)
+
     for label, tooltip, callback in (
         ("⌂", "К плиткам", on_home),
+        ("←", "Назад", on_back),
+        ("→", "Вперёд", on_forward),
         ("⌨", "Клавиатура", on_keyboard),
         ("🔊", "Громкость", on_volume),
     ):
         button = Gtk.Button.new_with_label(label)
         button.set_tooltip_text(tooltip)
         button.get_style_context().add_class("touch-button")
-        button.connect("clicked", callback)
+        button.connect("clicked", lambda widget, action=callback: on_touch_click(widget, action))
         buttons.pack_start(button, True, True, 0)
     window.add(panel)
     window.connect("destroy", Gtk.main_quit)
@@ -308,9 +451,12 @@ def main():
             set_keyboard_visible(False)
         if not should_show and volume_panel.get_visible():
             close_volume()
+        if should_show and visible and not dragging:
+            apply_position(position["top"], position["right"])
         if should_show != visible:
             if should_show:
                 window.show_all()
+                GLib.idle_add(apply_position, position["top"], position["right"])
             else:
                 window.hide()
             visible = should_show

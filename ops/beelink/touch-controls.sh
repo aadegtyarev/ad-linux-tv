@@ -8,6 +8,12 @@ case ${1:-} in
       --data '{"command":"home"}' \
       http://127.0.0.1:8765/api/command >/dev/null
     ;;
+  back|forward)
+    key=Left
+    [[ ${1:-} == forward ]] && key=Right
+    /usr/bin/wlrctl toplevel find app_id:firefox_firefox app_id:firefox state:active || exit 1
+    /usr/bin/wtype -M alt -k "$key" -m alt
+    ;;
   keyboard)
     visible=$(busctl --user get-property sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 Visible)
     if [[ $visible == 'b true' ]]; then
@@ -16,5 +22,5 @@ case ${1:-} in
       busctl --user call sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 SetVisible b true >/dev/null
     fi
     ;;
-  *) echo 'usage: touch-controls.sh home|keyboard' >&2; exit 2 ;;
+  *) echo 'usage: touch-controls.sh home|back|forward|keyboard' >&2; exit 2 ;;
 esac
