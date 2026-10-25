@@ -45,13 +45,58 @@ test("phone media panel follows Firefox state and disables unsupported controls"
   elements["#media-position"].value = "45";
   elements["#media-position"].onchange();
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(calls.at(-1).body.position, 45);
+  assert.equal(calls.filter(call => call.method === "POST").at(-1).body.position, 45);
   elements["#media-play"].onclick();
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(calls.at(-1).body.action, "pause");
+  assert.equal(calls.filter(call => call.method === "POST").at(-1).body.action, "pause");
   assert.equal(elements["#media-play"].textContent, "▶");
   state = {available:false};
   await media.refresh();
   assert.equal(elements["#media-panel"].hidden, true);
   assert.equal(elements["#remote-face"].classes.has("has-media"), false);
+});
+
+test("seek keeps the chosen position until the player catches up", async () => {
+  class Element {
+    constructor() {
+      this.value = "0";
+      this.classList = {add() {}, remove() {}};
+    }
+    addEventListener() {}
+    setAttribute() {}
+  }
+  const elements = Object.fromEntries(
+    ["#media-panel", "#remote-face", "#media-title", "#media-elapsed", "#media-duration",
+      "#media-position", "#media-previous", "#media-play", "#media-next"]
+      .map(id => [id, new Element()]),
+  );
+  let state = {available:true,title:"Song",playing:true,position:10,duration:100,
+    can_play:true,can_pause:true,can_seek:true,can_next:false,can_previous:false};
+  let finishSeek;
+  const request = async (method, _path, body) => {
+    if (method === "POST" && body.action === "seek")
+      await new Promise(resolve => { finishSeek = resolve; });
+    return {ok:true,status:200,json:async () => state};
+  };
+  const context = {document:{querySelector:id => elements[id]}, request};
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync("src/ad_linux_tv/static/media_controls.js", "utf8"), context);
+  const media = vm.runInContext("new PhoneMediaControls(request, () => {})", context);
+  await media.refresh();
+  const slider = elements["#media-position"];
+  slider.value = "50";
+  slider.oninput();
+  slider.onchange();
+  assert.equal(slider.value, "50");
+  await media.refresh();
+  assert.equal(slider.value, "50");
+  finishSeek();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(slider.value, "50");
+  state = {...state,position:50};
+  await media.refresh();
+  assert.equal(slider.value, 50);
+  state = {...state,position:51};
+  await media.refresh();
+  assert.equal(slider.value, 51);
 });

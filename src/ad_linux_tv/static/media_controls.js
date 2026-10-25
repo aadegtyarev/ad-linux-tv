@@ -18,6 +18,8 @@ class PhoneMediaControls {
     this.timer = null;
     this.revision = 0;
     this.dragging = false;
+    this.commandsInFlight = 0;
+    this.pendingSeek = null;
     this.state = null;
     this.position.addEventListener("pointerdown", () => { this.dragging = true; });
     for (const name of ["pointerup", "pointercancel"])
@@ -27,7 +29,11 @@ class PhoneMediaControls {
     };
     this.position.onchange = () => {
       this.dragging = false;
-      if (this.state?.can_seek) void this.command("seek", Number(this.position.value));
+      if (this.state?.can_seek) {
+        const target = Number(this.position.value);
+        this.pendingSeek = {target, deadline: Date.now() + 5000};
+        void this.command("seek", target);
+      }
     };
     this.buttons.previous.onclick = () => void this.command("previous");
     this.buttons.next.onclick = () => void this.command("next");
@@ -46,7 +52,14 @@ class PhoneMediaControls {
     this.panel.hidden = !state.available;
     if (state.available) this.face.classList.add("has-media");
     else this.face.classList.remove("has-media");
-    if (!state.available) return;
+    if (!state.available) {
+      this.pendingSeek = null;
+      return;
+    }
+    if (this.pendingSeek && (
+      (state.position !== null && Math.abs(state.position - this.pendingSeek.target) <= 3)
+      || Date.now() >= this.pendingSeek.deadline
+    )) this.pendingSeek = null;
     this.title.textContent = state.title || "Воспроизведение";
     this.title.setAttribute("aria-label", this.title.textContent);
     this.buttons.previous.disabled = !state.can_previous;
@@ -57,13 +70,14 @@ class PhoneMediaControls {
     this.position.disabled = !state.can_seek;
     this.position.max = state.duration || 1;
     this.duration.textContent = state.duration === null ? "—" : PhoneMediaControls.time(state.duration);
-    if (!this.dragging) {
+    if (!this.dragging && !this.pendingSeek) {
       this.position.value = state.position ?? 0;
       this.elapsed.textContent = state.position === null ? "—" : PhoneMediaControls.time(state.position);
     }
   }
 
   async refresh() {
+    if (this.commandsInFlight) return;
     const revision = ++this.revision;
     try {
       const response = await this.request("GET", "/api/media");
@@ -79,6 +93,7 @@ class PhoneMediaControls {
   async command(action, position) {
     if (!this.state) return;
     const revision = ++this.revision;
+    this.commandsInFlight += 1;
     try {
       const body = {action};
       if (action === "seek") body.position = position;
@@ -88,6 +103,9 @@ class PhoneMediaControls {
       const state = await response.json();
       if (revision === this.revision) this.render(state);
     } catch (_) {
+      if (action === "seek" && this.pendingSeek?.target === position) this.pendingSeek = null;
+    } finally {
+      this.commandsInFlight -= 1;
       if (revision === this.revision) void this.refresh();
     }
   }
@@ -102,6 +120,7 @@ class PhoneMediaControls {
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
     this.revision += 1;
+    this.pendingSeek = null;
     this.render({available:false});
   }
 }
