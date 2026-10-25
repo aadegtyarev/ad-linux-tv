@@ -55,7 +55,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
         return {ok:true, status:202, json:async () => ({id:"test-command"})};
       const data = url === "/api/login" ? {csrf:"test-csrf"}
         : url === "/api/services" ? {services:[{id:"browser",name:"Браузер"}],remote_address:"http://192.168.1.111:8765/remote"}
-          : url === "/api/audio" ? {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:75,browser_muted:true}
+          : url === "/api/audio" ? {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:75,browser_muted:true,browser_mute_target:true}
             : url === "/api/display-timer" ? timerData
             : {extension_online:true,pending_commands:0,last_command_failure:null,preferred_remote_address:preferredAddress};
       return {ok:true,status:200,json:async () => data};

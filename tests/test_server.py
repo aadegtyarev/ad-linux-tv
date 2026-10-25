@@ -369,6 +369,9 @@ def test_advanced_audio_route_saves_targets_and_keeps_output_level(tmp_path, mon
         },
     )
     monkeypatch.setattr(audio, "normalize_browser_volume", lambda target: calls.append(target))
+    monkeypatch.setattr(
+        audio, "normalize_browser_mute", lambda target: calls.append(("mute", target))
+    )
     monkeypatch.setattr(audio, "browser_audio_active", lambda: False)
     server = make_server("127.0.0.1", 0, make_handler(data, path))
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -383,6 +386,12 @@ def test_advanced_audio_route_saves_targets_and_keeps_output_level(tmp_path, mon
         response, body = request(connection, "POST", "/api/audio", '{"player_volume":60}', headers)
         assert response.status == 200 and json.loads(body)["player_target"] == 60
         assert load_config(path)["audio"] == {"browser": 35, "player": 60}
+        response, body = request(
+            connection, "POST", "/api/audio", '{"browser_muted":true}', headers
+        )
+        assert response.status == 200 and json.loads(body)["browser_mute_target"] is True
+        assert calls[-1] == ("mute", True)
+        assert load_config(path)["audio"] == {"browser": 35, "player": 60, "browser_muted": True}
     finally:
         connection.close()
         server.shutdown()

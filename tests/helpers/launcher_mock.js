@@ -54,7 +54,7 @@ function launcher({hostname = "192.168.1.4", pinRequired = true} = {}) {
   let serviceData = Array.from({length:25}, (_, id) => ({id:`svc-${id}`, name:`Service ${id}`}));
   let remoteAddress = "http://192.168.1.4:8765/remote";
   let bridgeData = {extension_online:true, pending_commands:0, last_command_failure:null};
-  let audioData = {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:null,browser_muted:null};
+  let audioData = {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:null,browser_muted:null,browser_mute_target:false};
   let timer;
   const context = {
     document:doc, innerWidth:1920, location:{hostname},

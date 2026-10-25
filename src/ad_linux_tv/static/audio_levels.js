@@ -30,7 +30,7 @@ class AudioLevelsControls {
       value.textContent = `${level}%`;
       if (!hint) continue;
       if (name === "browser") hint.textContent = state.browser_volume === null
-        ? "Поток Firefox сейчас не играет; применится при запуске."
+        ? "Поток Firefox сейчас не играет; настройка применится при запуске."
         : state.browser_muted ? `Поток Firefox заглушён; уровень ${state.browser_volume}%.`
           : `Сейчас: ${state.browser_volume}%.`;
       if (name === "player") hint.textContent = state.browser_volume === null
@@ -38,14 +38,12 @@ class AudioLevelsControls {
         : "Применится к доступному плееру страницы.";
     }
     if (this.browserMute) {
-      const muted = state.browser_muted;
-      this.browserMute.disabled = typeof muted !== "boolean";
+      const muted = state.browser_mute_target === true;
+      this.browserMute.disabled = false;
       this.browserMute.dataset.muted = String(muted);
-      this.browserMute.textContent = typeof muted !== "boolean"
-        ? "Нет потока" : muted ? "Включить" : "Отключить";
-      this.browserMute.setAttribute("aria-label", typeof muted !== "boolean"
-        ? "Звук Firefox недоступен: нет потока"
-        : muted ? "Включить звук Firefox" : "Выключить звук Firefox");
+      this.browserMute.textContent = muted ? "Включить" : "Отключить";
+      this.browserMute.setAttribute("aria-label", muted
+        ? "Включить звук Firefox" : "Выключить звук Firefox");
     }
   }
 }

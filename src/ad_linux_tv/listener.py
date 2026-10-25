@@ -73,6 +73,9 @@ def serve(config, config_path=None):
             while True:
                 try:
                     audio.normalize_browser_volume(config.get("audio", {}).get("browser", 100))
+                    audio.normalize_browser_mute(
+                        config.get("audio", {}).get("browser_muted", False)
+                    )
                 except audio.AudioUnavailable:
                     pass
                 time.sleep(2)

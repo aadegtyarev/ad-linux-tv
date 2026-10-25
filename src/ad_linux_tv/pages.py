@@ -78,7 +78,11 @@ def get_response(handler, config, queue, static):
         try:
             state = audio.get_state()
             levels = config.get("audio", {"browser": 100, "player": 100})
-            state.update(browser_target=levels["browser"], player_target=levels["player"])
+            state.update(
+                browser_target=levels["browser"],
+                player_target=levels["player"],
+                browser_mute_target=levels.get("browser_muted", False),
+            )
             return 200, json.dumps(state), "application/json"
         except audio.AudioUnavailable:
             return 503, "{}", "application/json"

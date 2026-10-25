@@ -107,7 +107,7 @@ test("System opens via F8 and KDE requires a second confirmation", async () => {
   assert.notEqual(ui.doc.activeElement.dataset.settings, "true");
   ui.doc.dispatchEvent({type:"keydown", key:"F8", preventDefault(){}});
   assert.equal(ui.elements["#settings"].hidden, false);
-  for (let i = 0; i < 14 && ui.doc.activeElement !== ui.elements["#open-kde"]; i += 1)
+  for (let i = 0; i < 20 && ui.doc.activeElement !== ui.elements["#open-kde"]; i += 1)
     ui.doc.dispatchEvent({type:"keydown", key:"ArrowDown", preventDefault(){}});
   assert.equal(ui.doc.activeElement, ui.elements["#open-kde"]);
   ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
@@ -174,6 +174,12 @@ test("System shows all three sound levels without changing them on refresh", asy
   assert.equal((html.match(/type="range"/g) || []).length, 4);
   assert.equal(ui.elements["#audio-volume"].value, 100);
   assert.equal(ui.elements["#tv-browser-volume"].value, 100);
+  assert.equal(ui.elements["#tv-browser-mute"].disabled, false);
+  assert.equal(ui.elements["#tv-browser-mute"].textContent, "Отключить");
+  ui.elements["#tv-browser-mute"].click();
+  await ready();
+  assert.ok(ui.calls.some(call => call.url === "/api/audio" &&
+    JSON.parse(call.options?.body || "{}").browser_muted === true));
   assert.equal(ui.calls.some(call => call.url === "/api/audio" &&
     JSON.parse(call.options?.body || "{}").browser_volume !== undefined), false);
 });

@@ -67,6 +67,22 @@ def test_audio_targets_persist_without_resetting_sessions(tmp_path):
     assert load_config(path)["audio"] == {"browser": 40, "player": 65}
 
 
+def test_firefox_mute_target_persists_with_audio_levels(tmp_path):
+    settings, sessions, path, _profile = manager(tmp_path)
+    token, _ = sessions.create()
+    assert settings.browser_mute_target() is False
+    settings.set_browser_mute(True)
+    settings.set_audio_level("browser", 55)
+    assert load_config(path)["audio"] == {
+        "browser": 55,
+        "player": 100,
+        "browser_muted": True,
+    }
+    assert sessions.valid(token)
+    with pytest.raises(SettingsError):
+        settings.set_browser_mute(1)
+
+
 def test_pointer_acceleration_persists_without_resetting_sessions(tmp_path):
     settings, sessions, path, _profile = manager(tmp_path)
     token, _ = sessions.create()

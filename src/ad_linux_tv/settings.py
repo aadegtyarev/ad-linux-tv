@@ -146,7 +146,21 @@ class SettingsManager:
 
     def audio_levels(self):
         with self.lock:
-            return dict(self.config.get("audio", {"browser": 100, "player": 100}))
+            audio = self.config.get("audio", {})
+            return {"browser": audio.get("browser", 100), "player": audio.get("player", 100)}
+
+    def browser_mute_target(self):
+        with self.lock:
+            return self.config.get("audio", {}).get("browser_muted", False)
+
+    def set_browser_mute(self, value):
+        if type(value) is not bool:
+            raise SettingsError("invalid Firefox mute")
+        with self.lock:
+            current = self.config.get("audio", {})
+            if current.get("browser_muted", False) != value or "browser_muted" not in current:
+                updated = dict(self.audio_levels(), browser_muted=value)
+                self._save_config(dict(self.config, audio=updated))
 
     def set_audio_level(self, name, value):
         if name not in ("browser", "player") or type(value) is not int or not 0 <= value <= 100:
@@ -154,8 +168,8 @@ class SettingsManager:
         with self.lock:
             levels = self.audio_levels()
             if levels[name] != value:
-                levels[name] = value
-                self._save_config(dict(self.config, audio=levels))
+                updated = dict(self.config.get("audio", levels), **{name: value})
+                self._save_config(dict(self.config, audio=updated))
 
     def _save_config(self, candidate):
         if self.path is None:

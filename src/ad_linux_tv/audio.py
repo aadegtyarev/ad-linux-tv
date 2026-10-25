@@ -83,6 +83,13 @@ def normalize_browser_volume(target=100):
             _pactl("set-sink-input-volume", index, f"{target}%")
 
 
+def normalize_browser_mute(target=False):
+    """Apply the saved Firefox mute setting to current and newly created streams."""
+    for item in _browser_inputs():
+        if bool(item.get("mute", False)) != target:
+            _pactl("set-sink-input-mute", str(int(item["index"])), "1" if target else "0")
+
+
 def browser_audio_active():
     """A Firefox sink input may stay present after its media has been paused."""
     return any(

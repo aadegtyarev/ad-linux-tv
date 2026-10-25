@@ -153,7 +153,25 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
             return handler.send(503, "{}")
         try:
             action = handler.read_payload()
-            if isinstance(action, dict) and set(action) in ({"browser_volume"}, {"player_volume"}):
+            if isinstance(action, dict) and set(action) == {"browser_muted"}:
+                value = action["browser_muted"]
+                if type(value) is not bool:
+                    raise SettingsError("invalid Firefox mute")
+                previous = settings.browser_mute_target()
+                audio.normalize_browser_mute(value)
+                try:
+                    settings.set_browser_mute(value)
+                except OSError:
+                    try:
+                        audio.normalize_browser_mute(previous)
+                    except audio.AudioUnavailable:
+                        pass
+                    raise
+                result = audio.get_state()
+            elif isinstance(action, dict) and set(action) in (
+                {"browser_volume"},
+                {"player_volume"},
+            ):
                 name = "browser" if "browser_volume" in action else "player"
                 value = action[f"{name}_volume"]
                 if type(value) is not int or not 0 <= value <= 100:
@@ -184,7 +202,11 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
             else:
                 result = audio.apply(action)
             levels = settings.audio_levels()
-            result.update(browser_target=levels["browser"], player_target=levels["player"])
+            result.update(
+                browser_target=levels["browser"],
+                player_target=levels["player"],
+                browser_mute_target=settings.browser_mute_target(),
+            )
         except OverflowError:
             return handler.send(413, "{}")
         except BodyTimeout:

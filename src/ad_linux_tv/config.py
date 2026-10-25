@@ -51,10 +51,17 @@ def load_config(path):
         levels = data.get("audio", {"browser": 100, "player": 100})
         if (
             not isinstance(levels, dict)
-            or set(levels) != {"browser", "player"}
-            or any(type(value) is not int or not 0 <= value <= 100 for value in levels.values())
+            or not {"browser", "player"} <= set(levels)
+            or set(levels) - {"browser", "player", "browser_muted"}
+            or any(
+                type(levels[name]) is not int or not 0 <= levels[name] <= 100
+                for name in ("browser", "player")
+            )
+            or type(levels.get("browser_muted", False)) is not bool
         ):
-            raise ConfigurationError("audio levels must be 0..100")
+            raise ConfigurationError(
+                "audio levels must be 0..100 and browser_muted must be boolean"
+            )
         pointer = data.get("pointer", {"acceleration": 50})
         if (
             not isinstance(pointer, dict)

@@ -46,10 +46,13 @@ def test_advanced_audio_targets_are_bounded(tmp_path):
     data = make_data()
     data["audio"] = {"browser": 35, "player": 70}
     assert load_config(write_config(tmp_path, data))["audio"] == data["audio"]
+    data["audio"]["browser_muted"] = True
+    assert load_config(write_config(tmp_path, data))["audio"]["browser_muted"] is True
     for invalid in (
         {"browser": True, "player": 70},
         {"browser": 101, "player": 70},
         {"browser": 50},
+        {"browser": 50, "player": 70, "browser_muted": "false"},
     ):
         data["audio"] = invalid
         with pytest.raises(ValueError, match="audio levels"):

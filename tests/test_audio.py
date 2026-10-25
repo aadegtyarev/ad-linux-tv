@@ -212,6 +212,18 @@ def test_browser_streams_follow_saved_target(monkeypatch):
     assert calls == [("set-sink-input-volume", "4", "35%")]
 
 
+def test_browser_mute_normalizer_uses_saved_target(monkeypatch):
+    calls = []
+    monkeypatch.setattr(audio, "_pactl", lambda *args: calls.append(args))
+    monkeypatch.setattr(
+        audio,
+        "_browser_inputs",
+        lambda: [{"index": 4, "mute": True}, {"index": 5, "mute": False}],
+    )
+    audio.normalize_browser_mute(False)
+    assert calls == [("set-sink-input-mute", "4", "0")]
+
+
 def test_non_browser_stream_blocks_sleep(monkeypatch):
     import json
 
