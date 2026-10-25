@@ -10,6 +10,8 @@ const status = document.querySelector("#status");
 const commandStatus = document.querySelector("#command-status");
 let csrf = "";
 let statusTimer = null;
+let statusRequestId = 0;
+let redirecting = false;
 let browserService = null;
 const audioOutput = document.querySelector("#audio-output");
 const audioVolume = document.querySelector("#audio-volume");
@@ -180,16 +182,39 @@ function requireLogin() {
   if (displayTimerPoll !== null) clearInterval(displayTimerPoll);
   displayTimerPoll = null;
   controls.hidden = true;
-  connecting.hidden = true;
-  loginPanel.hidden = false;
-  say("Сеанс пульта истёк. Введите PIN ещё раз.", true);
+  connecting.hidden = false;
+  loginPanel.hidden = true;
+  void restoreLogin(true);
+}
+
+function privateRemoteUrl(value) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" || url.port !== "8765" || url.pathname !== "/remote" ||
+        url.search || url.hash || url.username || url.password) return null;
+    const octets = url.hostname.split(".");
+    if (octets.length !== 4 || octets.some(part => !/^\d{1,3}$/.test(part) || Number(part) > 255)) return null;
+    const [a, b] = octets.map(Number);
+    if (!(a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168))) return null;
+    return url.href;
+  } catch (_) { return null; }
 }
 
 async function refreshStatus() {
+  const requestId = ++statusRequestId;
   try {
     const response = await fetch("/api/status");
     if (!response.ok) throw new Error("status unavailable");
     const value = await response.json();
+    if (requestId !== statusRequestId) return;
+    const nextAddress = privateRemoteUrl(value.preferred_remote_address);
+    if (!redirecting && nextAddress && window.location?.href &&
+        nextAddress !== new URL(window.location.href).href) {
+      redirecting = true;
+      window.location.replace(nextAddress);
+      return;
+    }
     const messages = [value.extension_online ? "Firefox подключён." : "Firefox не подключён. Подождите или перезапустите ТВ-режим."];
     if (value.pending_commands) messages.push("Команда выполняется…");
     if (value.last_command_failure) messages.push("Последняя команда не выполнена. Нажмите ещё раз.");
@@ -206,6 +231,7 @@ async function refreshStatus() {
     commandStatus.textContent = visible.join(" ");
     commandStatus.hidden = visible.length === 0;
   } catch (_) {
+    if (requestId !== statusRequestId) return;
     status.dataset.online = "false";
     if (!status.dataset.feedback) {
       status.textContent = "Нет связи";
@@ -263,7 +289,7 @@ async function activateRemote(token, restored = false) {
   audioTimer = setInterval(() => { if (!audioDragging) void refreshAudio(); }, 5000);
   displayTimerPoll = setInterval(refreshDisplayTimer, 5000);
 }
-async function restoreLogin() {
+async function restoreLogin(expired = false) {
   try {
     const response = await fetch("/api/session", {cache:"no-store"});
     if (response.ok) {
@@ -276,6 +302,7 @@ async function restoreLogin() {
   } catch (_) { /* Keep PIN entry available when the server cannot be reached. */ }
   connecting.hidden = true;
   loginPanel.hidden = false;
+  if (expired) say("Сеанс пульта истёк. Введите PIN ещё раз.", true);
 }
 void restoreLogin();
 
@@ -402,12 +429,13 @@ document.querySelectorAll(".return-remote").forEach(button => {
   button.onclick = () => showPage("remote");
 });
 let navigationSequence = Promise.resolve();
-let inputMode = "keys";
-function sendArrow(key) {
-  if (key !== "ok") inputMode = "keys";
+function sendKey(key) {
   navigationSequence = navigationSequence.then(() => post("/api/input", {key}, ""));
   return navigationSequence;
 }
+document.querySelector("#pad-tab").onclick = () => sendKey("tab");
+document.querySelector("#pad-shift-tab").onclick = () => sendKey("shift-tab");
+document.querySelector("#pad-enter").onclick = () => sendKey("enter");
 const touchpad = document.querySelector("#remote-touchpad");
 const touchIndicators = [document.querySelector("#touch-indicator"), document.querySelector("#touch-indicator-2")];
 const fingers = new Map();
@@ -480,7 +508,6 @@ function schedulePointerMove(dx, dy) {
   schedulePointerDrain();
 }
 function schedulePointerScroll(dy) {
-  inputMode = "pointer";
   scrollFraction -= dy * 2;
   const steps = Math.trunc(scrollFraction);
   scrollFraction -= steps;
@@ -527,7 +554,6 @@ touchpad.addEventListener("pointermove", event => {
     const wasMoving = finger.moved;
     if (Math.hypot(event.clientX - finger.startX, event.clientY - finger.startY) > dragDistance) finger.moved = true;
     if (finger.moved) {
-      inputMode = "pointer";
       schedulePointerMove(
       wasMoving ? dx : event.clientX - finger.startX,
       wasMoving ? dy : event.clientY - finger.startY,
@@ -565,23 +591,21 @@ function finishTouch(event, cancelled = false) {
   if (finger.multi) return;
   if (finger.moved) return void drainPointer();
   if (!finger.arrow && Date.now() - finger.time > 650) return;
-  if (finger.arrow) void sendArrow(finger.arrow);
-  else if (inputMode === "keys") void sendArrow("ok");
+  if (finger.arrow) void sendKey(finger.arrow);
   else void drainPointer().then(() => sendPointer({click: true}));
 }
 touchpad.addEventListener("pointerup", event => finishTouch(event));
 touchpad.addEventListener("pointercancel", event => finishTouch(event, true));
 touchpad.addEventListener("keydown", event => {
   const key = {ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right"}[event.key];
-  if (key) { event.preventDefault(); void sendArrow(key); }
+  if (key) { event.preventDefault(); void sendKey(key); }
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    if (inputMode === "keys") void sendArrow("ok");
-    else void drainPointer().then(() => sendPointer({click: true}));
+    void sendKey("enter");
   }
 });
 document.querySelectorAll("[data-c]").forEach(button => {
-  button.onclick = () => { if (button.dataset.c === "home") inputMode = "keys"; return post("/api/command", {command: button.dataset.c}, ""); };
+  button.onclick = () => post("/api/command", {command: button.dataset.c}, "");
 });
 document.querySelector("#open").onclick = () =>
   post("/api/command", {command: "open", service_id: document.querySelector("#services").value}, "Открываем сервис…");

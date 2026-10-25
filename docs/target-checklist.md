@@ -19,13 +19,17 @@ Observed on Beelink SER10 Max with HDMI (2026-10-24):
 - [x] A real reboot with HDMI started the TV session automatically; the bridge, LAN remote and HDMI sink returned.
 - [x] The phone audio API accepted an authenticated LAN session, reported HDMI at 100%, and accepted volume, unmute and HDMI selection; the saved preference is mode 0600. The colored service tiles were confirmed on Beelink.
 - [x] The pairing PIN was detected visually under QR on the TV home screen; local retrieval succeeded, public service data omitted it, and forged-Host LAN retrieval returned 403.
+- [x] With `auth.require_pin: false`, the TV shows “PIN не нужен”; a fresh LAN browser receives a session without PIN, invalid CSRF is rejected, and a foreign Host cannot bootstrap a session.
+- [x] The new phone Tab button focused elements in KION and Kinopoisk through the live remote; Enter was delivered in KION. A 390 px mobile viewport showed Tab, Shift+Tab and Enter below the touchpad without overlap. YouTube loaded with the new remote; its Tab order reaches video cards only after many navigation controls.
+- [x] Opened all six service tiles on Beelink and checked keyboard focus: Kinopoisk, KION, YouTube, VK Video, Yandex Music and Browser. Tab visibly focused a menu or control in Kinopoisk, KION, VK Video and Browser; repeated Tab reached a YouTube video card. Yandex Music accepted the key, but no visible focus change was established. On Kinopoisk and VK Video, ArrowDown scrolled content while focus stayed on the previous control; ArrowRight did not select an adjacent Kinopoisk card. Kinopoisk card click opened its details.
 
 Still to verify on the actual setup:
 
 - [ ] Tap the on-keyboard `EN → RU` / `RU → EN` key and confirm both directions, then enter several digits in a third-party code field after manually opening the keyboard; confirm it stays visible until closed. Confirm physical touch on «Плитки» and repeat «Клавиатура» to dismiss it; test both keyboard languages, digits, symbols, and password fields on the touch monitor.
 - [ ] Confirm the overlay hides when the touchscreen is unplugged and that YouTube's own fullscreen video triggers the same behavior as F11.
-- [ ] Pair a real phone by QR, type with its native keyboard, use Home/Back/Refresh, test retry lockout and deny access from outside the trusted LAN.
-- [ ] Change the DHCP lease to an unrelated address and confirm the QR/address refreshes and an already paired phone can reconnect; test packet loss during the change.
+- [ ] Open the remote on a real phone without PIN, type with its native keyboard, use Home/Back/Refresh, and confirm a second phone can scan the QR shown in the first phone's Menu. In PIN-required mode, test retry lockout; deny access from outside the trusted LAN in both modes.
+- [ ] Change the DHCP lease to an unrelated address and confirm the QR/address refreshes. Check that the phone redirects while its old connection still works, and that a fresh QR scan restores access after an abrupt break; test packet loss during the change.
+- [ ] Compare cursor lag and two-finger scrolling on a real phone after HTTP connection reuse. Check Tab, Shift+Tab, Enter and cursor tap on Kinopoisk, KION and YouTube, including cards below the first screen.
 - [ ] Test no-HDMI console fallback, Ctrl+Alt+F2, `gui kde`, `gui off`, and `gui tv` after reboot.
 - [ ] Test TV navigation with a remote or touch only, including all service tiles and third-party site controls.
 - [ ] Touch the sound icon and adjust the single output slider during playback; confirm the panel stays open while dragging. Check the same level in remote/System, mute, and output selection with a connected Bluetooth speaker or other output. Confirm Firefox stream and managed HTML media are normalized to 100% while the chosen output level stays unchanged. Confirm website playback audio, service logins/cookies across reboot, and DRM availability without bypasses; confirm behavior after Firefox updates.

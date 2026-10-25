@@ -51,3 +51,17 @@ def test_qr_advertisement_matches_listener_family_and_rejects_loopback():
         assert families[-1] == pages.socket.AF_INET
     finally:
         pages._route_address = original
+
+
+def test_status_advertises_new_route_while_old_ip_still_answers(monkeypatch):
+    handler = SimpleNamespace(
+        path="/api/status",
+        connection=SimpleNamespace(getsockname=lambda: ("192.168.1.111", 8765)),
+    )
+    config = {"bind": "0.0.0.0", "port": 8765}
+    queue = SimpleNamespace(status=lambda: {"extension_online": True})
+    monkeypatch.setattr(pages, "_route_address", lambda _family: "192.168.1.112")
+    assert remote_address(handler, config) == "http://192.168.1.111:8765/remote"
+    status, body, kind = get_response(handler, config, queue, ".")
+    assert status == 200 and kind == "application/json"
+    assert b'"preferred_remote_address": "http://192.168.1.112:8765/remote"' in body.encode()

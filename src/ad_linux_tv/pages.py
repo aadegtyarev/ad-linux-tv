@@ -30,6 +30,19 @@ def _route_address(family):
         return probe.getsockname()[0]
 
 
+def preferred_remote_address(config):
+    bind = ipaddress.ip_address(config["bind"])
+    if bind.is_loopback:
+        return ""
+    if not bind.is_unspecified:
+        return _advertised_url(bind.compressed, config["port"])
+    try:
+        family = socket.AF_INET6 if bind.version == 6 else socket.AF_INET
+        return _advertised_url(_route_address(family), config["port"])
+    except OSError:
+        return ""
+
+
 def remote_address(handler, config):
     bind = ipaddress.ip_address(config["bind"])
     port = config["port"]
@@ -91,8 +104,12 @@ def get_response(handler, config, queue, static):
         if not handler.valid_bridge():
             return 403, "{}", "application/json"
         return 200, json.dumps(queue.poll()), "application/json"
-    if path in ("/health", "/api/status"):
+    if path == "/health":
         return 200, json.dumps(queue.status()), "application/json"
+    if path == "/api/status":
+        status = queue.status()
+        status["preferred_remote_address"] = preferred_remote_address(config)
+        return 200, json.dumps(status), "application/json"
     if path == "/api/qr":
         import qrcode
 

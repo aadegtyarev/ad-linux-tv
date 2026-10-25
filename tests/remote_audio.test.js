@@ -8,6 +8,10 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   const calls = [];
   let savedSession = false;
   let holdMove = false;
+  let preferredAddress = "http://192.168.1.111:8765/remote";
+  const redirects = [];
+  let delayStatus = false;
+  const releaseStatuses = [];
   const releaseMoves = [];
   class Element {
     constructor() { this.dataset = {}; this.children = []; this.value = ""; this.hidden = false; this.listeners = {}; this.style = {}; this.classes = new Set(); this.classList = {add: value => this.classes.add(value), remove: value => this.classes.delete(value)}; }
@@ -22,7 +26,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   const ids = ["#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#touch-indicator", "#touch-indicator-2", "#pin", "#pin-visibility",
     "#services", "#history-back", "#history-forward", "#remote-face", "#remote-keyboard-page", "#remote-timer-page", "#remote-menu-page", "#show-keyboard", "#show-timer", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
     "#audio-mute", "#audio-refresh", "#audio-test", "#menu-tab", "#menu-shift-tab", "#open", "#text-form", "#remote-text", "#url-form",
-    "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address", "#phone-timer-status", "#remote-share-page", "#show-share", "#share-qr", "#share-status", "#share-url"];
+    "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address", "#phone-timer-status", "#remote-share-page", "#show-share", "#share-qr", "#share-status", "#share-url", "#pad-tab", "#pad-shift-tab", "#pad-enter"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const timerButtons = [0, 15, 30, 60, 90, 120].map(minutes => {
     const button = new Element();
@@ -31,12 +35,18 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   });
   const context = {
     document: {addEventListener() {}, querySelector: id => elements[id], querySelectorAll: selector => selector === "[data-phone-timer]" ? timerButtons : [], createElement: () => new Element()},
-    window: {scrollTo() {}},
+    window: {scrollTo() {}, location:{href:"http://192.168.1.111:8765/remote", replace:url => redirects.push(url)}},
     setInterval: () => 1, clearInterval: () => {}, setTimeout, clearTimeout, URL, console,
     fetch: async (url, options = {}) => {
       calls.push({url, options});
       if (url === "/api/pointer" && holdMove && JSON.parse(options.body).dx !== undefined) {
         await new Promise(resolve => { releaseMoves.push(resolve); });
+      }
+      if (url === "/api/status") {
+        const address = preferredAddress;
+        if (delayStatus) await new Promise(resolve => { releaseStatuses.push(resolve); });
+        return {ok:true,status:200,json:async () => ({extension_online:true,pending_commands:0,
+          last_command_failure:null,preferred_remote_address:address})};
       }
       if (url === "/api/session") return {ok:savedSession, status:savedSession ? 200 : 401, json:async () => ({csrf:"test-csrf"})};
       if (url === "/api/command" && options.method === "POST")
@@ -45,7 +55,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
         : url === "/api/services" ? {services:[{id:"browser",name:"Браузер"}],remote_address:"http://192.168.1.111:8765/remote"}
           : url === "/api/audio" ? {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:75}
             : url === "/api/display-timer" ? {minutes:0,remaining_seconds:0,asleep:false,error:null,phase:"idle"}
-            : {extension_online:true,pending_commands:0,last_command_failure:null};
+            : {extension_online:true,pending_commands:0,last_command_failure:null,preferred_remote_address:preferredAddress};
       return {ok:true,status:200,json:async () => data};
     },
   };
@@ -68,6 +78,10 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   assert.equal(elements["#controls"].hidden, false);
   assert.equal(elements["#connecting"].hidden, true);
   assert.equal(calls.filter(call => call.url === "/api/login").length, loginsBeforeRestore);
+  vm.runInContext("requireLogin()", context);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(elements["#controls"].hidden, false);
+  assert.equal(elements["#login-panel"].hidden, true);
   const commandsBeforeTimer = calls.filter(call => call.url === "/api/command").length;
   elements["#show-timer"].onclick();
   assert.equal(elements["#remote-timer-page"].hidden, false);
@@ -103,7 +117,10 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   await new Promise(resolve => setImmediate(resolve));
   const pointerActions = calls.filter(call => call.url === "/api/pointer")
     .map(call => JSON.parse(call.options.body));
-  assert.deepEqual(pointerActions, [{dx:60, dy:15}, {click:true}]);
+  assert.deepEqual(pointerActions, [{click:true}, {dx:60, dy:15}, {click:true}]);
+  await elements["#pad-tab"].onclick();
+  await elements["#pad-shift-tab"].onclick();
+  await elements["#pad-enter"].onclick();
   touchpad.listeners.pointerdown(touch(4, 100, 100));
   touchpad.listeners.pointerdown(touch(5, 120, 100));
   assert.equal(elements["#touch-indicator"].hidden, false);
@@ -150,7 +167,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   await elements["#menu-shift-tab"].onclick();
   const history = calls.filter(call => call.url === "/api/input" && call.options.method === "POST")
     .map(call => JSON.parse(call.options.body).key);
-  assert.deepEqual(history, ["up", "ok", "browser-back", "browser-forward", "tab", "shift-tab"]);
+  assert.deepEqual(history, ["up", "tab", "shift-tab", "enter", "browser-back", "browser-forward", "tab", "shift-tab"]);
   elements["#show-menu"].onclick();
   await new Promise(resolve => setTimeout(resolve, 350));
   const html = fs.readFileSync("src/ad_linux_tv/static/remote.html", "utf8");
@@ -171,4 +188,19 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   assert.ok(home);
   assert.ok(system);
   assert.equal(system.options.headers["X-CSRF-Token"], "test-csrf");
+  delayStatus = true;
+  preferredAddress = "http://192.168.1.113:8765/remote";
+  const stale = vm.runInContext("refreshStatus()", context);
+  delayStatus = false;
+  preferredAddress = "http://192.168.1.111:8765/remote";
+  await vm.runInContext("refreshStatus()", context);
+  for (const release of releaseStatuses) release();
+  await stale;
+  assert.deepEqual(redirects, []);
+  preferredAddress = "http://attacker.example:8765/remote";
+  await vm.runInContext("refreshStatus()", context);
+  assert.deepEqual(redirects, []);
+  preferredAddress = "http://192.168.1.112:8765/remote";
+  await vm.runInContext("refreshStatus()", context);
+  assert.deepEqual(redirects, ["http://192.168.1.112:8765/remote"]);
 });
