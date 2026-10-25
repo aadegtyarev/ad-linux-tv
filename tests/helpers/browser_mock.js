@@ -4,7 +4,7 @@ const services = [
   {id:"two", url:"https://same.example/watch/two"},
 ];
 
-function browserMock(initial = []) {
+function browserMock(initial = [], offeredServices = services) {
   const tabs = new Map(initial.map(tab => [tab.id, {...tab}]));
   let nextId = Math.max(0, ...tabs.keys()) + 1;
   const calls = [];
@@ -64,7 +64,7 @@ function browserMock(initial = []) {
   };
   const fetcher = async (url, options = {}) => {
     calls.push(["fetch", url, options]);
-    return {ok:true, json:async () => ({services})};
+    return {ok:true, json:async () => ({services:offeredServices})};
   };
   return {api, fetcher, tabs, calls, storage:{local, session},
     setScriptingResults:value => { scriptingResults = value; }};

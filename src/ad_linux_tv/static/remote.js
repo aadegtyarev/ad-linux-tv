@@ -9,6 +9,12 @@ const controls = document.querySelector("#controls");
 const status = document.querySelector("#status");
 const commandStatus = document.querySelector("#command-status");
 let csrf = "";
+const transport = new RemoteTransport(window.location);
+function remoteFetch(path, options = {}) {
+  const method = options.method || "GET";
+  const body = options.body === undefined ? null : JSON.parse(options.body);
+  return transport.request(csrf, method, path, body);
+}
 let statusTimer = null;
 let statusRequestId = 0;
 let redirecting = false;
@@ -76,7 +82,7 @@ function showAudio(state) {
 
 async function refreshAudio() {
   try {
-    const response = await fetch("/api/audio");
+    const response = await remoteFetch("/api/audio");
     if (response.status === 403) return requireLogin();
     if (!response.ok) throw new Error("audio unavailable");
     showAudio(await response.json());
@@ -87,7 +93,7 @@ async function refreshAudio() {
 
 async function changeAudio(action) {
   try {
-    const response = await fetch("/api/audio", {
+    const response = await remoteFetch("/api/audio", {
       method: "POST", headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
       body: JSON.stringify(action),
     });
@@ -122,7 +128,7 @@ function showPhoneTimer(state) {
 
 async function refreshDisplayTimer() {
   try {
-    const response = await fetch("/api/display-timer", {cache:"no-store"});
+    const response = await remoteFetch("/api/display-timer");
     if (response.status === 401 || response.status === 403) return requireLogin();
     if (!response.ok) throw new Error("timer unavailable");
     showPhoneTimer(await response.json());
@@ -134,7 +140,7 @@ async function refreshDisplayTimer() {
 async function changeDisplayTimer(action) {
   phoneTimerStatus.textContent = "Изменяем таймер…";
   try {
-    const response = await fetch("/api/display-timer", {
+    const response = await remoteFetch("/api/display-timer", {
       method:"POST", headers:{"Content-Type":"application/json", "X-CSRF-Token":csrf},
       body:JSON.stringify(action),
     });
@@ -175,6 +181,7 @@ function say(text, error = false) {
 
 function requireLogin() {
   csrf = "";
+  transport.close();
   if (statusTimer !== null) clearInterval(statusTimer);
   statusTimer = null;
   if (audioTimer !== null) clearInterval(audioTimer);
@@ -204,7 +211,7 @@ function privateRemoteUrl(value) {
 async function refreshStatus() {
   const requestId = ++statusRequestId;
   try {
-    const response = await fetch("/api/status");
+    const response = await remoteFetch("/api/status");
     if (!response.ok) throw new Error("status unavailable");
     const value = await response.json();
     if (requestId !== statusRequestId) return;
@@ -235,7 +242,7 @@ async function refreshStatus() {
     status.dataset.online = "false";
     if (!status.dataset.feedback) {
       status.textContent = "Нет связи";
-      status.setAttribute("aria-label", "Нет связи с Beelink. Проверьте Wi-Fi.");
+      status.setAttribute("aria-label", "Нет связи с медиацентром. Проверьте Wi-Fi.");
     }
     commandStatus.hidden = true;
   }
@@ -243,7 +250,7 @@ async function refreshStatus() {
 
 async function post(path, body, success) {
   try {
-    const response = await fetch(path, {
+    const response = await remoteFetch(path, {
       method: "POST",
       headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
       body: JSON.stringify(body),
@@ -256,14 +263,14 @@ async function post(path, body, success) {
     void refreshStatus();
     return true;
   } catch (_) {
-    say("Нет связи с Beelink. Проверьте Wi‑Fi и повторите попытку.", true);
+    say("Нет связи с медиацентром. Проверьте Wi‑Fi и повторите попытку.", true);
   }
   return false;
 }
 
 async function activateRemote(token, restored = false) {
   csrf = token;
-  const responseServices = await fetch("/api/services");
+  const responseServices = await remoteFetch("/api/services");
   if (!responseServices.ok) throw new Error("service list unavailable");
   const data = await responseServices.json();
   browserService = data.services.find(service => service.id === "browser")?.id || null;
@@ -290,16 +297,25 @@ async function activateRemote(token, restored = false) {
   displayTimerPoll = setInterval(refreshDisplayTimer, 5000);
 }
 async function restoreLogin(expired = false) {
+  let sessionAvailable = false;
   try {
     const response = await fetch("/api/session", {cache:"no-store"});
     if (response.ok) {
       const data = await response.json();
       if (typeof data.csrf === "string" && data.csrf) {
+        sessionAvailable = true;
         await activateRemote(data.csrf, true);
         return;
       }
     }
   } catch (_) { /* Keep PIN entry available when the server cannot be reached. */ }
+  if (sessionAvailable) {
+    connecting.textContent = "Нет связи с медиацентром. Подключаем снова…";
+    connecting.hidden = false;
+    loginPanel.hidden = true;
+    setTimeout(() => { if (!csrf || controls.hidden) void restoreLogin(expired); }, 1500);
+    return;
+  }
   connecting.hidden = true;
   loginPanel.hidden = false;
   if (expired) say("Сеанс пульта истёк. Введите PIN ещё раз.", true);
@@ -324,7 +340,7 @@ loginForm.onsubmit = async event => {
     pinVisibility.setAttribute("aria-label", "Показать PIN");
     await activateRemote(data.csrf);
   } catch (_) {
-    say("Нет связи с Beelink. Проверьте Wi-Fi и повторите попытку.", true);
+    say("Нет связи с медиацентром. Проверьте Wi-Fi и повторите попытку.", true);
   }
 };
 
@@ -333,7 +349,7 @@ document.querySelector("#audio-test").onclick = async () => {
   const notice = document.querySelector("#audio-status");
   notice.textContent = "Проверяем звук…";
   try {
-    const response = await fetch("/api/audio", {
+    const response = await remoteFetch("/api/audio", {
       method: "POST", headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
       body: JSON.stringify({test: true}),
     });
@@ -362,9 +378,9 @@ document.querySelector("#history-back").onclick = () =>
 document.querySelector("#history-forward").onclick = () =>
   post("/api/input", {key:"browser-forward"}, "Открываем следующую страницу…");
 document.querySelector("#menu-tab").onclick = () =>
-  post("/api/input", {key:"tab"}, "Фокус на следующем элементе.");
+  sendKey("tab");
 document.querySelector("#menu-shift-tab").onclick = () =>
-  post("/api/input", {key:"shift-tab"}, "Фокус на предыдущем элементе.");
+  sendKey("shift-tab");
 const remoteFace = document.querySelector("#remote-face");
 const keyboardPage = document.querySelector("#remote-keyboard-page");
 const timerPage = document.querySelector("#remote-timer-page");
@@ -394,7 +410,7 @@ document.querySelector("#show-share").onclick = async () => {
   link.hidden = true;
   note.textContent = "Готовим QR-код…";
   try {
-    const response = await fetch("/api/services", {cache: "no-store"});
+    const response = await remoteFetch("/api/services");
     if (!response.ok) throw new Error("address unavailable");
     const {remote_address: address} = await response.json();
     if (!address || !address.startsWith("http://")) throw new Error("address unavailable");
@@ -415,7 +431,7 @@ document.querySelector("#show-system").onclick = async () => {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     await new Promise(resolve => setTimeout(resolve, 400));
     try {
-      const response = await fetch("/api/status");
+      const response = await remoteFetch("/api/status");
       if (!response.ok) break;
       const state = await response.json();
       if (state.extension_online && state.pending_commands === 0) { ready = true; break; }
@@ -430,6 +446,8 @@ document.querySelectorAll(".return-remote").forEach(button => {
 });
 let navigationSequence = Promise.resolve();
 function sendKey(key) {
+  if (["up", "down", "left", "right", "tab", "shift-tab"].includes(key))
+    setPadSelectionMode(true);
   navigationSequence = navigationSequence.then(() => post("/api/input", {key}, ""));
   return navigationSequence;
 }
@@ -437,6 +455,14 @@ document.querySelector("#pad-tab").onclick = () => sendKey("tab");
 document.querySelector("#pad-shift-tab").onclick = () => sendKey("shift-tab");
 document.querySelector("#pad-enter").onclick = () => sendKey("enter");
 const touchpad = document.querySelector("#remote-touchpad");
+let padSelectionMode = false;
+function setPadSelectionMode(selection) {
+  padSelectionMode = selection;
+  document.querySelector("#touch-action-text").textContent = selection ? "Выбрать" : "Клик";
+  touchpad.setAttribute("aria-label", selection
+    ? "Навигация: стрелки или Tab выбирают элемент; тап активирует его; проведите пальцем для курсора"
+    : "Тачпад: ведите пальцем для курсора; тап кликает по курсору; края — стрелки; два пальца — прокрутка");
+}
 const touchIndicators = [document.querySelector("#touch-indicator"), document.querySelector("#touch-indicator-2")];
 const fingers = new Map();
 let pendingX = 0;
@@ -444,12 +470,13 @@ let pendingY = 0;
 let pendingScroll = 0;
 let drainTimer = null;
 const pointerInflight = new Set();
-const maxPointerInflight = 1;
+// Several ordered messages may be in flight on the same WebSocket.
+const maxPointerInflight = 3;
 let scrollFraction = 0;
 let pointerErrorShown = false;
 async function sendPointer(action) {
   try {
-    const response = await fetch("/api/pointer", {
+    const response = await remoteFetch("/api/pointer", {
       method: "POST",
       headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
       body: JSON.stringify(action),
@@ -458,6 +485,10 @@ async function sendPointer(action) {
     if (!response.ok) throw new Error("pointer unavailable");
     pointerErrorShown = false;
   } catch (_) {
+    pendingX = 0;
+    pendingY = 0;
+    pendingScroll = 0;
+    scrollFraction = 0;
     if (!pointerErrorShown) say("Курсор недоступен. Проверьте ТВ-режим и Wi-Fi.", true);
     pointerErrorShown = true;
   }
@@ -503,11 +534,13 @@ function schedulePointerDrain() {
     drainTimer = setTimeout(pumpPointer, 16);
 }
 function schedulePointerMove(dx, dy) {
+  setPadSelectionMode(false);
   pendingX = Math.max(-4800, Math.min(4800, pendingX + dx * 3));
   pendingY = Math.max(-4800, Math.min(4800, pendingY + dy * 3));
   schedulePointerDrain();
 }
 function schedulePointerScroll(dy) {
+  setPadSelectionMode(false);
   scrollFraction -= dy * 2;
   const steps = Math.trunc(scrollFraction);
   scrollFraction -= steps;
@@ -592,6 +625,7 @@ function finishTouch(event, cancelled = false) {
   if (finger.moved) return void drainPointer();
   if (!finger.arrow && Date.now() - finger.time > 650) return;
   if (finger.arrow) void sendKey(finger.arrow);
+  else if (padSelectionMode) void sendKey("enter");
   else void drainPointer().then(() => sendPointer({click: true}));
 }
 touchpad.addEventListener("pointerup", event => finishTouch(event));
@@ -627,13 +661,13 @@ document.querySelector("#url-form").onsubmit = async event => {
   } catch (_) {
     return say("Введите адрес сайта, например example.com.", true);
   }
-  if (!browserService) return say("Плитка «Браузер» не настроена на Beelink.", true);
+  if (!browserService) return say("Плитка «Браузер» не настроена на медиацентре.", true);
   if (!await post("/api/command", {command: "open", service_id: browserService}, "Открываем Браузер…")) return;
   let ready = false;
   for (let attempt = 0; attempt < 30; attempt += 1) {
     await new Promise(resolve => setTimeout(resolve, 400));
     try {
-      const response = await fetch("/api/status");
+      const response = await remoteFetch("/api/status");
       if (!response.ok) throw new Error("status unavailable");
       const state = await response.json();
       if (state.extension_online && state.pending_commands === 0) { ready = true; break; }
@@ -650,8 +684,8 @@ document.querySelector("#key-backspace").onclick = () =>
 document.querySelector("#key-enter").onclick = () =>
   post("/api/input", {key: "enter"}, "Enter отправлен.");
 document.querySelector("#key-tab").onclick = () =>
-  post("/api/input", {key: "tab"}, "Выбрано следующее поле.");
+  sendKey("tab");
 document.querySelector("#key-shift-tab").onclick = () =>
-  post("/api/input", {key: "shift-tab"}, "Выбрано предыдущее поле.");
+  sendKey("shift-tab");
 document.querySelector("#key-address").onclick = () =>
   post("/api/input", {key: "address"}, "Адресная строка выбрана.");

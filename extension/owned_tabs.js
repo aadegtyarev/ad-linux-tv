@@ -22,7 +22,7 @@ function createOwnedTabs(api, fetcher = fetch) {
       const tab = entry ? await api.tabs.get(entry.tabId).catch(() => null) : null;
       return {service, tab};
     }
-    if (item.command === "home") return {active: await state.activeTab()};
+    if (item.command === "home") return {};
     if (item.command === "back" || item.command === "refresh") {
       const active = await state.activeTab();
       return {active: state.owns(active) ? active : null};
@@ -39,6 +39,16 @@ function createOwnedTabs(api, fetcher = fetch) {
     throw new PermanentCommandError("unsupported command");
   };
 
+  async function closeManagedTabs(exceptId = null) {
+    for (const [serviceId, entry] of Object.entries(managed())) {
+      if (entry.tabId === exceptId) continue;
+      const tab = await api.tabs.get(entry.tabId).catch(() => null);
+      if (tab) await api.tabs.remove(tab.id);
+      delete managed()[serviceId];
+    }
+    await state.persist();
+  }
+
   async function openService(serviceId, prepared) {
     let data = prepared?.service;
     if (!data) {
@@ -49,6 +59,7 @@ function createOwnedTabs(api, fetcher = fetch) {
     if (!data || data.id !== serviceId) throw new PermanentCommandError("unknown service");
     const entry = managed()[serviceId];
     let tab = prepared?.tab || (entry ? await api.tabs.get(entry.tabId).catch(() => null) : null);
+    await closeManagedTabs(tab?.id);
     if (tab) {
       entry.windowId = tab.windowId;
       tab = await api.tabs.update(tab.id, {url: data.url, active: true});
@@ -64,7 +75,7 @@ function createOwnedTabs(api, fetcher = fetch) {
     const command = item.command;
     if (command === "open") return openService(item.service_id, prepared);
     if (command === "home") {
-      if (state.owns(prepared.active)) await api.tabs.remove(prepared.active.id);
+      await closeManagedTabs();
       await state.focus(await state.ensureLauncher());
       return;
     }

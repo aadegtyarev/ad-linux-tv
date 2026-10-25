@@ -13,6 +13,8 @@ Troubleshoot: inspect terminal output, validate config with the installed venv C
 
 `extension/package.sh` builds an unsigned archive. Submit it as a new version of the existing add-on in AMO, download the resulting signed XPI, and install that XPI interactively in the dedicated TV Firefox profile. Version 0.3.0 uses the existing scripting and HTTP(S) site permissions only in launcher-owned tabs: it pauses active HTML media for the display timer and keeps managed media at 100% while the selected audio output is the user's one volume control. Firefox may ask to approve the update. The display timer requires both this signed XPI and the matching server update. A site's own mute, WebAudio gain, or restricted frame may still limit control; the timer leaves HDMI on if it cannot establish that playback was paused.
 
+Version 0.3.1 also closes all launcher-managed service tabs on Home and closes the previous service tab when another service opens, preventing playback behind the tiles. The source and unsigned archive alone do not update the installed signed add-on; sign this version in AMO and install the resulting XPI with Firefox confirmation.
+
 On Beelink, `ops/beelink/setup.sh` also installs `wlopm` and `swayidle`. The TV System and phone Menu expose Off, 15, 30, 60, 90 and 120-minute display timers. At expiry, the server pauses managed playback before powering off the HDMI output through `wlopm`; touch or a phone command wakes the output without resuming media. The Beelink remains running and the KDE recovery path is unchanged.
 
 ## Firefox command recovery semantics

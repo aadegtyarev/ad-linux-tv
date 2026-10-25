@@ -16,6 +16,7 @@ from .http_errors import BodyTimeout
 from .http_io import DeadlineReader
 from .pages import get_response
 from .post_routes import handle_post
+from .remote_socket import serve_remote_socket
 from .sleep_timer import DisplaySleepTimer
 
 
@@ -119,6 +120,10 @@ def make_handler(config):
                 raise BodyTimeout from exc
 
         def do_GET(self):
+            if urlparse(self.path).path == "/api/remote-ws":
+                return serve_remote_socket(
+                    self, config, queue, sessions, failures, display_timer, static
+                )
             if urlparse(self.path).path == "/api/display-timer":
                 host = self.headers.get("Host", "")
                 local = security.loopback_source(self.client_address[0]) and host == (

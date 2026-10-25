@@ -4,11 +4,9 @@ function createLauncherUI(send, openSettings) {
   let services = [];
   let size = 12;
   let focus = 0;
-  let systemFocused = false;
   const tiles = document.querySelector("#tiles");
   const systemButton = document.querySelector("#system-button");
   systemButton.dataset.settings = "true";
-  systemButton.onfocus = () => { systemFocused = true; };
   systemButton.onclick = openSettings;
 
   function render(focusButton = false) {
@@ -41,7 +39,6 @@ function createLauncherUI(send, openSettings) {
 
   function setFocus(index) {
     focus = index;
-    systemFocused = false;
     for (const button of tiles.children) {
       button.tabIndex = Number(button.dataset.serviceIndex) === focus ? 0 : -1;
     }
@@ -62,13 +59,6 @@ function createLauncherUI(send, openSettings) {
     }[event.key];
     if (!direction || !document.querySelector("#settings").hidden) return;
     event.preventDefault();
-    if (systemFocused) {
-      if (direction === "left" || direction === "down") {
-        setFocus(direction === "left" ? services.length - 1 : 0);
-        render(true);
-      }
-      return;
-    }
     const activeIndex = Number(document.activeElement?.dataset?.serviceIndex);
     if (Number.isInteger(activeIndex)) focus = activeIndex;
     const currentPage = Math.floor(focus / size);
@@ -94,10 +84,6 @@ function createLauncherUI(send, openSettings) {
     const active = document.activeElement;
     if (active === document.querySelector("#next") || active === document.querySelector("#prev")) {
       active.click();
-      return null;
-    }
-    if (systemFocused || active === systemButton) {
-      systemButton.click();
       return null;
     }
     return services[focus]?.id || null;

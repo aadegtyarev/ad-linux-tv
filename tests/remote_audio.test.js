@@ -26,7 +26,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   const ids = ["#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#touch-indicator", "#touch-indicator-2", "#pin", "#pin-visibility",
     "#services", "#history-back", "#history-forward", "#remote-face", "#remote-keyboard-page", "#remote-timer-page", "#remote-menu-page", "#show-keyboard", "#show-timer", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
     "#audio-mute", "#audio-refresh", "#audio-test", "#menu-tab", "#menu-shift-tab", "#open", "#text-form", "#remote-text", "#url-form",
-    "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address", "#phone-timer-status", "#remote-share-page", "#show-share", "#share-qr", "#share-status", "#share-url", "#pad-tab", "#pad-shift-tab", "#pad-enter"];
+    "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address", "#phone-timer-status", "#remote-share-page", "#show-share", "#share-qr", "#share-status", "#share-url", "#pad-tab", "#pad-shift-tab", "#pad-enter", "#touch-action-text"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const timerButtons = [0, 15, 30, 60, 90, 120].map(minutes => {
     const button = new Element();
@@ -58,6 +58,15 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
             : {extension_online:true,pending_commands:0,last_command_failure:null,preferred_remote_address:preferredAddress};
       return {ok:true,status:200,json:async () => data};
     },
+  };
+  context.RemoteTransport = class {
+    request(csrf, method, path, body) {
+      const options = method === "POST" ? {
+        method, body:JSON.stringify(body), headers:{"X-CSRF-Token":csrf},
+      } : {};
+      return context.fetch(path, options);
+    }
+    close() {}
   };
   vm.createContext(context);
   vm.runInContext(fs.readFileSync("src/ad_linux_tv/static/remote.js", "utf8"), context);
@@ -104,12 +113,14 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
     target:{closest: () => arrow ? {dataset:{arrow}} : null}, preventDefault(){}});
   touchpad.listeners.pointerdown(touch(1, 100, 100, "up"));
   touchpad.listeners.pointerup(touch(1, 100, 100, "up"));
+  assert.equal(elements["#touch-action-text"].textContent, "Выбрать");
   await new Promise(resolve => setImmediate(resolve));
   touchpad.listeners.pointerdown(touch(8, 150, 150));
   touchpad.listeners.pointerup(touch(8, 150, 150));
   await new Promise(resolve => setImmediate(resolve));
   touchpad.listeners.pointerdown(touch(3, 50, 50));
   touchpad.listeners.pointermove(touch(3, 70, 55));
+  assert.equal(elements["#touch-action-text"].textContent, "Клик");
   touchpad.listeners.pointerup(touch(3, 70, 55));
   await new Promise(resolve => setImmediate(resolve));
   touchpad.listeners.pointerdown(touch(2, 100, 100));
@@ -117,7 +128,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   await new Promise(resolve => setImmediate(resolve));
   const pointerActions = calls.filter(call => call.url === "/api/pointer")
     .map(call => JSON.parse(call.options.body));
-  assert.deepEqual(pointerActions, [{click:true}, {dx:60, dy:15}, {click:true}]);
+  assert.deepEqual(pointerActions, [{dx:60, dy:15}, {click:true}]);
   await elements["#pad-tab"].onclick();
   await elements["#pad-shift-tab"].onclick();
   await elements["#pad-enter"].onclick();
@@ -151,7 +162,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   touchpad.listeners.pointerup(touch(7, 420, 20));
   const countWhileHeld = calls.filter(call => call.url === "/api/pointer" &&
     JSON.parse(call.options.body).dx !== undefined).length;
-  assert.equal(countWhileHeld, 3);
+  assert.equal(countWhileHeld, 5);
   holdMove = false;
   for (const release of releaseMoves) release();
   await new Promise(resolve => setTimeout(resolve, 70));
@@ -167,7 +178,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   await elements["#menu-shift-tab"].onclick();
   const history = calls.filter(call => call.url === "/api/input" && call.options.method === "POST")
     .map(call => JSON.parse(call.options.body).key);
-  assert.deepEqual(history, ["up", "tab", "shift-tab", "enter", "browser-back", "browser-forward", "tab", "shift-tab"]);
+  assert.deepEqual(history, ["up", "enter", "tab", "shift-tab", "enter", "browser-back", "browser-forward", "tab", "shift-tab"]);
   elements["#show-menu"].onclick();
   await new Promise(resolve => setTimeout(resolve, 350));
   const html = fs.readFileSync("src/ad_linux_tv/static/remote.html", "utf8");

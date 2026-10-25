@@ -23,15 +23,38 @@ test("session ownership separates same-origin services and protects unrelated ta
   await command(controller, "open", {service_id:"two"});
   const second = controller.getState().managed.two.tabId;
   assert.notEqual(first, second);
+  assert.ok(!mock.tabs.has(first));
   assert.equal(mock.calls.filter(call => call[0] === "fetch" && call[1].endsWith("/api/services")).length, 2);
-  mock.tabs.get(first).url = "https://login.example/redirect";
   await mock.api.tabs.update(second, {active:true});
   await command(controller, "home");
   assert.ok(mock.tabs.has(2));
-  assert.ok(mock.tabs.has(first));
   assert.ok(!mock.tabs.has(second));
+  assert.deepEqual(controller.getState().managed, {});
   await controller.onRemoved(second);
   assert.equal(mock.storage.session.managedTabs.two, undefined);
+});
+
+test("switching and Home close every managed service tab", async () => {
+  const catalog = ["kinopoisk", "kion", "youtube", "vk", "music", "browser"]
+    .map(id => ({id, url:`https://service.example/${id}`}));
+  const mock = browserMock([
+    {id:1, windowId:1, url:LAUNCHER},
+    {id:2, windowId:1, url:"https://personal.example/", active:true},
+  ], catalog);
+  const controller = createTabController(mock.api, mock.fetcher);
+  await controller.restore();
+  let previous = null;
+  for (const service of catalog) {
+    await command(controller, "open", {service_id:service.id});
+    const current = controller.getState().managed[service.id].tabId;
+    if (previous !== null) assert.ok(!mock.tabs.has(previous));
+    assert.equal(Object.keys(controller.getState().managed).length, 1);
+    previous = current;
+  }
+  await command(controller, "home");
+  assert.ok(!mock.tabs.has(previous));
+  assert.ok(mock.tabs.has(2));
+  assert.deepEqual(controller.getState().managed, {});
 });
 
 test("event-page reload preserves managed redirects within the browser session", async () => {

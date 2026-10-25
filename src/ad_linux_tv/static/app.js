@@ -17,14 +17,6 @@ const settingsActions = [document.querySelector("#settings-back"), audioOutput, 
   document.querySelector("#audio-test"), ...timerButtons, document.querySelector("#open-kde")];
 const confirmActions = [document.querySelector("#cancel-kde"), document.querySelector("#confirm-kde-yes")];
 let currentRemoteAddress = "";
-function showSystemForTouch() {
-  document.documentElement.dataset.touchscreen = "true";
-}
-if (globalThis.navigator?.maxTouchPoints > 0) showSystemForTouch();
-document.addEventListener("pointerdown", event => {
-  if (event.pointerType === "touch") showSystemForTouch();
-});
-document.addEventListener("touchstart", showSystemForTouch);
 let pressedTvButton = null;
 let pressedTvTimer = null;
 function flashTvButton(button) {

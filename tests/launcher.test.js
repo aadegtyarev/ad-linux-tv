@@ -21,11 +21,19 @@ test("launcher focus uses actual columns and carries arrows across pages", async
   assert.equal(ui.elements["#page"].textContent, "2 / 3");
 });
 
-test("physical touch reveals the System button", async () => {
+test("System remains pointer-clickable while arrows and bridge OK select tiles", async () => {
   const ui = launcher();
   await ready();
-  ui.doc.dispatchEvent({type:"pointerdown", pointerType:"touch"});
-  assert.equal(ui.doc.documentElement.dataset.touchscreen, "true");
+  const system = ui.elements["#system-button"];
+  system.focus();
+  ui.doc.dispatchEvent({type:"keydown", key:"ArrowRight", preventDefault(){}});
+  assert.equal(ui.doc.activeElement.dataset.serviceIndex, "1");
+  system.focus();
+  ui.doc.dispatchEvent({type:"ad-linux-tv-select-for-bridge"});
+  assert.equal(ui.doc.documentElement.dataset.bridgeServiceId, "svc-1");
+  assert.equal(ui.elements["#settings"].hidden, true);
+  system.click();
+  assert.equal(ui.elements["#settings"].hidden, false);
 });
 
 test("TV buttons show immediate touch feedback", async () => {
