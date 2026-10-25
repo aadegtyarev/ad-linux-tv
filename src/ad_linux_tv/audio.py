@@ -120,6 +120,9 @@ def get_state():
         "volume": _volume_percent(sink),
         "muted": mute,
         "browser_volume": _volume_percent(browser[0]) if browser else None,
+        "browser_muted": (
+            any(bool(item.get("mute", False)) for item in browser) if browser else None
+        ),
     }
 
 
@@ -198,6 +201,14 @@ def apply(action):
             raise AudioUnavailable
         for item in inputs:
             _pactl("set-sink-input-volume", str(int(item["index"])), f"{value}%")
+    elif key == "browser_muted":
+        if type(value) is not bool:
+            raise ValueError("invalid Firefox stream mute")
+        inputs = _browser_inputs()
+        if not inputs:
+            raise AudioUnavailable
+        for item in inputs:
+            _pactl("set-sink-input-mute", str(int(item["index"])), "1" if value else "0")
     elif key == "test":
         if value is not True:
             raise ValueError("invalid audio test")

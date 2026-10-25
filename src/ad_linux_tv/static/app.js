@@ -21,7 +21,7 @@ const tvSettingsPanel = tvSettingsRoot ? new SettingsControls(tvSettingsRoot,
     method, headers: {"Content-Type": "application/json"},
     ...(action ? {body: JSON.stringify(action)} : {}),
   }), () => void loadPairingPin()) : null;
-const rangeActions = [audioVolume, ...advancedAudio.actions(),
+const rangeActions = [audioVolume, ...advancedAudio.sliders(),
   tvSettingsPanel?.field("pointer-acceleration")].filter(Boolean);
 for (const slider of rangeActions) slider.addEventListener("click", () => slider.focus());
 const settingsActions = [document.querySelector("#settings-back"), audioOutput, audioVolume,

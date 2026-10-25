@@ -142,6 +142,49 @@ def test_browser_volume_requires_active_audio(monkeypatch):
         audio.apply({"browser_volume": 50})
 
 
+def test_firefox_mute_affects_only_firefox_streams_and_requires_one(monkeypatch):
+    calls = []
+    inputs = [
+        {"index": 7, "properties": {"application.name": "Firefox"}, "mute": True},
+        {"index": 8, "properties": {"application.name": "Other"}, "mute": True},
+        {"index": 9, "properties": {"application.name": "Firefox"}, "mute": True},
+    ]
+
+    def pactl(*args):
+        calls.append(args)
+        if args == ("-f", "json", "list", "sink-inputs"):
+            return json.dumps(inputs)
+        return ""
+
+    monkeypatch.setattr(audio, "_pactl", pactl)
+    monkeypatch.setattr(audio, "get_state", lambda: {"browser_muted": False})
+    assert audio.apply({"browser_muted": False})["browser_muted"] is False
+    assert ("set-sink-input-mute", "7", "0") in calls
+    assert ("set-sink-input-mute", "9", "0") in calls
+    assert ("set-sink-input-mute", "8", "0") not in calls
+    with pytest.raises(ValueError):
+        audio.apply({"browser_muted": 0})
+    inputs[:] = [inputs[1]]
+    with pytest.raises(audio.AudioUnavailable):
+        audio.apply({"browser_muted": False})
+
+
+def test_audio_state_reports_firefox_stream_mute(monkeypatch):
+    monkeypatch.setattr(
+        audio,
+        "_sinks",
+        lambda: {"hdmi": {"mute": False, "volume": {"left": {"value_percent": "80%"}}}},
+    )
+    monkeypatch.setattr(audio, "_pactl", lambda *_args: "hdmi")
+    inputs = [{"mute": True, "volume": {"left": {"value_percent": "100%"}}}]
+    monkeypatch.setattr(audio, "_browser_inputs", lambda: inputs)
+    assert audio.get_state()["browser_muted"] is True
+    inputs[0]["mute"] = False
+    assert audio.get_state()["browser_muted"] is False
+    inputs.clear()
+    assert audio.get_state()["browser_muted"] is None
+
+
 def test_browser_streams_return_to_neutral_without_changing_output(monkeypatch):
     calls = []
     monkeypatch.setattr(audio, "_pactl", lambda *args: calls.append(args))
