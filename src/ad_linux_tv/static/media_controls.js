@@ -47,7 +47,7 @@ class PhoneMediaControls {
     return `${minutes}:${tail}`;
   }
 
-  render(state) {
+  render(state, confirmSeek = true) {
     this.state = state.available ? state : null;
     this.panel.hidden = !state.available;
     if (state.available) this.face.classList.add("has-media");
@@ -56,7 +56,7 @@ class PhoneMediaControls {
       this.pendingSeek = null;
       return;
     }
-    if (this.pendingSeek && (
+    if (confirmSeek && this.pendingSeek && (
       (state.position !== null && Math.abs(state.position - this.pendingSeek.target) <= 3)
       || Date.now() >= this.pendingSeek.deadline
     )) this.pendingSeek = null;
@@ -101,7 +101,8 @@ class PhoneMediaControls {
       if (response.status === 401 || response.status === 403) return this.onAuth();
       if (!response.ok) throw new Error("media command failed");
       const state = await response.json();
-      if (revision === this.revision) this.render(state);
+      // SetPosition can reply before the next MPRIS snapshot has settled.
+      if (revision === this.revision) this.render(state, false);
     } catch (_) {
       if (action === "seek" && this.pendingSeek?.target === position) this.pendingSeek = null;
     } finally {

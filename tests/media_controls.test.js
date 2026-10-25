@@ -74,8 +74,10 @@ test("seek keeps the chosen position until the player catches up", async () => {
     can_play:true,can_pause:true,can_seek:true,can_next:false,can_previous:false};
   let finishSeek;
   const request = async (method, _path, body) => {
-    if (method === "POST" && body.action === "seek")
+    if (method === "POST" && body.action === "seek") {
       await new Promise(resolve => { finishSeek = resolve; });
+      return {ok:true,status:200,json:async () => ({...state,position:50})};
+    }
     return {ok:true,status:200,json:async () => state};
   };
   const context = {document:{querySelector:id => elements[id]}, request};
