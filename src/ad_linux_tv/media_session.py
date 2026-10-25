@@ -73,7 +73,9 @@ class MediaSession:
         )
         try:
             properties = reply["data"][0]
-            metadata = self._value(properties, "Metadata", [{}])[0]
+            metadata = self._value(properties, "Metadata", {})
+            if isinstance(metadata, list):
+                metadata = metadata[0] if metadata else {}
             if not isinstance(metadata, dict):
                 metadata = {}
             status = self._value(properties, "PlaybackStatus")

@@ -30,7 +30,7 @@ class FakeBus:
                 "mpris:trackid": {"type": "o", "data": "/org/test/track/1"},
             }
             props = {
-                "Metadata": {"type": "a{sv}", "data": [metadata]},
+                "Metadata": {"type": "a{sv}", "data": metadata},
                 "PlaybackStatus": {"type": "s", "data": "Playing" if self.playing else "Paused"},
                 "Position": {"type": "x", "data": 30_000_000},
                 "CanControl": {"type": "b", "data": True},
