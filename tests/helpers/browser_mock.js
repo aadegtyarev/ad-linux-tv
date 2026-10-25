@@ -64,7 +64,8 @@ function browserMock(initial = [], offeredServices = services) {
   };
   const fetcher = async (url, options = {}) => {
     calls.push(["fetch", url, options]);
-    return {ok:true, json:async () => ({services:offeredServices})};
+    return {ok:true, json:async () => url.endsWith("/extension/audio-target")
+      ? {volume:100} : {services:offeredServices}};
   };
   return {api, fetcher, tabs, calls, storage:{local, session},
     setScriptingResults:value => { scriptingResults = value; }};

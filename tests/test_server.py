@@ -339,3 +339,50 @@ def test_audio_control_requires_pairing_and_csrf(endpoint, monkeypatch):
     headers["Origin"] = "http://attacker.example"
     response, _ = request(connection, "POST", "/api/audio", '{"volume":10}', headers)
     assert response.status == 403 and calls == [{"volume": 45}]
+
+
+def test_advanced_audio_route_saves_targets_and_keeps_output_level(tmp_path, monkeypatch):
+    import threading
+    from http.client import HTTPConnection
+
+    import yaml
+
+    from ad_linux_tv import audio
+    from ad_linux_tv.config import load_config
+    from ad_linux_tv.listener import make_server
+    from ad_linux_tv.server import make_handler
+
+    data = make_config()
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump(data))
+    calls = []
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    monkeypatch.setattr(
+        audio,
+        "get_state",
+        lambda *_args: {
+            "outputs": [{"id": "hdmi", "name": "HDMI"}],
+            "selected": "hdmi",
+            "volume": 80,
+            "muted": False,
+            "browser_volume": None,
+        },
+    )
+    monkeypatch.setattr(audio, "normalize_browser_volume", lambda target: calls.append(target))
+    monkeypatch.setattr(audio, "browser_audio_active", lambda: False)
+    server = make_server("127.0.0.1", 0, make_handler(data, path))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    connection = HTTPConnection("127.0.0.1", server.server_port)
+    headers = {"Origin": f"http://127.0.0.1:{server.server_port}"}
+    try:
+        response, body = request(connection, "GET", "/api/audio")
+        assert response.status == 200 and json.loads(body)["browser_target"] == 100
+        response, body = request(connection, "POST", "/api/audio", '{"browser_volume":35}', headers)
+        assert response.status == 200 and json.loads(body)["volume"] == 80
+        assert calls == [35] and load_config(path)["audio"]["browser"] == 35
+        response, body = request(connection, "POST", "/api/audio", '{"player_volume":60}', headers)
+        assert response.status == 200 and json.loads(body)["player_target"] == 60
+        assert load_config(path)["audio"] == {"browser": 35, "player": 60}
+    finally:
+        connection.close()
+        server.shutdown()

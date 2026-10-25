@@ -152,12 +152,46 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
         if display_timer.status()["phase"] in ("asleep", "pausing") and not display_timer.wake():
             return handler.send(503, "{}")
         try:
-            result = audio.apply(handler.read_payload())
+            action = handler.read_payload()
+            if isinstance(action, dict) and set(action) in ({"browser_volume"}, {"player_volume"}):
+                name = "browser" if "browser_volume" in action else "player"
+                value = action[f"{name}_volume"]
+                if type(value) is not int or not 0 <= value <= 100:
+                    raise SettingsError("invalid audio level")
+                result = audio.get_state()
+                previous = settings.audio_levels()[name]
+                if name == "browser":
+                    audio.normalize_browser_volume(value)
+                    try:
+                        settings.set_audio_level(name, value)
+                    except OSError:
+                        try:
+                            audio.normalize_browser_volume(previous)
+                        except audio.AudioUnavailable:
+                            pass
+                        raise
+                    if result["browser_volume"] is not None:
+                        result["browser_volume"] = value
+                else:
+                    active = audio.browser_audio_active()
+                    settings.set_audio_level(name, value)
+                if name == "player" and active:
+                    try:
+                        queue.push("player_set", volume=value)
+                    except QueueFullError:
+                        # The saved target still applies on the next tab refresh/activation.
+                        pass
+            else:
+                result = audio.apply(action)
+            levels = settings.audio_levels()
+            result.update(browser_target=levels["browser"], player_target=levels["player"])
         except OverflowError:
             return handler.send(413, "{}")
         except BodyTimeout:
             return handler.send(408, "{}", headers=(("Connection", "close"),))
         except audio.AudioUnavailable:
+            return handler.send(503, "{}")
+        except OSError:
             return handler.send(503, "{}")
         except Exception:
             return handler.send(400, "{}")

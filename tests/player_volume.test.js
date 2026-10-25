@@ -48,3 +48,24 @@ test("managed page volume pin follows playback and later site volume changes", (
     global.document = previous;
   }
 });
+
+test("managed page keeps a requested level across play and site changes", () => {
+  const playing = {localName:"video",paused:false,ended:false,muted:false,volume:1};
+  const listeners = {};
+  const previous = global.document;
+  global.document = {
+    querySelectorAll:() => [playing],
+    addEventListener:(name, callback) => { listeners[name] = callback; },
+  };
+  try {
+    pinMediaVolume(45);
+    assert.equal(playing.volume, 0.45);
+    playing.volume = 1;
+    listeners.volumechange({target:playing});
+    assert.equal(playing.volume, 0.45);
+    assert.equal(playerMediaVolume("set", 30), 30);
+    playing.volume = 1;
+    listeners.volumechange({target:playing});
+    assert.equal(playing.volume, 0.3);
+  } finally { global.document = previous; }
+});

@@ -8,6 +8,8 @@ YAML has required `bind`, `port`, `page_size`, `auth`, `services` and optional `
 
 `proxy` has `mode: system` or `mode: none`, or `mode: custom` with `protocol: http|socks5`, a hostname/IP and integer port 1–65535. It applies only to the dedicated TV Firefox profile. New configurations select system proxy; an existing Beelink configuration without the field retains its pre-existing local Xray profile until the user changes the setting. Manual proxy keeps localhost/private LAN bypass. Proxy credentials are not accepted.
 
+Optional `audio` contains `browser` and `player` integer levels from 0–100; absent values default to 100. These are the saved Firefox stream and accessible page-player targets. Selected output and its volume retain their existing TV-user audio preference. Optional `pointer.acceleration` is an integer 0–100, default 50; zero preserves the former constant cursor mapping. Settings save these fields atomically in the same private config file.
+
 `init-config` generates a random disabled PIN verifier without prompting. Enabling or replacing a four-digit PIN in TV/phone settings writes a PBKDF2-HMAC-SHA256 verifier (310,000 rounds) to config and the code to the existing local-TV-only mode-0600 display file. Keep both files private; never publish or log them. Installer preserves existing configuration; uninstall preserves it.
 
 ## Outputs and failures

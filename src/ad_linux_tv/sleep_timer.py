@@ -92,6 +92,7 @@ class DisplaySleepTimer:
         return {
             "minutes": self.minutes,
             "remaining_seconds": remaining,
+            "generation": self.generation,
             "asleep": self.asleep,
             "error": self.error,
             "phase": (

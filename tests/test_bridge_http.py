@@ -7,6 +7,15 @@ from conftest import command_headers, login, request
 from ad_linux_tv.security import BRIDGE_HEADER, BRIDGE_VALUE
 
 
+def test_player_target_is_visible_only_to_local_bridge(endpoint):
+    connection, port = endpoint
+    route = "/extension/audio-target"
+    assert request(connection, "GET", route)[0].status == 403
+    bridge = {"Host": f"127.0.0.1:{port}", BRIDGE_HEADER: BRIDGE_VALUE}
+    response, body = request(connection, "GET", route, headers=bridge)
+    assert response.status == 200 and json.loads(body) == {"volume": 100}
+
+
 def test_bridge_requires_custom_header_exact_host_and_orders_acknowledgements(endpoint):
     connection, port = endpoint
     _, auth, cookie = login(connection, port)

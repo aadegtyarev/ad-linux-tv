@@ -1,10 +1,11 @@
 "use strict";
 
 class SettingsControls {
-  constructor(root, request, onPinChange = () => {}) {
+  constructor(root, request, onPinChange = () => {}, onState = () => {}) {
     this.root = root;
     this.request = request;
     this.onPinChange = onPinChange;
+    this.onState = onState;
     this.state = null;
     this.magnifierShortcut = null;
     this.field = name => root.querySelector(`[data-role="${name}"]`);
@@ -16,6 +17,11 @@ class SettingsControls {
     if (this.field("magnifier")) this.field("magnifier").onclick = () =>
       void this.change("magnifier", !this.state?.magnifier);
     this.field("restart").onclick = () => void this.change("restart", true);
+    if (this.field("pointer-acceleration")) {
+      const slider = this.field("pointer-acceleration");
+      slider.oninput = () => { this.field("pointer-acceleration-value").textContent = `${slider.value}%`; };
+      slider.onchange = () => void this.change("pointer_acceleration", Number(slider.value));
+    }
   }
 
   actions() {
@@ -44,6 +50,12 @@ class SettingsControls {
 
   render(state) {
     this.state = state;
+    this.onState(state);
+    if (this.field("pointer-acceleration")) {
+      const level = state.pointer_acceleration ?? 50;
+      this.field("pointer-acceleration").value = level;
+      this.field("pointer-acceleration-value").textContent = `${level}%`;
+    }
     this.field("pin-mode").value = state.require_pin ? "on" : "off";
     if (this.field("magnifier")) {
       this.field("magnifier").textContent = state.magnifier ? "Выключить лупу" : "Включить ×2,5";

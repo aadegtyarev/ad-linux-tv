@@ -141,7 +141,21 @@ class SettingsManager:
                 "magnifier": self.magnified,
                 "proxy": self.proxy(),
                 "proxy_restart_required": self.proxy_restart_required,
+                "pointer_acceleration": self.config.get("pointer", {}).get("acceleration", 50),
             }
+
+    def audio_levels(self):
+        with self.lock:
+            return dict(self.config.get("audio", {"browser": 100, "player": 100}))
+
+    def set_audio_level(self, name, value):
+        if name not in ("browser", "player") or type(value) is not int or not 0 <= value <= 100:
+            raise SettingsError("invalid audio level")
+        with self.lock:
+            levels = self.audio_levels()
+            if levels[name] != value:
+                levels[name] = value
+                self._save_config(dict(self.config, audio=levels))
 
     def _save_config(self, candidate):
         if self.path is None:
@@ -223,6 +237,11 @@ class SettingsManager:
                             atomic_write(profile_path, old_prefs)
                         raise
                     self.proxy_restart_required = True
+            elif setting == "pointer_acceleration":
+                if type(value) is not int or not 0 <= value <= 100:
+                    raise SettingsError("invalid pointer acceleration")
+                if value != self.config.get("pointer", {}).get("acceleration", 50):
+                    self._save_config(dict(self.config, pointer={"acceleration": value}))
             elif setting == "magnifier":
                 if type(value) is not bool:
                     raise SettingsError("invalid magnifier state")

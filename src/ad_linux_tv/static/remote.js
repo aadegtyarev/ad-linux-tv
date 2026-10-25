@@ -16,15 +16,19 @@ function remoteFetch(path, options = {}) {
   return transport.request(csrf, method, path, body);
 }
 const phoneSettingsRoot = document.querySelector("#phone-settings-controls");
+let pointerAccelerationLevel = 50;
 const phoneSettingsPanel = phoneSettingsRoot ? new SettingsControls(phoneSettingsRoot,
   (method, action) => remoteFetch("/api/settings", {
     method, ...(action ? {body: JSON.stringify(action)} : {}),
-  }), () => window.location.reload()) : null;
+  }), () => window.location.reload(), state => {
+    pointerAccelerationLevel = state.pointer_acceleration ?? 50;
+  }) : null;
 if (phoneSettingsPanel) phoneSettingsPanel.bindMagnifierShortcut(document.querySelector("#pad-magnifier"));
 let statusTimer = null;
 let statusRequestId = 0;
 let redirecting = false;
 let browserService = null;
+let lastPointerSettingsRefresh = 0;
 const audioOutput = document.querySelector("#audio-output");
 const audioVolume = document.querySelector("#audio-volume");
 const audioStatus = document.querySelector("#audio-status");
@@ -32,6 +36,9 @@ let audioTimer = null;
 let displayTimerPoll = null;
 let displayAsleep = false;
 let audioDragging = false;
+const advancedAudio = new AudioLevelsControls("phone", [
+  ["output", "volume"], ["browser", "browser_volume"], ["player", "player_volume"],
+], changeAudio, dragging => { audioDragging = dragging; });
 let feedbackTimer = null;
 let pressedButton = null;
 function showButtonFeedback(button) {
@@ -79,6 +86,7 @@ function showAudio(state) {
   }
   audioOutput.value = state.selected;
   audioVolume.value = state.volume;
+  advancedAudio.render(state);
   document.querySelector("#audio-volume-value").textContent = `${state.volume}%`;
   document.querySelector("#audio-mute").textContent = state.muted ? "♩" : "♬";
   document.querySelector("#audio-mute").setAttribute("aria-label", state.muted ? "Включить звук" : "Выключить звук");
@@ -113,9 +121,17 @@ async function changeAudio(action) {
 }
 
 const phoneTimerStatus = document.querySelector("#phone-timer-status");
+const timerBadge = document.querySelector("#remote-timer-badge");
 const phoneTimerButtons = Array.from(document.querySelectorAll("[data-phone-timer]"));
+function compactTime(seconds) {
+  if (seconds <= 120) return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  return `${Math.ceil(seconds / 60)} мин`;
+}
 function showPhoneTimer(state) {
   displayAsleep = state.asleep;
+  const counting = state.phase === "countdown" && state.remaining_seconds > 0;
+  timerBadge.hidden = !counting;
+  timerBadge.textContent = counting ? compactTime(state.remaining_seconds) : "";
   phoneTimerButtons.forEach(button => button.setAttribute("aria-pressed",
     String(Number(button.dataset.phoneTimer) === state.minutes && !state.asleep)));
   if (state.error === "pause_unavailable")
@@ -140,6 +156,7 @@ async function refreshDisplayTimer() {
     showPhoneTimer(await response.json());
   } catch (_) {
     phoneTimerStatus.textContent = "Нет связи с таймером. Проверьте Wi-Fi.";
+    timerBadge.hidden = true;
   }
 }
 
@@ -243,6 +260,11 @@ async function refreshStatus() {
     if (value.last_command_failure) visible.push("Последняя команда не выполнена. Повторите действие.");
     commandStatus.textContent = visible.join(" ");
     commandStatus.hidden = visible.length === 0;
+    if (phoneSettingsPanel && !remoteFace.hidden && pointerInflight.size === 0 &&
+        Date.now() - lastPointerSettingsRefresh >= 5000) {
+      lastPointerSettingsRefresh = Date.now();
+      void phoneSettingsPanel.refresh();
+    }
   } catch (_) {
     if (requestId !== statusRequestId) return;
     status.dataset.online = "false";
@@ -413,6 +435,7 @@ document.querySelector("#show-menu").onclick = () => showPage("menu");
 document.querySelector("#show-settings").onclick = () => {
   showPage("settings");
   void phoneSettingsPanel?.refresh();
+  void refreshAudio();
 };
 document.querySelector("#back-to-menu").onclick = () => showPage("menu");
 document.querySelector("#show-share").onclick = async () => {
@@ -439,19 +462,22 @@ document.querySelector("#show-share").onclick = async () => {
     note.textContent = "Адрес пульта недоступен. Проверьте Wi-Fi и откройте этот экран снова.";
   }
 };
-document.querySelector("#show-system").onclick = async () => {
-  if (!await post("/api/command", {command: "home"}, "Открываем Систему…")) return;
-  let ready = false;
+async function waitForHome() {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     await new Promise(resolve => setTimeout(resolve, 400));
     try {
       const response = await remoteFetch("/api/status");
       if (!response.ok) break;
       const state = await response.json();
-      if (state.extension_online && state.pending_commands === 0) { ready = true; break; }
+      if (state.extension_online && state.pending_commands === 0) return true;
     } catch (_) { break; }
   }
-  if (!ready) return say("Система не открылась. Проверьте подключение Firefox и повторите.", true);
+  return false;
+}
+document.querySelector("#show-system").onclick = async () => {
+  if (!await post("/api/command", {command: "home"}, "Открываем Систему…")) return;
+  if (!await waitForHome())
+    return say("Система не открылась. Проверьте подключение Firefox и повторите.", true);
   await new Promise(resolve => setTimeout(resolve, 300));
   if (await post("/api/input", {key: "system"}, "Система открыта на телевизоре.")) showPage("remote");
 };
@@ -547,10 +573,11 @@ function schedulePointerDrain() {
   if (drainTimer === null && pointerInflight.size < maxPointerInflight)
     drainTimer = setTimeout(pumpPointer, 16);
 }
-function schedulePointerMove(dx, dy) {
+function schedulePointerMove(finger, dx, dy, time) {
   setPadSelectionMode(false);
-  pendingX = Math.max(-4800, Math.min(4800, pendingX + dx * 3));
-  pendingY = Math.max(-4800, Math.min(4800, pendingY + dy * 3));
+  const moved = finger.acceleration.move(dx, dy, time);
+  pendingX = Math.max(-4800, Math.min(4800, pendingX + moved.dx));
+  pendingY = Math.max(-4800, Math.min(4800, pendingY + moved.dy));
   schedulePointerDrain();
 }
 function schedulePointerScroll(dy) {
@@ -579,6 +606,7 @@ touchpad.addEventListener("pointerdown", event => {
   fingers.set(event.pointerId, {
     startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
     time: Date.now(), moved: false, multi: false, arrow,
+    acceleration: new PointerAcceleration(pointerAccelerationLevel),
   });
   if (fingers.size > 1) for (const finger of fingers.values()) finger.multi = true;
   if (fingers.size > 1) { pendingX = 0; pendingY = 0; }
@@ -601,9 +629,10 @@ touchpad.addEventListener("pointermove", event => {
     const wasMoving = finger.moved;
     if (Math.hypot(event.clientX - finger.startX, event.clientY - finger.startY) > dragDistance) finger.moved = true;
     if (finger.moved) {
-      schedulePointerMove(
+      schedulePointerMove(finger,
       wasMoving ? dx : event.clientX - finger.startX,
       wasMoving ? dy : event.clientY - finger.startY,
+      Number.isFinite(event.timeStamp) ? event.timeStamp : Date.now(),
       );
     }
   }
@@ -655,6 +684,11 @@ touchpad.addEventListener("keydown", event => {
 document.querySelectorAll("[data-c]").forEach(button => {
   button.onclick = () => post("/api/command", {command: button.dataset.c}, "");
 });
+document.querySelector('[data-c="home"]').onclick = async () => {
+  if (!await post("/api/command", {command:"home"}, "Открываем плитки…")) return;
+  if (!await waitForHome()) return say("Плитки не открылись. Проверьте Firefox.", true);
+  await post("/api/input", {key:"escape"}, "Плитки открыты.");
+};
 document.querySelector("#open").onclick = () =>
   post("/api/command", {command: "open", service_id: document.querySelector("#services").value}, "Открываем сервис…");
 document.querySelector("#text-form").onsubmit = async event => {

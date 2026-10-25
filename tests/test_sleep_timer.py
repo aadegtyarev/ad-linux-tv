@@ -46,7 +46,9 @@ def test_timer_pauses_before_output_off_then_wakes_without_resuming():
         clock=lambda: 100,
         schedule=Scheduled,
     )
-    assert timer.set(15)["remaining_seconds"] == 900
+    started = timer.set(15)
+    assert started["remaining_seconds"] == 900
+    assert started["generation"] == 1
     assert timer.wake() is True
     assert timer.status()["remaining_seconds"] == 900
     timer.job.callback(*timer.job.args)

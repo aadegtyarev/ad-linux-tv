@@ -34,6 +34,8 @@ def main():
                 "require_pin": False,
             },
             "proxy": {"mode": "system"},
+            "audio": {"browser": 100, "player": 100},
+            "pointer": {"acceleration": 50},
             "services": default_services(),
         }
         create_config(path, data)

@@ -13,7 +13,10 @@ browser.tabs.onActivated.addListener(info => {
   void tabs.normalizeMedia(info.tabId).catch(() => {});
 });
 browser.alarms.onAlarm.addListener(alarm => {
-  if (alarm.name === "bridge-poll") void bridge.wake();
+  if (alarm.name === "bridge-poll") {
+    void bridge.wake();
+    void tabs.normalizeActiveMedia().catch(() => {});
+  }
 });
 browser.runtime.onStartup.addListener(() => { void tabs.ensureLauncher().catch(() => {}); });
 browser.runtime.onInstalled.addListener(() => { void tabs.ensureLauncher().catch(() => {}); });

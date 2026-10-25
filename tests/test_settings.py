@@ -53,6 +53,33 @@ def test_pin_change_is_private_and_invalidates_phone_sessions(tmp_path):
     assert load_config(path)["auth"]["require_pin"] is False
 
 
+def test_audio_targets_persist_without_resetting_sessions(tmp_path):
+    settings, sessions, path, _profile = manager(tmp_path)
+    token, _ = sessions.create()
+    assert settings.audio_levels() == {"browser": 100, "player": 100}
+    settings.set_audio_level("browser", 40)
+    settings.set_audio_level("player", 65)
+    assert load_config(path)["audio"] == {"browser": 40, "player": 65}
+    assert sessions.valid(token)
+    for name, value in (("browser", True), ("player", 101), ("unknown", 40)):
+        with pytest.raises(SettingsError):
+            settings.set_audio_level(name, value)
+    assert load_config(path)["audio"] == {"browser": 40, "player": 65}
+
+
+def test_pointer_acceleration_persists_without_resetting_sessions(tmp_path):
+    settings, sessions, path, _profile = manager(tmp_path)
+    token, _ = sessions.create()
+    assert settings.state()["pointer_acceleration"] == 50
+    settings.update({"setting": "pointer_acceleration", "value": 80})
+    assert load_config(path)["pointer"]["acceleration"] == 80
+    assert sessions.valid(token)
+    for invalid in (True, -1, 101, "80"):
+        with pytest.raises(SettingsError):
+            settings.update({"setting": "pointer_acceleration", "value": invalid})
+    assert load_config(path)["pointer"]["acceleration"] == 80
+
+
 def test_proxy_modes_preserve_other_firefox_prefs_and_reject_bad_input(tmp_path):
     settings, _sessions, path, profile = manager(tmp_path)
     assert settings.state()["proxy"] == {

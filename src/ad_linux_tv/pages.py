@@ -76,7 +76,10 @@ def get_response(handler, config, queue, static):
         ):
             return 403, "{}", "application/json"
         try:
-            return 200, json.dumps(audio.get_state()), "application/json"
+            state = audio.get_state()
+            levels = config.get("audio", {"browser": 100, "player": 100})
+            state.update(browser_target=levels["browser"], player_target=levels["player"])
+            return 200, json.dumps(state), "application/json"
         except audio.AudioUnavailable:
             return 503, "{}", "application/json"
     if path == "/api/local-pin":
@@ -104,6 +107,11 @@ def get_response(handler, config, queue, static):
         if not handler.valid_bridge():
             return 403, "{}", "application/json"
         return 200, json.dumps(queue.poll()), "application/json"
+    if path == "/extension/audio-target":
+        if not handler.valid_bridge():
+            return 403, "{}", "application/json"
+        target = config.get("audio", {}).get("player", 100)
+        return 200, json.dumps({"volume": target}), "application/json"
     if path == "/health":
         return 200, json.dumps(queue.status()), "application/json"
     if path == "/api/status":
@@ -138,6 +146,8 @@ def get_response(handler, config, queue, static):
         "/remote.js": ("remote.js", "text/javascript"),
         "/remote_transport.js": ("remote_transport.js", "text/javascript"),
         "/settings_controls.js": ("settings_controls.js", "text/javascript"),
+        "/audio_levels.js": ("audio_levels.js", "text/javascript"),
+        "/pointer_acceleration.js": ("pointer_acceleration.js", "text/javascript"),
         "/style.css": ("style.css", "text/css"),
     }
     if path in assets:

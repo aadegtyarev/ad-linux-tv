@@ -18,7 +18,8 @@ test("background listeners precede async initialization and filter launcher URL"
       onActivated:{addListener:fn => {events.activated = fn;}}},
     alarms: {onAlarm:{addListener:fn => {events.alarm = fn;}}, create() {}},
   };
-  const tabs = {onRemoved:async () => {}, normalizeMedia:async id => {normalized.push(id);}, ensureLauncher:async () => {}};
+  const tabs = {onRemoved:async () => {}, normalizeMedia:async id => {normalized.push(id);},
+    normalizeActiveMedia:async () => {normalized.push("active");}, ensureLauncher:async () => {}};
   const context = {browser, LAUNCHER, createTabController:() => tabs,
     createBridgeController:() => ({wake:() => {wakes++;}})};
   vm.runInNewContext(fs.readFileSync("extension/background.js", "utf8"), context);
@@ -30,7 +31,7 @@ test("background listeners precede async initialization and filter launcher URL"
   assert.equal(wakes, 2);
   events.updated(3, {status:"complete"});
   events.activated({tabId:4});
-  assert.deepEqual(normalized, [3, 4]);
+  assert.deepEqual(normalized, ["active", 3, 4]);
 });
 
 test("content-script messages answer through sendResponse only for handled commands", () => {

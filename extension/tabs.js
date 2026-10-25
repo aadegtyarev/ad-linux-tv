@@ -50,6 +50,7 @@ function createTabController(api, fetcher = fetch) {
     execute,
     onRemoved:owned.onRemoved,
     normalizeMedia:owned.normalizeMedia,
+    normalizeActiveMedia:owned.normalizeActiveMedia,
     getState:() => ({...owned.getState(), commands:ledger.getState(), maxPrepareAttempts:PREPARE_LIMIT}),
   };
 }

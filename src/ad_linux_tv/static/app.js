@@ -10,6 +10,9 @@ const audioOutput = document.querySelector("#audio-output");
 const audioVolume = document.querySelector("#audio-volume");
 const audioStatus = document.querySelector("#audio-status");
 const audioMute = document.querySelector("#audio-mute");
+const advancedAudio = new AudioLevelsControls("tv", [
+  ["browser", "browser_volume"], ["player", "player_volume"],
+], changeAudio);
 const timerButtons = Array.from(document.querySelectorAll("#settings [data-timer]"));
 const tvTimerStatus = document.querySelector("#tv-timer-status");
 const tvSettingsRoot = document.querySelector("#tv-settings-controls");
@@ -18,9 +21,12 @@ const tvSettingsPanel = tvSettingsRoot ? new SettingsControls(tvSettingsRoot,
     method, headers: {"Content-Type": "application/json"},
     ...(action ? {body: JSON.stringify(action)} : {}),
   }), () => void loadPairingPin()) : null;
+const rangeActions = [audioVolume, ...advancedAudio.actions(),
+  tvSettingsPanel?.field("pointer-acceleration")].filter(Boolean);
+for (const slider of rangeActions) slider.addEventListener("click", () => slider.focus());
 const settingsActions = [document.querySelector("#settings-back"), audioOutput, audioVolume,
   audioMute, document.querySelector("#audio-refresh"),
-  document.querySelector("#audio-test"), ...timerButtons,
+  document.querySelector("#audio-test"), ...advancedAudio.actions(), ...timerButtons,
   ...(tvSettingsPanel?.actions() || []), document.querySelector("#open-kde")];
 const confirmActions = [document.querySelector("#cancel-kde"), document.querySelector("#confirm-kde-yes")];
 let currentRemoteAddress = "";
@@ -59,6 +65,7 @@ function showAudio(state) {
   }
   audioOutput.value = state.selected;
   audioVolume.value = state.volume;
+  advancedAudio.render(state);
   document.querySelector("#audio-volume-value").textContent = `${state.volume}%`;
   audioMute.dataset.muted = String(state.muted);
   audioMute.textContent = state.muted ? "Включить звук" : "Выключить звук";
@@ -234,10 +241,12 @@ document.addEventListener("keydown", event => {
     : confirmActions;
   const index = actions.indexOf(document.activeElement);
   if (confirmation.hidden && (event.key === "ArrowRight" || event.key === "ArrowLeft") &&
-      document.activeElement === audioVolume) {
+      rangeActions.includes(document.activeElement)) {
     const slider = document.activeElement;
     if (slider.disabled) return;
-    slider.value = Math.min(100, Math.max(0, Number(slider.value) + (event.key === "ArrowRight" ? 5 : -5)));
+    const step = Number(slider.step) || 5;
+    slider.value = Math.min(100, Math.max(0, Number(slider.value) + (event.key === "ArrowRight" ? step : -step)));
+    slider.oninput?.();
     slider.onchange();
   } else if (confirmation.hidden && (event.key === "ArrowLeft" || event.key === "ArrowRight") && document.activeElement === audioOutput && audioOutput.options.length) {
     const change = event.key === "ArrowRight" ? 1 : -1;

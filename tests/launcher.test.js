@@ -165,14 +165,15 @@ test("System sound check stays in System and does not open KDE", async () => {
   assert.ok(sample);
 });
 
-test("System keeps one visible volume slider during playback", async () => {
+test("System shows all three sound levels without changing them on refresh", async () => {
   const ui = launcher({hostname:"127.0.0.1"});
   ui.audio = {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:75};
   ui.elements["#system-button"].click();
   await ready();
   const html = fs.readFileSync("src/ad_linux_tv/static/index.html", "utf8");
-  assert.equal((html.match(/type="range"/g) || []).length, 1);
+  assert.equal((html.match(/type="range"/g) || []).length, 4);
   assert.equal(ui.elements["#audio-volume"].value, 100);
+  assert.equal(ui.elements["#tv-browser-volume"].value, 100);
   assert.equal(ui.calls.some(call => call.url === "/api/audio" &&
     JSON.parse(call.options?.body || "{}").browser_volume !== undefined), false);
 });

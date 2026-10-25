@@ -7,7 +7,8 @@ const vm = require("node:vm");
 function panel() {
   const roles = ["pin-form", "pin-mode", "pin-fields", "pin", "pin-confirm", "magnifier",
     "proxy-form", "proxy-mode", "proxy-fields", "proxy-protocol", "proxy-host", "proxy-port",
-    "proxy-restart", "restart", "settings-status"];
+    "proxy-restart", "restart", "settings-status", "pointer-acceleration",
+    "pointer-acceleration-value"];
   const fields = Object.fromEntries(roles.map(role => [role, {value:"", hidden:false, dataset:{},
     textContent:"", setAttribute() {}}]));
   const pinExtra = {hidden:false};
@@ -25,10 +26,13 @@ function panel() {
   vm.createContext(context);
   vm.runInContext(fs.readFileSync("src/ad_linux_tv/static/settings_controls.js", "utf8") +
     "\nglobalThis.SettingsControls = SettingsControls;", context);
-  const state = {require_pin:false, magnifier:false, proxy:{mode:"system"}, proxy_restart_required:false};
+  const state = {require_pin:false, magnifier:false, proxy:{mode:"system"},
+    proxy_restart_required:false, pointer_acceleration:50};
   const controls = new context.SettingsControls(root, async (method, action) => {
     calls.push({method, action});
     if (method === "POST" && action.setting === "magnifier") state.magnifier = action.value;
+    if (method === "POST" && action.setting === "pointer_acceleration")
+      state.pointer_acceleration = action.value;
     return {ok:true, json:async () => state};
   });
   return {controls, fields, calls, state, pinExtra, proxyExtras};
@@ -51,6 +55,19 @@ test("settings form keeps hidden fields out of default view and sends confirmed 
   assert.equal(ui.calls[1].action.setting, "pin");
   assert.equal(ui.calls[1].action.value.pin, "1234");
   assert.equal(ui.fields.pin.value, "");
+});
+
+test("cursor acceleration is shared through settings", async () => {
+  const ui = panel();
+  await ui.controls.refresh();
+  assert.equal(ui.fields["pointer-acceleration"].value, 50);
+  ui.fields["pointer-acceleration"].value = "80";
+  ui.fields["pointer-acceleration"].oninput();
+  assert.equal(ui.fields["pointer-acceleration-value"].textContent, "80%");
+  ui.fields["pointer-acceleration"].onchange();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(ui.calls.at(-1).action.setting, "pointer_acceleration");
+  assert.equal(ui.calls.at(-1).action.value, 80);
 });
 
 test("proxy form sends custom endpoint and magnifier toggles", async () => {

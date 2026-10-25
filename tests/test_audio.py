@@ -157,6 +157,18 @@ def test_browser_streams_return_to_neutral_without_changing_output(monkeypatch):
     assert calls == [("set-sink-input-volume", "4", "100%")]
 
 
+def test_browser_streams_follow_saved_target(monkeypatch):
+    calls = []
+    monkeypatch.setattr(audio, "_pactl", lambda *args: calls.append(args))
+    monkeypatch.setattr(
+        audio,
+        "_browser_inputs",
+        lambda: [{"index": 4, "volume": {"left": {"value_percent": "100%"}}}],
+    )
+    audio.normalize_browser_volume(35)
+    assert calls == [("set-sink-input-volume", "4", "35%")]
+
+
 def test_non_browser_stream_blocks_sleep(monkeypatch):
     import json
 

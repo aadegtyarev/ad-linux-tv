@@ -42,6 +42,30 @@ def test_pin_requirement_is_optional_and_strict(tmp_path):
         load_config(write_config(tmp_path, data))
 
 
+def test_advanced_audio_targets_are_bounded(tmp_path):
+    data = make_data()
+    data["audio"] = {"browser": 35, "player": 70}
+    assert load_config(write_config(tmp_path, data))["audio"] == data["audio"]
+    for invalid in (
+        {"browser": True, "player": 70},
+        {"browser": 101, "player": 70},
+        {"browser": 50},
+    ):
+        data["audio"] = invalid
+        with pytest.raises(ValueError, match="audio levels"):
+            load_config(write_config(tmp_path, data))
+
+
+def test_pointer_acceleration_is_bounded(tmp_path):
+    data = make_data()
+    data["pointer"] = {"acceleration": 0}
+    assert load_config(write_config(tmp_path, data))["pointer"]["acceleration"] == 0
+    for invalid in ({"acceleration": True}, {"acceleration": 101}, {"acceleration": 50, "x": 1}):
+        data["pointer"] = invalid
+        with pytest.raises(ValueError, match="pointer acceleration"):
+            load_config(write_config(tmp_path, data))
+
+
 @pytest.mark.parametrize(
     "url", ["https://example.test:broken/", "https://example.test:65536/", "https://bad_host/"]
 )

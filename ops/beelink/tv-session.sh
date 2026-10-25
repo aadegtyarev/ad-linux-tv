@@ -32,5 +32,12 @@ osk=$!
   done
 ) &
 bar=$!
-trap 'kill "$osk" "$bar" "$idle" 2>/dev/null || true; wait "$osk" "$bar" "$idle" 2>/dev/null || true; /usr/bin/wlopm --on "*" >/dev/null 2>&1 || true' EXIT
+(
+  while :; do
+    /usr/local/libexec/ad-linux-tv/timer-overlay.py || true
+    sleep 2
+  done
+) &
+timer=$!
+trap 'kill "$osk" "$bar" "$timer" "$idle" 2>/dev/null || true; wait "$osk" "$bar" "$timer" "$idle" 2>/dev/null || true; /usr/bin/wlopm --on "*" >/dev/null 2>&1 || true' EXIT
 /home/ad-tv/.local/share/ad-linux-tv/run.sh /home/ad-tv/.config/ad-linux-tv/config.yaml

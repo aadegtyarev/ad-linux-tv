@@ -119,13 +119,25 @@ function createOwnedTabs(api, fetcher = fetch) {
     const active = await state.activeTab();
     if (!active || active.id !== tabId || !state.owns(active) ||
         !/^https?:\/\//i.test(active.url || "")) return;
+    const response = await fetcher(`${BASE}/extension/audio-target`, {
+      headers:{"X-AD-Linux-TV-Bridge":"ad-linux-tv-v1"},
+    });
+    if (!response.ok) throw new Error("audio target unavailable");
+    const target = (await response.json()).volume;
+    if (!Number.isInteger(target) || target < 0 || target > 100)
+      throw new Error("invalid audio target");
     await api.scripting.executeScript({
-      target:{tabId:active.id, allFrames:true}, func:pinVolume,
+      target:{tabId:active.id, allFrames:true}, func:pinVolume, args:[target],
     });
   }
 
+  async function normalizeActiveMedia() {
+    const active = await state.activeTab();
+    if (active) await normalizeMedia(active.id);
+  }
+
   return {restore:state.restore, ensureLauncher:state.ensureLauncher, prepare, execute, openService,
-    onRemoved:state.onRemoved, normalizeMedia, getState:state.getState};
+    onRemoved:state.onRemoved, normalizeMedia, normalizeActiveMedia, getState:state.getState};
 }
 
 if (typeof module !== "undefined") module.exports = {createOwnedTabs, PermanentCommandError};

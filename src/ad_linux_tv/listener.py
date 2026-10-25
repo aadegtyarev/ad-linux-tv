@@ -72,7 +72,7 @@ def serve(config, config_path=None):
         def keep_browser_gain_neutral():
             while True:
                 try:
-                    audio.normalize_browser_volume()
+                    audio.normalize_browser_volume(config.get("audio", {}).get("browser", 100))
                 except audio.AudioUnavailable:
                     pass
                 time.sleep(2)

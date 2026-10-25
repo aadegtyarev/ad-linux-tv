@@ -20,7 +20,8 @@ def load_config(path):
         if (
             not isinstance(data, dict)
             or not {"bind", "port", "page_size", "auth", "services"} <= set(data)
-            or set(data) - {"bind", "port", "page_size", "auth", "services", "proxy"}
+            or set(data)
+            - {"bind", "port", "page_size", "auth", "services", "proxy", "audio", "pointer"}
         ):
             raise ConfigurationError("expected bind, port, page_size, auth and services")
         if not isinstance(data["bind"], str) or not data["bind"]:
@@ -47,6 +48,21 @@ def load_config(path):
             validate_proxy(proxy)
         except SettingsError as exc:
             raise ConfigurationError(str(exc)) from None
+        levels = data.get("audio", {"browser": 100, "player": 100})
+        if (
+            not isinstance(levels, dict)
+            or set(levels) != {"browser", "player"}
+            or any(type(value) is not int or not 0 <= value <= 100 for value in levels.values())
+        ):
+            raise ConfigurationError("audio levels must be 0..100")
+        pointer = data.get("pointer", {"acceleration": 50})
+        if (
+            not isinstance(pointer, dict)
+            or set(pointer) != {"acceleration"}
+            or type(pointer["acceleration"]) is not int
+            or not 0 <= pointer["acceleration"] <= 100
+        ):
+            raise ConfigurationError("pointer acceleration must be 0..100")
         for key in ("salt", "verifier"):
             base64.b64decode(auth[key], validate=True)
         if (

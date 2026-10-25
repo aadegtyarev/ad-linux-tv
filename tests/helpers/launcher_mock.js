@@ -37,7 +37,7 @@ function launcher({hostname = "192.168.1.4", pinRequired = true} = {}) {
   doc.documentElement = new Element("html");
   doc.activeElement = doc.body;
   const elements = Object.fromEntries(
-    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#pairing-pin", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes", "#audio-output", "#audio-volume", "#audio-volume-value", "#browser-volume", "#browser-volume-value", "#browser-volume-hint", "#audio-status", "#audio-mute", "#audio-refresh", "#audio-test", "#tv-timer-status"]
+    ["#tiles", "#system-button", ".pagination", "#config-status", "#bridge-status", "#command-status", "#address", "#qr", "#pairing-pin", "#page", "#next", "#prev", "#home", "#settings", "#confirm-kde", "#system-status", "#settings-back", "#open-kde", "#cancel-kde", "#confirm-kde-yes", "#audio-output", "#audio-volume", "#audio-volume-value", "#tv-browser-volume", "#tv-browser-value", "#tv-browser-hint", "#tv-player-volume", "#tv-player-value", "#tv-player-hint", "#audio-status", "#audio-mute", "#audio-refresh", "#audio-test", "#tv-timer-status"]
       .map(id => [id, new Element(id)])
   );
   const timerButtons = [0, 15, 30, 60, 90, 120].map(minutes => {
@@ -48,7 +48,6 @@ function launcher({hostname = "192.168.1.4", pinRequired = true} = {}) {
   elements["#settings"].hidden = true;
   elements["#confirm-kde"].hidden = true;
   elements["#pairing-pin"].hidden = true;
-  elements["#browser-volume"].disabled = true;
   doc.querySelector = id => elements[id];
   doc.createElement = name => new Element(name);
   let serviceData = Array.from({length:25}, (_, id) => ({id:`svc-${id}`, name:`Service ${id}`}));
@@ -71,7 +70,7 @@ function launcher({hostname = "192.168.1.4", pinRequired = true} = {}) {
     },
   };
   vm.createContext(context);
-  for (const file of ["layout.js", "launcher_ui.js", "app.js"]) {
+  for (const file of ["layout.js", "launcher_ui.js", "audio_levels.js", "app.js"]) {
     vm.runInContext(fs.readFileSync(`src/ad_linux_tv/static/${file}`, "utf8"), context);
   }
   return {
