@@ -1,6 +1,6 @@
 # Feature contract: phone remote access and motion
 
-- Status: WebSocket installed; user confirmed smooth real-phone cursor and scrolling. Signed bridge 0.3.1 and remaining phone acceptance checks pending.
+- Status: WebSocket installed; user confirmed smooth real-phone cursor and scrolling. Signed bridge 0.3.1 is active in Firefox; background playback and remaining phone acceptance checks pending.
 - Date: 2026-10-25
 - Approval: User confirmed PIN-free operation on Beelink, a QR on the first phone for a second phone, and cursor and scroll improvements. On 2026-10-25 the user approved Tab, Shift+Tab and Enter controls below the touchpad, tap as cursor click, site checks, and a best-effort IP-change redirect. After a real-phone packet capture, the user approved moving all live phone control to one WebSocket rather than adding a pointer-only channel. The user then requested tap-as-Enter after keyboard navigation and tap-as-click after cursor navigation, without a separate center button. The user also requested stopping background service playback on return to tiles for every service, moving Back to the far left of the row beneath the touchpad, and using the product name rather than Beelink in the app UI. The user further requested that TV System be visible on an ordinary TV for pointer clicks but excluded from arrow selection.
 
