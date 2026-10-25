@@ -20,7 +20,7 @@ from timer_notice import TimerNotice
 TIMER_URL = "http://127.0.0.1:8765/api/display-timer"
 STYLE = b"""
 window { background: transparent; }
-.timer-notice { background: rgba(13, 27, 48, 0.91); border: 1px solid #6084a0;
+.timer-notice { background: #0d1b30; border: 1px solid #6084a0;
   border-radius: 12px; padding: 8px; }
 .timer-count { color: #e9f6ff; font: bold 15px sans-serif; padding: 2px 5px; }
 .timer-warning { color: #ffdfa2; font: bold 15px sans-serif; padding: 5px; }
