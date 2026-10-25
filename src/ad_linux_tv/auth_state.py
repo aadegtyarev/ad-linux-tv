@@ -83,7 +83,10 @@ class Sessions:
             ):
                 return
             data = json.loads(self.storage_path.read_text())
-            if data.get("auth_tag") != self.auth_tag or not isinstance(data.get("sessions"), list):
+            if data.get("auth_tag") != self.auth_tag:
+                self._save()
+                return
+            if not isinstance(data.get("sessions"), list):
                 return
             now = time.time()
             for item in data["sessions"][-self.max_sessions :]:

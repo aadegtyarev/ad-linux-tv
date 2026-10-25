@@ -158,6 +158,11 @@ async function loadPairingPin() {
     });
     if (!response.ok) throw new Error("PIN unavailable");
     const data = await response.json();
+    if (data.pin_required === false) {
+      display.textContent = "PIN не нужен";
+      display.hidden = false;
+      return;
+    }
     if (typeof data.pin !== "string" || !data.pin || data.pin.length > 128) throw new Error("Invalid PIN");
     display.textContent = `PIN: ${data.pin}`;
   } catch (_) {

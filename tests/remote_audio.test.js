@@ -22,7 +22,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   const ids = ["#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#touch-indicator", "#touch-indicator-2", "#pin", "#pin-visibility",
     "#services", "#history-back", "#history-forward", "#remote-face", "#remote-keyboard-page", "#remote-timer-page", "#remote-menu-page", "#show-keyboard", "#show-timer", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
     "#audio-mute", "#audio-refresh", "#audio-test", "#menu-tab", "#menu-shift-tab", "#open", "#text-form", "#remote-text", "#url-form",
-    "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address", "#phone-timer-status"];
+    "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address", "#phone-timer-status", "#remote-share-page", "#show-share", "#share-qr", "#share-status", "#share-url"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const timerButtons = [0, 15, 30, 60, 90, 120].map(minutes => {
     const button = new Element();
@@ -42,7 +42,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
       if (url === "/api/command" && options.method === "POST")
         return {ok:true, status:202, json:async () => ({id:"test-command"})};
       const data = url === "/api/login" ? {csrf:"test-csrf"}
-        : url === "/api/services" ? {services:[{id:"browser",name:"Браузер"}]}
+        : url === "/api/services" ? {services:[{id:"browser",name:"Браузер"}],remote_address:"http://192.168.1.111:8765/remote"}
           : url === "/api/audio" ? {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:75}
             : url === "/api/display-timer" ? {minutes:0,remaining_seconds:0,asleep:false,error:null,phase:"idle"}
             : {extension_online:true,pending_commands:0,last_command_failure:null};
@@ -116,7 +116,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   await new Promise(resolve => setTimeout(resolve, 70));
   const scrolls = calls.filter(call => call.url === "/api/pointer")
     .map(call => JSON.parse(call.options.body).scroll).filter(value => value !== undefined);
-  assert.deepEqual(scrolls, [-42]);
+  assert.deepEqual(scrolls, [-24, -4]);
   assert.equal(elements["#touch-indicator-2"].hidden, true);
   assert.equal(elements["#touch-indicator"].hidden, true);
   touchpad.listeners.pointerdown(touch(6, 50, 50));
@@ -134,13 +134,13 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   touchpad.listeners.pointerup(touch(7, 420, 20));
   const countWhileHeld = calls.filter(call => call.url === "/api/pointer" &&
     JSON.parse(call.options.body).dx !== undefined).length;
-  assert.ok(countWhileHeld <= 6);
+  assert.equal(countWhileHeld, 3);
   holdMove = false;
   for (const release of releaseMoves) release();
   await new Promise(resolve => setTimeout(resolve, 70));
   const countAfter = calls.filter(call => call.url === "/api/pointer" &&
     JSON.parse(call.options.body).dx !== undefined).length;
-  assert.ok(countAfter <= 7);
+  assert.ok(countAfter <= 5);
   const movedPixels = calls.filter(call => call.url === "/api/pointer")
     .map(call => JSON.parse(call.options.body).dx || 0).reduce((total, dx) => total + dx, 0);
   assert.equal(movedPixels, 60 + 30 + 1200);
@@ -157,6 +157,10 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   assert.equal((html.match(/type="range"/g) || []).length, 1);
   assert.equal(elements["#remote-face"].hidden, true);
   assert.equal(elements["#remote-menu-page"].hidden, false);
+  await elements["#show-share"].onclick();
+  assert.equal(elements["#remote-share-page"].hidden, false);
+  assert.equal(elements["#share-url"].href, "http://192.168.1.111:8765/remote");
+  assert.ok(elements["#share-qr"].src.startsWith("/api/qr?refresh="));
   elements["#show-keyboard"].onclick();
   assert.equal(elements["#remote-keyboard-page"].hidden, false);
   await elements["#show-system"].onclick();

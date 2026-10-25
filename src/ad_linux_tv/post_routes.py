@@ -53,7 +53,7 @@ def handle_post(handler, config, queue, sessions, failures, display_timer):
             return handler.send(400, "{}")
         return handler.send(202 if result.returncode == 0 else 503, "{}")
     if path == "/api/login":
-        if not handler.private():
+        if not handler.private() or not config["auth"].get("require_pin", True):
             return handler.send(403, "{}")
         ip = handler.client_address[0]
         if not failures.reserve(ip):
@@ -71,10 +71,7 @@ def handle_post(handler, config, queue, sessions, failures, display_timer):
             attempt = verify_pin(pin, config["auth"])
             if not attempt:
                 return handler.send(401, "{}")
-            token, csrf = sessions.create()
-            cookie = f"session={token}; HttpOnly; SameSite=Strict; Path=/"
-            cookie += f"; Max-Age={sessions.lifetime}"
-            return handler.send(200, json.dumps({"csrf": csrf}), headers=(("Set-Cookie", cookie),))
+            return handler.issue_session()
         finally:
             failures.complete(ip, attempt)
     token = handler.authorized()

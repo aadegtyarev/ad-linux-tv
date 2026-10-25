@@ -76,3 +76,17 @@ def remote_url(host_header, port):
         return f"http://{authority}:{port}/remote"
     except ValueError:
         return None
+
+
+def direct_host(host_header, local_address, port):
+    """Require the session bootstrap Host to identify this connection's local endpoint."""
+    if remote_url(host_header, port) is None:
+        return False
+    try:
+        host = urlsplit(f"//{host_header}").hostname
+        endpoint = ipaddress.ip_address(local_address)
+        if host == "localhost":
+            return endpoint.is_loopback
+        return ipaddress.ip_address(host) == endpoint
+    except ValueError:
+        return False

@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 from ad_linux_tv.auth_state import RateLimiter, Sessions
-from ad_linux_tv.security import private_source, remote_url
+from ad_linux_tv.security import direct_host, private_source, remote_url
 
 
 def test_sessions_expire_and_rate_limiter_is_bounded():
@@ -53,6 +53,10 @@ def test_private_source_and_ipv6_host_validation():
     assert remote_url("[2001:db8::1]:8765", 8765) == "http://[2001:db8::1]:8765/remote"
     assert remote_url("bad.example/path", 8765) is None
     assert remote_url("bad..example", 8765) is None
+    assert direct_host("192.168.1.2:8765", "192.168.1.2", 8765)
+    assert direct_host("localhost:8765", "127.0.0.1", 8765)
+    assert not direct_host("attacker.example:8765", "192.168.1.2", 8765)
+    assert not direct_host("192.168.1.3:8765", "192.168.1.2", 8765)
 
 
 def test_sessions_survive_restart_and_pin_rotation_invalidates_them(tmp_path):
@@ -65,6 +69,8 @@ def test_sessions_survive_restart_and_pin_rotation_invalidates_them(tmp_path):
     assert restored.csrf_for(token) == csrf
     rotated = Sessions(storage_path=path, auth_tag="new-verifier")
     assert not rotated.valid(token)
+    reopened = Sessions(storage_path=path, auth_tag="old-verifier")
+    assert not reopened.valid(token)
     path.chmod(0o644)
     insecure = Sessions(storage_path=path, auth_tag="old-verifier")
     assert not insecure.valid(token)

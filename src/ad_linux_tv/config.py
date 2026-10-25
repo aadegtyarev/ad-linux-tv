@@ -34,8 +34,15 @@ def load_config(path):
         if type(data["page_size"]) is not int or not 1 <= data["page_size"] <= 100:
             raise ConfigurationError("page_size must be 1..100")
         auth = data["auth"]
-        if not isinstance(auth, dict) or set(auth) != {"salt", "verifier"}:
-            raise ConfigurationError("auth must contain salt and verifier")
+        if (
+            not isinstance(auth, dict)
+            or set(auth) - {"salt", "verifier", "require_pin"}
+            or not {"salt", "verifier"} <= set(auth)
+        ):
+            raise ConfigurationError("auth must contain salt and verifier; require_pin is optional")
+        if "require_pin" in auth and type(auth["require_pin"]) is not bool:
+            raise ConfigurationError("auth.require_pin must be true or false")
+        auth.setdefault("require_pin", True)
         for key in ("salt", "verifier"):
             base64.b64decode(auth[key], validate=True)
         if (

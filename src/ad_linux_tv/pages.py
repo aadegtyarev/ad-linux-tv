@@ -75,6 +75,8 @@ def get_response(handler, config, queue, static):
             or os.environ.get("AD_LINUX_TV_KIOSK") != "1"
         ):
             return 403, "{}", "application/json"
+        if not config["auth"].get("require_pin", True):
+            return 200, json.dumps({"pin_required": False}), "application/json"
         pin_file = os.environ.get("AD_LINUX_TV_PIN_FILE")
         if not pin_file:
             return 503, "{}", "application/json"

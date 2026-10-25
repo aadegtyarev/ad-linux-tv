@@ -2,7 +2,7 @@
 const fs = require("node:fs");
 const vm = require("node:vm");
 
-function launcher({hostname = "192.168.1.4"} = {}) {
+function launcher({hostname = "192.168.1.4", pinRequired = true} = {}) {
   const events = {};
   const calls = [];
   const doc = {
@@ -64,7 +64,7 @@ function launcher({hostname = "192.168.1.4"} = {}) {
       calls.push({url, options});
       return {ok:true, status:200, json:async () => url === "/api/services"
         ? {services:serviceData, page_size:12, remote_address:remoteAddress}
-        : url === "/api/local-pin" ? {pin:"1234"}
+        : url === "/api/local-pin" ? pinRequired ? {pin:"1234"} : {pin_required:false}
           : url === "/api/audio" ? audioData
             : url === "/api/display-timer" ? {minutes:0,remaining_seconds:0,asleep:false,error:null,phase:"idle"}
             : bridgeData};

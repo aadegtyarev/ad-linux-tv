@@ -32,6 +32,16 @@ def write_config(tmp_path, data):
     return path
 
 
+def test_pin_requirement_is_optional_and_strict(tmp_path):
+    data = make_data()
+    assert load_config(write_config(tmp_path, data))["auth"]["require_pin"] is True
+    data["auth"]["require_pin"] = False
+    assert load_config(write_config(tmp_path, data))["auth"]["require_pin"] is False
+    data["auth"]["require_pin"] = "false"
+    with pytest.raises(ValueError, match="require_pin"):
+        load_config(write_config(tmp_path, data))
+
+
 @pytest.mark.parametrize(
     "url", ["https://example.test:broken/", "https://example.test:65536/", "https://bad_host/"]
 )

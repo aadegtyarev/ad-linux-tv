@@ -28,25 +28,38 @@ def make_handler(config):
         else None
     )
     session_file = Path(pin_file).with_name("remote-sessions.json") if pin_file else None
-    auth_tag = hashlib.sha256(config["auth"]["verifier"].encode()).hexdigest()
+    verifier = config["auth"]["verifier"]
+    auth_material = verifier if config["auth"].get("require_pin", True) else f"{verifier}:no-pin"
+    auth_tag = hashlib.sha256(auth_material.encode()).hexdigest()
     sessions = Sessions(storage_path=session_file, auth_tag=auth_tag)
     failures = RateLimiter()
     static = Path(__file__).parent / "static"
 
     class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def setup(self):
             super().setup()
             self.rfile.close()
             self.rfile = DeadlineReader(self.request, getattr(self.server, "read_timeout", 5.0))
+
+        def handle_one_request(self):
+            self.rfile.reset_deadline()
+            self.payload_consumed = False
+            super().handle_one_request()
 
         def log_message(self, *_args):
             pass
 
         def send(self, status, body, kind="application/json", headers=()):
             data = body if isinstance(body, bytes) else body.encode()
+            if self.command == "POST" and not self.payload_consumed:
+                self.close_connection = True
             self.send_response(status)
             self.send_header("Content-Type", kind)
             self.send_header("Content-Length", str(len(data)))
+            if self.close_connection:
+                self.send_header("Connection", "close")
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
@@ -75,6 +88,12 @@ def make_handler(config):
             token = cookie.get("session")
             return token.value if token and sessions.valid(token.value) else None
 
+        def issue_session(self):
+            token, csrf = sessions.create()
+            cookie = f"session={token}; HttpOnly; SameSite=Strict; Path=/"
+            cookie += f"; Max-Age={sessions.lifetime}"
+            return self.send(200, json.dumps({"csrf": csrf}), headers=(("Set-Cookie", cookie),))
+
         def valid_origin(self, local_ui=False):
             origin = urlparse(self.headers.get("Origin", ""))
             host = self.headers.get("Host", "")
@@ -92,7 +111,9 @@ def make_handler(config):
             if not 0 <= length <= 2048:
                 raise OverflowError("request body exceeds limit")
             try:
-                return json.loads(self.rfile.read(length))
+                data = self.rfile.read(length)
+                self.payload_consumed = True
+                return json.loads(data)
             except socket.timeout as exc:
                 self.close_connection = True
                 raise BodyTimeout from exc
@@ -144,6 +165,14 @@ def make_handler(config):
                 ):
                     return self.send(403, "{}")
                 token = self.authorized()
+                if not token and not config["auth"].get("require_pin", True):
+                    if not security.direct_host(
+                        self.headers.get("Host", ""),
+                        self.connection.getsockname()[0],
+                        self.server.server_port,
+                    ):
+                        return self.send(403, "{}")
+                    return self.issue_session()
                 csrf = sessions.csrf_for(token) if token else None
                 return self.send(200, json.dumps({"csrf": csrf})) if csrf else self.send(401, "{}")
             status, body, kind = get_response(self, config, queue, static)

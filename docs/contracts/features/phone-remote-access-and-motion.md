@@ -1,6 +1,6 @@
 # Feature contract: phone remote access and motion
 
-- Status: Approved for implementation
+- Status: Implemented on Beelink; real-phone latency and QR scan acceptance pending
 - Date: 2026-10-25
 - Approval: User confirmed PIN-free operation on Beelink, a QR on the first phone for a second phone, and cursor and scroll improvements.
 

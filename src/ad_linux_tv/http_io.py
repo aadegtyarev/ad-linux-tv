@@ -8,9 +8,13 @@ import time
 class DeadlineReader:
     def __init__(self, connection, timeout):
         self.connection = connection
+        self.timeout = timeout
         self.deadline = time.monotonic() + timeout
         self.buffer = bytearray()
         self.eof = False
+
+    def reset_deadline(self):
+        self.deadline = time.monotonic() + self.timeout
 
     def _fill(self):
         remaining = self.deadline - time.monotonic()

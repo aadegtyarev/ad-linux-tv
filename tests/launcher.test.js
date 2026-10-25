@@ -190,4 +190,7 @@ test("pairing PIN is requested only by the local TV launcher", async () => {
   assert.equal(local.elements["#pairing-pin"].hidden, false);
   const call = local.calls.find(value => value.url === "/api/local-pin");
   assert.equal(call.options.headers["X-TV-Launcher"], "1");
+  const open = launcher({hostname:"127.0.0.1", pinRequired:false});
+  await ready();
+  assert.equal(open.elements["#pairing-pin"].textContent, "PIN не нужен");
 });

@@ -342,11 +342,13 @@ const remoteFace = document.querySelector("#remote-face");
 const keyboardPage = document.querySelector("#remote-keyboard-page");
 const timerPage = document.querySelector("#remote-timer-page");
 const menuPage = document.querySelector("#remote-menu-page");
+const sharePage = document.querySelector("#remote-share-page");
 function showPage(page) {
   remoteFace.hidden = page !== "remote";
   keyboardPage.hidden = page !== "keyboard";
   timerPage.hidden = page !== "timer";
   menuPage.hidden = page !== "menu";
+  sharePage.hidden = page !== "share";
   window.scrollTo(0, 0);
   if (page === "keyboard") document.querySelector("#remote-text").focus();
 }
@@ -356,6 +358,30 @@ document.querySelector("#show-timer").onclick = () => {
   void refreshDisplayTimer();
 };
 document.querySelector("#show-menu").onclick = () => showPage("menu");
+document.querySelector("#show-share").onclick = async () => {
+  showPage("share");
+  const qr = document.querySelector("#share-qr");
+  const link = document.querySelector("#share-url");
+  const note = document.querySelector("#share-status");
+  qr.hidden = true;
+  link.hidden = true;
+  note.textContent = "Готовим QR-код…";
+  try {
+    const response = await fetch("/api/services", {cache: "no-store"});
+    if (!response.ok) throw new Error("address unavailable");
+    const {remote_address: address} = await response.json();
+    if (!address || !address.startsWith("http://")) throw new Error("address unavailable");
+    link.href = address;
+    link.textContent = address;
+    link.hidden = false;
+    qr.onload = () => { note.textContent = ""; };
+    qr.onerror = () => { qr.hidden = true; note.textContent = "QR-код недоступен. Откройте адрес ниже."; };
+    qr.src = `/api/qr?refresh=${Date.now()}`;
+    qr.hidden = false;
+  } catch (_) {
+    note.textContent = "Адрес пульта недоступен. Проверьте Wi-Fi и откройте этот экран снова.";
+  }
+};
 document.querySelector("#show-system").onclick = async () => {
   if (!await post("/api/command", {command: "home"}, "Открываем Систему…")) return;
   let ready = false;
@@ -390,7 +416,7 @@ let pendingY = 0;
 let pendingScroll = 0;
 let drainTimer = null;
 const pointerInflight = new Set();
-const maxPointerInflight = 4;
+const maxPointerInflight = 1;
 let scrollFraction = 0;
 let pointerErrorShown = false;
 async function sendPointer(action) {
@@ -430,9 +456,9 @@ function pumpPointer() {
     pendingY -= dy;
     if (dx || dy) dispatchPointer({dx, dy});
   }
-  // Finish cursor movement before wheel events so the correct element scrolls.
+  // One request at a time keeps compositor actions in gesture order.
   if (pointerInflight.size === 0 && pendingScroll) {
-    const scroll = Math.max(-64, Math.min(64, pendingScroll));
+    const scroll = Math.max(-24, Math.min(24, pendingScroll));
     pendingScroll -= scroll;
     dispatchPointer({scroll});
   }
@@ -455,10 +481,10 @@ function schedulePointerMove(dx, dy) {
 }
 function schedulePointerScroll(dy) {
   inputMode = "pointer";
-  scrollFraction -= dy * 3;
+  scrollFraction -= dy * 2;
   const steps = Math.trunc(scrollFraction);
   scrollFraction -= steps;
-  pendingScroll = Math.max(-240, Math.min(240, pendingScroll + steps));
+  pendingScroll = Math.max(-96, Math.min(96, pendingScroll + steps));
   schedulePointerDrain();
 }
 function showTouches() {
@@ -481,6 +507,7 @@ touchpad.addEventListener("pointerdown", event => {
     time: Date.now(), moved: false, multi: false, arrow,
   });
   if (fingers.size > 1) for (const finger of fingers.values()) finger.multi = true;
+  if (fingers.size > 1) { pendingX = 0; pendingY = 0; }
   showTouches();
   touchpad.classList.add("touch-active");
 });

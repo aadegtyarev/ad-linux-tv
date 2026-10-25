@@ -18,6 +18,27 @@ def running(server):
     return thread
 
 
+def test_remote_requests_reuse_connection():
+    server = make_server("127.0.0.1", 0, make_handler(make_config()))
+    running(server)
+    connection = HTTPConnection("127.0.0.1", server.server_port)
+    try:
+        connection.request("GET", "/api/session")
+        response = connection.getresponse()
+        assert response.status == 401
+        response.read()
+        first_socket = connection.sock
+        assert first_socket is not None
+        connection.request("GET", "/api/services")
+        response = connection.getresponse()
+        assert response.status == 200
+        response.read()
+        assert connection.sock is first_socket
+    finally:
+        connection.close()
+        server.shutdown()
+
+
 def test_worker_limit_rejects_excess_request_without_blocking_first():
     started = threading.Event()
     release = threading.Event()

@@ -3,7 +3,7 @@
 import json
 from subprocess import CompletedProcess
 
-from conftest import command_headers, login, request
+from conftest import command_headers, login, make_config, request
 
 
 def test_public_services_and_login_ignore_forwarded_headers(endpoint):
@@ -21,6 +21,53 @@ def test_public_services_and_login_ignore_forwarded_headers(endpoint):
     assert response.status == 401
     response, payload = request(connection, "GET", "/api/session", headers={"Cookie": cookie})
     assert response.status == 200 and json.loads(payload)["csrf"] == result["csrf"]
+
+
+def test_pin_free_session_requires_private_source_and_keeps_csrf(monkeypatch):
+    import threading
+    from http.client import HTTPConnection
+
+    import ad_linux_tv.post_routes as post_routes
+    import ad_linux_tv.server as server_module
+    from ad_linux_tv.listener import make_server
+
+    config = make_config()
+    config["auth"]["require_pin"] = False
+    server = make_server("127.0.0.1", 0, server_module.make_handler(config))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    connection = HTTPConnection("127.0.0.1", server.server_port)
+    try:
+        response, body = request(connection, "GET", "/api/session")
+        assert response.status == 200
+        csrf = json.loads(body)["csrf"]
+        cookie = response.getheader("Set-Cookie").split(";", 1)[0]
+        assert csrf and cookie.startswith("session=")
+        response, _ = request(
+            connection, "GET", "/api/session", headers={"Host": "attacker.example"}
+        )
+        assert response.status == 403
+        response, _ = request(
+            connection,
+            "POST",
+            "/api/login",
+            '{"pin":"1234"}',
+            {"Origin": f"http://127.0.0.1:{server.server_port}"},
+        )
+        assert response.status == 403
+        monkeypatch.setattr(server_module.security, "private_source", lambda _source: False)
+        response, _ = request(connection, "GET", "/api/session")
+        assert response.status == 403
+        monkeypatch.undo()
+        monkeypatch.setattr(post_routes, "loopback_source", lambda _source: False)
+        headers = command_headers(server.server_port, cookie, csrf)
+        response, _ = request(connection, "POST", "/api/command", '{"command":"home"}', headers)
+        assert response.status == 202
+        headers["X-CSRF-Token"] = "bad"
+        response, _ = request(connection, "POST", "/api/command", '{"command":"home"}', headers)
+        assert response.status == 403
+    finally:
+        connection.close()
+        server.shutdown()
 
 
 def test_pairing_pin_is_local_only(endpoint, monkeypatch, tmp_path):
