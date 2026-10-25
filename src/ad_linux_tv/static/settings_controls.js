@@ -6,18 +6,27 @@ class SettingsControls {
     this.request = request;
     this.onPinChange = onPinChange;
     this.state = null;
+    this.magnifierShortcut = null;
     this.field = name => root.querySelector(`[data-role="${name}"]`);
     this.fields = name => Array.from(root.querySelectorAll(`[data-role="${name}"]`));
     this.field("pin-mode").onchange = () => this.renderFields();
     this.field("proxy-mode").onchange = () => this.renderFields();
     this.field("pin-form").onsubmit = event => { event.preventDefault(); void this.savePin(); };
     this.field("proxy-form").onsubmit = event => { event.preventDefault(); void this.saveProxy(); };
-    this.field("magnifier").onclick = () => void this.change("magnifier", !this.state?.magnifier);
+    if (this.field("magnifier")) this.field("magnifier").onclick = () =>
+      void this.change("magnifier", !this.state?.magnifier);
     this.field("restart").onclick = () => void this.change("restart", true);
   }
 
   actions() {
     return Array.from(this.root.querySelectorAll("input,select,button"));
+  }
+
+  bindMagnifierShortcut(button) {
+    this.magnifierShortcut = button;
+    button.onclick = async () => {
+      if (await this.refresh()) await this.change("magnifier", !this.state.magnifier);
+    };
   }
 
   notice(text, error = false) {
@@ -36,8 +45,16 @@ class SettingsControls {
   render(state) {
     this.state = state;
     this.field("pin-mode").value = state.require_pin ? "on" : "off";
-    this.field("magnifier").textContent = state.magnifier ? "Выключить лупу" : "Включить ×2,5";
-    this.field("magnifier").setAttribute("aria-pressed", String(state.magnifier));
+    if (this.field("magnifier")) {
+      this.field("magnifier").textContent = state.magnifier ? "Выключить лупу" : "Включить ×2,5";
+      this.field("magnifier").setAttribute("aria-pressed", String(state.magnifier));
+    }
+    if (this.magnifierShortcut) {
+      this.magnifierShortcut.setAttribute("aria-pressed", String(state.magnifier));
+      this.magnifierShortcut.setAttribute("aria-label", state.magnifier
+        ? "Выключить лупу под курсором" : "Включить лупу под курсором");
+      this.magnifierShortcut.querySelector("span").textContent = state.magnifier ? "⊖" : "⊕";
+    }
     this.field("proxy-mode").value = state.proxy.mode;
     this.field("proxy-protocol").value = state.proxy.protocol || "http";
     this.field("proxy-host").value = state.proxy.host || "";
@@ -54,8 +71,10 @@ class SettingsControls {
       if (!response.ok) throw new Error("unavailable");
       this.render(await response.json());
       this.notice("");
+      return true;
     } catch (_) {
       this.notice("Настройки недоступны. Повторите позже.", true);
+      return false;
     }
   }
 

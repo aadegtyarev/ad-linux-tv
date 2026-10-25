@@ -28,6 +28,7 @@ function panel() {
   const state = {require_pin:false, magnifier:false, proxy:{mode:"system"}, proxy_restart_required:false};
   const controls = new context.SettingsControls(root, async (method, action) => {
     calls.push({method, action});
+    if (method === "POST" && action.setting === "magnifier") state.magnifier = action.value;
     return {ok:true, json:async () => state};
   });
   return {controls, fields, calls, state, pinExtra, proxyExtras};
@@ -64,6 +65,12 @@ test("proxy form sends custom endpoint and magnifier toggles", async () => {
   await ui.controls.saveProxy();
   assert.equal(ui.calls.at(-1).action.value.host, "proxy.example");
   assert.equal(ui.calls.at(-1).action.value.port, 1080);
-  await ui.controls.change("magnifier", true);
+  const icon = {textContent:""};
+  const shortcut = {setAttribute(name, value) { this[name] = value; },
+    querySelector() { return icon; }};
+  ui.controls.bindMagnifierShortcut(shortcut);
+  await shortcut.onclick();
   assert.equal(ui.calls.at(-1).action.value, true);
+  assert.equal(shortcut["aria-pressed"], "true");
+  assert.equal(icon.textContent, "⊖");
 });

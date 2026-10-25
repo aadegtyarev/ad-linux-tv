@@ -4,13 +4,13 @@
 - Approval: User approved the exact scope through the in-session contract question. Telegram was removed from scope; local-file playback is a later task.
 
 ## Goal and user-visible behavior
-TV System and phone Menu expose the same PIN, magnifier and TV-browser proxy settings. The TV System page fits the normal TV screen without a scrollbar. New installations have PIN access disabled by default.
+TV System exposes PIN, magnifier and TV-browser proxy settings. The phone Menu has PIN and proxy settings, with the magnifier shortcut beside the volume slider on the main phone remote. The TV System page fits the normal TV screen without a scrollbar. New installations have PIN access disabled by default.
 
 ## Scenarios and edges
 - New configs use `auth.require_pin: false`; existing configs keep their saved mode. TV and authenticated phone can enable PIN with a confirmed four-digit code, replace it, and disable it. PIN material never appears in phone settings reads or logs. On mode/code change, old phone sessions become invalid and the phone follows the new login flow.
-- The labwc built-in cursor magnifier is off at TV-session start, shows a 2.5x window around the cursor when switched on, and is controlled from TV System or the paired phone. State is shared and visible on both surfaces. It does not magnify the phone UI.
+- The labwc built-in cursor magnifier is off at TV-session start, shows a 2.5x window around the cursor when switched on, and is controlled from TV System or a button beside phone volume under the touchpad. State is shared and visible on both surfaces. It does not magnify the phone UI.
 - Firefox in the dedicated TV profile offers system proxy, no proxy and manually specified HTTP or SOCKS5 host/port. The existing `127.0.0.1:1081` setting is retained until changed. Localhost/private LAN bypass remains in manual mode. Invalid proxy input changes nothing. Changes take effect after restarting the TV browser/session with user-visible feedback.
-- The compact TV System keeps audio, timer and the confirmed KDE switch accessible without vertical scrolling at the target 1360x768 display. Arrow/OK navigation remains usable. The phone Menu opens a Settings page with the equivalent controls.
+- The compact TV System keeps audio, timer and the confirmed KDE switch accessible without vertical scrolling at the target 1360x768 display. Arrow/OK navigation remains usable. The phone Menu opens a Settings page for PIN and proxy.
 - Telegram is not added. Local-file playback is outside this feature.
 
 ## Non-goals

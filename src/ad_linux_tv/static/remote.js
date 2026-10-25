@@ -20,6 +20,7 @@ const phoneSettingsPanel = phoneSettingsRoot ? new SettingsControls(phoneSetting
   (method, action) => remoteFetch("/api/settings", {
     method, ...(action ? {body: JSON.stringify(action)} : {}),
   }), () => window.location.reload()) : null;
+if (phoneSettingsPanel) phoneSettingsPanel.bindMagnifierShortcut(document.querySelector("#pad-magnifier"));
 let statusTimer = null;
 let statusRequestId = 0;
 let redirecting = false;
@@ -400,6 +401,7 @@ function showPage(page) {
   sharePage.hidden = page !== "share";
   settingsPage.hidden = page !== "settings";
   window.scrollTo(0, 0);
+  if (page === "remote") void phoneSettingsPanel?.refresh();
   if (page === "keyboard") document.querySelector("#remote-text").focus();
 }
 document.querySelector("#show-keyboard").onclick = () => showPage("keyboard");
