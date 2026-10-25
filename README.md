@@ -1,18 +1,25 @@
 # ad-linux-tv
 
-Kubuntu media launcher with a phone remote and a Firefox bridge. Requires Python 3.12.
+`ad-linux-tv` turns a Kubuntu computer into a TV launcher. Firefox opens the service tiles on the television; a phone on the same home network becomes a remote with a touchpad, keyboard, volume controls and a display timer. The tested appliance is a Beelink running a dedicated `ad-tv` session. A standard user-session installer is also included.
 
-## Development
+## Start here
 
-```sh
-python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-.venv/bin/pytest -q
-node --test tests/layout.test.js
-.venv/bin/ruff check . && .venv/bin/ruff format --check .
-```
+1. Download `ad-linux-tv-*-source.tar.gz` from a successful [CI run](https://github.com/aadegtyarev/ad-linux-tv/actions/workflows/ci.yml), or use a source checkout. Extract the archive and enter its directory.
+2. Preview the install with `./install.sh --dry-run`. Run `./install.sh --install` to install for the current user. It needs Python 3.12+, Firefox Snap and a graphical Kubuntu session. See [installation](docs/installation.md) for the signed Firefox bridge and update steps.
+3. Open `http://127.0.0.1:8765/` on the TV. Scan the QR code with a phone on the same trusted network. A new installation opens without a PIN; you can enable a four-digit PIN in **System** or phone **Menu → Settings**.
 
-For development, use `.venv/bin/ad-linux-tv init-config --config "$HOME/.config/ad-linux-tv/config.yaml"`, then `.venv/bin/ad-linux-tv --config "$HOME/.config/ad-linux-tv/config.yaml"`. After installation, the exact CLI is `~/.local/share/ad-linux-tv/venv/bin/ad-linux-tv --config ~/.config/ad-linux-tv/config.yaml`; graphical autostart invokes `~/.local/share/ad-linux-tv/run.sh`. Install on a target only with `./install.sh --dry-run` first; `--install` prompts for the remote PIN and installs user-scoped files. Default config: `~/.config/ad-linux-tv/config.yaml`; app: `~/.local/share/ad-linux-tv`; Firefox Snap profile: `~/snap/firefox/common/ad-linux-tv-profile`. Plasma autostart is `~/.config/autostart/ad-linux-tv.desktop` unless `--no-autostart` is selected.
+The phone has a touchpad, arrows, Tab/Enter, text input, volume/mute, timer, service menu and a QR code to pair another phone. **Menu → Sound** holds output, Firefox-stream and page-player levels. System on the TV also offers cursor magnification, proxy and audio settings. The signed Firefox bridge is needed for service tabs, playback control and player-volume features; the source CI archive does not contain a signed bridge.
 
-Open `/` on the TV and `/remote` from a trusted LAN phone. The launcher has service tiles, a Browser tile opening Yandex search, a phone QR, and a small System control. The phone remote supports navigation, Home, and authenticated text entry into the focused Firefox field. This MVP uses plain HTTP and is intended only for a trusted home LAN; do not expose it to the Internet. Firefox bridge source is in `extension/`; run `extension/package.sh /tmp/ad-linux-tv-unsigned.zip` to validate and package a development archive, then load temporarily for development. A signed XPI has been installed and tested on the Beelink target; a public release asset and update path remain to be documented. See [installation](docs/installation.md), [configuration](docs/configuration.md), and [target checklist](docs/target-checklist.md).
+The server uses plain HTTP on a private LAN. Keep it on a trusted home network and do not expose port 8765 to the Internet. Streaming sites, logins and DRM behavior depend on Firefox and each site; see the [verification limits](docs/troubleshooting.md).
 
-For the Beelink target, see [staged TV/KDE deployment](docs/beelink.md). The source checkout remains separate from the installed TV-user copy.
+## Guides
+
+- [Install, update and remove](docs/installation.md)
+- [Use the TV and phone](docs/usage.md)
+- [Settings and network access](docs/configuration.md)
+- [Beelink dedicated TV session](docs/beelink.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Development and architecture](docs/development.md)
+- [Build and release packages](docs/release.md)
+
+The project code is available under the [MIT License](LICENSE).

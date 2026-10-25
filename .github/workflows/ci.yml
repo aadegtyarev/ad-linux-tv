@@ -21,3 +21,21 @@ jobs:
       - run: bash -n install.sh uninstall.sh run.sh extension/package.sh
       - run: ./install.sh --dry-run
       - run: ./uninstall.sh --dry-run
+      - name: Build downloadable Linux source package
+        run: |
+          python scripts/build_package.py --output-dir dist
+          cd dist
+          sha256sum --check SHA256SUMS
+          mkdir unpacked
+          tar -xzf ad-linux-tv-*-source.tar.gz -C unpacked
+          unpacked/ad-linux-tv-*/install.sh --dry-run
+          unpacked/ad-linux-tv-*/uninstall.sh --dry-run
+      - name: Upload Linux source package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ad-linux-tv-linux-source
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30

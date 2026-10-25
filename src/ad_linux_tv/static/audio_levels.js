@@ -2,6 +2,11 @@
 
 class AudioLevelsControls {
   constructor(prefix, levels, change, dragging = () => {}) {
+    this.outputMute = document.querySelector(`#${prefix}-output-mute`);
+    if (this.outputMute) this.outputMute.onclick = () => {
+      if (!this.outputMute.disabled)
+        void change({muted: this.outputMute.dataset.muted !== "true"});
+    };
     this.browserMute = document.querySelector(`#${prefix}-browser-mute`);
     if (this.browserMute) this.browserMute.onclick = () => {
       if (!this.browserMute.disabled)
@@ -21,10 +26,19 @@ class AudioLevelsControls {
 
   sliders() { return this.controls.map(control => control.slider); }
 
-  actions() { return [...this.sliders(), ...(this.browserMute ? [this.browserMute] : [])]; }
+  actions() { return [...this.sliders(), ...[this.outputMute, this.browserMute].filter(Boolean)]; }
 
   render(state) {
+    if (this.outputMute) {
+      const muted = state.muted === true;
+      this.outputMute.disabled = false;
+      this.outputMute.dataset.muted = String(muted);
+      this.outputMute.textContent = muted ? "Включить" : "Отключить";
+      this.outputMute.setAttribute("aria-label", muted
+        ? "Включить звук на выходе" : "Выключить звук на выходе");
+    }
     for (const {name, slider, value, hint} of this.controls) {
+      slider.disabled = false;
       const level = name === "output" ? state.volume : state[`${name}_target`] ?? 100;
       slider.value = level;
       value.textContent = `${level}%`;

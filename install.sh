@@ -16,12 +16,15 @@ for arg in "$@"; do
   esac
 done
 MODE=${MODE:---dry-run}
+ROOT=$(cd "$(dirname "$0")" && pwd)
 DATA="$HOME/.local/share/ad-linux-tv"
 CONFIG="$HOME/.config/ad-linux-tv/config.yaml"
 AUTO="$HOME/.config/autostart/ad-linux-tv.desktop"
 FIREFOX_DATA="$HOME/snap/firefox/common"
 PROFILE="$FIREFOX_DATA/ad-linux-tv-profile"
 XPI="$FIREFOX_DATA/ad-linux-tv-signed.xpi"
+BUNDLED_XPI="$ROOT/ad-linux-tv-signed.xpi"
+BUNDLED_XPI_SHA256="$ROOT/ad-linux-tv-signed.xpi.sha256"
 for path in "$DATA" "$DATA/venv" "$PROFILE" "$CONFIG"; do
   printf '%s %s\n' "$MODE" "$path"
 done
@@ -30,11 +33,10 @@ if (( AUTOSTART )); then
 elif [[ -e "$AUTO" ]]; then
   printf '%s remove %s\n' "$MODE" "$AUTO"
 fi
-if [[ -n "${AD_LINUX_TV_XPI_URL:-}" || -n "${AD_LINUX_TV_XPI_SHA256:-}" ]]; then
+if [[ -n "${AD_LINUX_TV_XPI_URL:-}" || -n "${AD_LINUX_TV_XPI_SHA256:-}" || -f "$BUNDLED_XPI" ]]; then
   printf '%s %s\n' "$MODE" "$XPI"
 fi
 [[ "$MODE" == --dry-run ]] && exit 0
-ROOT=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$DATA" "$PROFILE" "$(dirname "$CONFIG")"
 cp -R "$ROOT/src" "$ROOT/extension" "$DATA/"
 cp "$ROOT/pyproject.toml" "$ROOT/run.sh" "$DATA/"
@@ -67,6 +69,18 @@ if [[ -n "${AD_LINUX_TV_XPI_URL:-}" || -n "${AD_LINUX_TV_XPI_SHA256:-}" ]]; then
   cp "$tmp" "$XPI"
   command -v firefox >/dev/null || { echo 'Firefox unavailable; verified XPI was saved for manual installation' >&2; exit 1; }
   firefox --profile "$PROFILE" "$XPI"
+elif [[ -f "$BUNDLED_XPI" ]]; then
+  [[ -f "$BUNDLED_XPI_SHA256" ]] || { echo 'Bundled XPI checksum is missing' >&2; exit 1; }
+  expected=$(tr -d '\r\n' < "$BUNDLED_XPI_SHA256")
+  [[ "$expected" =~ ^[[:xdigit:]]{64}$ ]] || { echo 'Invalid bundled XPI checksum' >&2; exit 1; }
+  printf '%s  %s\n' "$expected" "$BUNDLED_XPI" | sha256sum --check --status || {
+    echo 'Bundled XPI checksum mismatch' >&2; exit 1;
+  }
+  cp "$BUNDLED_XPI" "$XPI"
+  command -v firefox >/dev/null || { echo 'Firefox unavailable; verified XPI was saved for manual installation' >&2; exit 1; }
+  firefox --profile "$PROFILE" "$XPI"
+elif [[ -f "$XPI" ]]; then
+  echo 'Existing signed XPI preserved; no replacement was supplied.'
 else
-  echo 'Signed XPI unavailable: release gate. Set AD_LINUX_TV_XPI_URL and AD_LINUX_TV_XPI_SHA256 after AMO signing.'
+  echo 'No signed XPI supplied. Install an AMO-signed bridge to control Firefox.'
 fi

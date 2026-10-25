@@ -2,6 +2,7 @@
 
 import json
 
+from .media_session import MediaUnavailable, get_media_monitor
 from .pages import get_response
 from .post_routes import handle_post
 
@@ -63,9 +64,26 @@ class RemoteDispatcher:
         self.static = static
         self.csrf = csrf
         self.settings = settings
+        self.media = get_media_monitor()
 
     def dispatch(self, method, path, body):
         if not isinstance(method, str) or not isinstance(path, str):
+            return 400, {}
+        if path == "/api/media":
+            if method == "GET" and body is None:
+                try:
+                    return 200, self.media.status()
+                except MediaUnavailable:
+                    return 503, {"available": False}
+            if method == "POST" and isinstance(body, dict):
+                if set(body) not in ({"action"}, {"action", "position"}):
+                    return 400, {}
+                try:
+                    return 200, self.media.command(body["action"], body.get("position"))
+                except ValueError:
+                    return 409, {}
+                except MediaUnavailable:
+                    return 503, {"available": False}
             return 400, {}
         if method == "GET" and path in GET_PATHS and body is None:
             if path == "/api/display-timer":

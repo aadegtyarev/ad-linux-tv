@@ -151,6 +151,8 @@ def get_response(handler, config, queue, static):
         "/remote_transport.js": ("remote_transport.js", "text/javascript"),
         "/settings_controls.js": ("settings_controls.js", "text/javascript"),
         "/audio_levels.js": ("audio_levels.js", "text/javascript"),
+        "/media_controls.js": ("media_controls.js", "text/javascript"),
+        "/touchpad_controls.js": ("touchpad_controls.js", "text/javascript"),
         "/pointer_acceleration.js": ("pointer_acceleration.js", "text/javascript"),
         "/style.css": ("style.css", "text/css"),
     }

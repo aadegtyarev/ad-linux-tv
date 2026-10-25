@@ -1,26 +1,44 @@
-# Installation / update / removal
+# Install, update and remove
 
-1. Review `./install.sh --dry-run`; it previews `~/.local/share/ad-linux-tv`, `~/.config/ad-linux-tv/config.yaml`, `~/snap/firefox/common/ad-linux-tv-profile`, and, by default, `~/.config/autostart/ad-linux-tv.desktop`. Use `--no-autostart` for a separately managed TV session.
-2. Run `./install.sh --install`. It uses a user venv and creates a PIN-free configuration on first install; PIN can be enabled later in TV or phone settings. Existing config is preserved. The persistent Firefox Snap profile is `~/snap/firefox/common/ad-linux-tv-profile`; no sudo or profile-internal edits are performed. A graphical session is required when opening a signed XPI for confirmation.
-3. Firefox Snap support and persistent profile behavior must be checked on each target Kubuntu system. An AMO-signed XPI was installed interactively on the Beelink target and survived Firefox restarts. For a new target or update, provide an HTTPS URL and SHA256 as `AD_LINUX_TV_XPI_URL` and `AD_LINUX_TV_XPI_SHA256`; the installer verifies the digest, saves it in `~/snap/firefox/common`, and opens the XPI for explicit Firefox confirmation. The public release asset is still pending. No unattended registration.
-4. Update by backing up config and rerunning install. `./uninstall.sh --dry-run` previews removal; `--remove` removes app/autostart and preserves config plus the Firefox Snap profile/XPI.
+## Requirements
 
-Manual installed start: `~/.local/share/ad-linux-tv/run.sh ~/.config/ad-linux-tv/config.yaml`; direct server CLI: `~/.local/share/ad-linux-tv/venv/bin/ad-linux-tv --config ~/.config/ad-linux-tv/config.yaml`. Development uses `.venv/bin/ad-linux-tv` after `pip install -e '.[dev]'`.
+Use Kubuntu with Python 3.12 or newer, Firefox Snap, a display and a graphical user session. The generic installer creates a user-scoped app and optional Plasma autostart. The dedicated Beelink TV session has [separate setup steps](beelink.md).
 
-Troubleshoot: inspect terminal output, validate config with the installed venv CLI above, confirm server and Firefox extension use localhost port 8765, and ensure phone/TV share a private LAN. On Beelink, `systemctl status ad-linux-tv-kiosk.service` and `gui status` show the graphical state; the dedicated Firefox profile uses the local Xray proxy at `127.0.0.1:1081` for external sites. Plain HTTP and non-DRM/service playback are not guaranteed.
+## Install
 
-## Firefox bridge update
+From an extracted archive or checkout:
 
-`extension/package.sh` builds an unsigned archive. Submit it as a new version of the existing add-on in AMO, download the resulting signed XPI, and install that XPI interactively in the dedicated TV Firefox profile. Version 0.3.0 uses the existing scripting and HTTP(S) site permissions only in launcher-owned tabs: it pauses active HTML media for the display timer and keeps managed media at 100% while the selected audio output is the user's one volume control. Firefox may ask to approve the update. The display timer requires both this signed XPI and the matching server update. A site's own mute, WebAudio gain, or restricted frame may still limit control; the timer leaves HDMI on if it cannot establish that playback was paused.
+```sh
+./install.sh --dry-run
+./install.sh --install
+```
 
-Version 0.3.1 also closes all launcher-managed service tabs on Home and closes the previous service tab when another service opens, preventing playback behind the tiles. The signed 0.3.1 XPI is active in the dedicated Beelink Firefox profile; background playback still needs checking across services.
+The preview lists destinations. Installation writes the app to `~/.local/share/ad-linux-tv`, creates a Python virtual environment and initializes `~/.config/ad-linux-tv/config.yaml` only if absent. The TV Firefox profile is `~/snap/firefox/common/ad-linux-tv-profile`. Plasma autostart is enabled by default; pass `--no-autostart` in both commands when another session manager runs the TV. No root access is required. A new config has phone PIN access off.
 
-After installing a signed bridge update, restart the TV kiosk session before testing playback. Extension updates clear the session-only managed-tab registry; tabs opened by the previous version can keep playing even when the new bridge closes its own tabs. Restarting the browser closes those old tabs. On Beelink use `sudo systemctl restart ad-linux-tv-kiosk.service`, then verify that Firefox has no leftover audio stream before starting a new service.
+Open `http://127.0.0.1:8765/` on the TV. If the graphical session does not autostart it, run:
 
-On Beelink, `ops/beelink/setup.sh` also installs `wlopm` and `swayidle`. The TV System and phone Menu expose Off, 15, 30, 60, 90 and 120-minute display timers. At expiry, the server pauses managed playback before powering off the HDMI output through `wlopm`; touch or a phone command wakes the output without resuming media. The Beelink remains running and the KDE recovery path is unchanged.
+```sh
+~/.local/share/ad-linux-tv/run.sh ~/.config/ad-linux-tv/config.yaml
+```
 
-## Firefox command recovery semantics
+A stable Firefox needs the AMO-signed bridge to control service tabs. A source CI archive has no signed XPI. If you have the signed release archive, its `ad-linux-tv-signed.xpi` is verified against the bundled SHA256 and opened for **interactive confirmation in Firefox** during install. Alternatively supply an HTTPS XPI URL and its SHA256:
 
-Managed tab ownership lives in Firefox `storage.session`: it survives background event-page unload/reload, but is cleared by browser restart or extension reload/update/disable. After that boundary, pre-existing service tabs are intentionally treated as unmanaged; Home/Back/Refresh/Open will not claim them by URL or reused tab ID. The bounded 256-entry command deduplication ledger is mirrored to `storage.local` so an unacknowledged command cannot repeat across a browser restart; it contains command IDs, states, and fixed reason codes only.
+```sh
+AD_LINUX_TV_XPI_URL='https://example.org/bridge.xpi' \
+AD_LINUX_TV_XPI_SHA256='64-hex-character-digest' ./install.sh --install
+```
 
-Commands are at-most-once after the extension records an execution claim. If Firefox loses the event page or browser in the claim/effect/ack window, recovery avoids replaying a potentially non-idempotent action; that action may be lost and is surfaced as an uncertain command result. Acknowledgement loss after the effect does not repeat completed effects. Preparation-only failures retry at most three total attempts; a terminal browser operation failure is reported and acknowledged so FIFO delivery can continue. The server retains only the most recent failed/uncertain result for up to five minutes; a later success does not clear it, while a newer failure replaces it. Launcher and phone remote display failure alongside pending state. The status response contains only a fixed reason code and outcome, never URLs, PINs, or exception text.
+Replace both example values with real release data. The installer does not bypass Firefox signing or approve the add-on automatically. Confirm `ad-linux-tv bridge` is enabled in `about:addons`; then check `http://127.0.0.1:8765/health` for `extension_online: true`.
+
+## Update
+
+Back up `~/.config/ad-linux-tv/config.yaml`, extract the new archive and rerun `./install.sh --dry-run` then `./install.sh --install` with the same autostart choice. Existing config and Firefox profile are preserved. Confirm a new signed bridge update in Firefox if prompted. Restart the TV session after updating the bridge so old browser tabs cannot keep playing behind the tiles.
+
+## Remove
+
+```sh
+./uninstall.sh --dry-run
+./uninstall.sh --remove
+```
+
+Removal keeps the config and Firefox profile, including any signed XPI. Review the preview before removal.

@@ -134,3 +134,38 @@ def test_remote_socket_rejects_unmasked_frame(endpoint, monkeypatch):
     finally:
         stream.close()
         sock.close()
+
+
+def test_remote_socket_media_uses_same_authenticated_channel(endpoint, monkeypatch):
+    import ad_linux_tv.remote_rpc as rpc
+
+    class FakeMedia:
+        def status(self):
+            return {"available": True, "title": "Test", "can_seek": False}
+
+        def command(self, action, position=None):
+            if action != "pause" or position is not None:
+                raise ValueError("unsupported")
+            return {"available": True, "title": "Test", "playing": False}
+
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    monkeypatch.setattr(rpc, "get_media_monitor", FakeMedia)
+    connection, port = endpoint
+    _response, result, cookie = login(connection, port)
+    sock, stream, status = connect(port, cookie, result["csrf"])
+    assert " 101 " in status
+    try:
+        for number, method, body in (
+            (1, "GET", None),
+            (2, "POST", {"action": "pause"}),
+            (3, "POST", {"action": "seek", "position": 999}),
+            (4, "POST", {"action": "pause", "unexpected": True}),
+        ):
+            send_message(sock, {"id": number, "method": method, "path": "/api/media", "body": body})
+        replies = [receive_message(stream) for _ in range(4)]
+        assert [reply["status"] for reply in replies] == [200, 200, 409, 400]
+        assert replies[0]["body"]["title"] == "Test"
+        assert replies[1]["body"]["playing"] is False
+    finally:
+        stream.close()
+        sock.close()

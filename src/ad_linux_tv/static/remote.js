@@ -15,6 +15,11 @@ function remoteFetch(path, options = {}) {
   const body = options.body === undefined ? null : JSON.parse(options.body);
   return transport.request(csrf, method, path, body);
 }
+const mediaControls = new PhoneMediaControls(
+  (method, path, body) => remoteFetch(path, {
+    method, ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+  }), () => requireLogin(),
+);
 const phoneSettingsRoot = document.querySelector("#phone-settings-controls");
 let pointerAccelerationLevel = 50;
 const phoneSettingsPanel = phoneSettingsRoot ? new SettingsControls(phoneSettingsRoot,
@@ -36,6 +41,7 @@ let audioTimer = null;
 let displayTimerPoll = null;
 let displayAsleep = false;
 let audioDragging = false;
+let audioRevision = 0;
 const advancedAudio = new AudioLevelsControls("phone", [
   ["output", "volume"], ["browser", "browser_volume"], ["player", "player_volume"],
 ], changeAudio, dragging => { audioDragging = dragging; });
@@ -85,27 +91,45 @@ function showAudio(state) {
     audioOutput.dataset.outputs = names;
   }
   audioOutput.value = state.selected;
+  audioOutput.disabled = false;
   audioVolume.value = state.volume;
+  audioVolume.disabled = false;
   advancedAudio.render(state);
   document.querySelector("#audio-volume-value").textContent = `${state.volume}%`;
-  document.querySelector("#audio-mute").textContent = state.muted ? "♩" : "♬";
-  document.querySelector("#audio-mute").setAttribute("aria-label", state.muted ? "Включить звук" : "Выключить звук");
-  document.querySelector("#audio-mute").dataset.muted = String(state.muted);
+  const mute = document.querySelector("#audio-mute");
+  mute.disabled = false;
+  mute.textContent = state.muted ? "Выкл" : "Вкл";
+  mute.setAttribute("aria-label", state.muted ? "Звук выключен. Включить" : "Звук включён. Выключить");
+  mute.setAttribute("aria-pressed", String(state.muted));
+  mute.dataset.muted = String(state.muted);
   audioStatus.textContent = "";
 }
 
 async function refreshAudio() {
+  const revision = ++audioRevision;
   try {
     const response = await remoteFetch("/api/audio");
     if (response.status === 403) return requireLogin();
     if (!response.ok) throw new Error("audio unavailable");
-    showAudio(await response.json());
+    const state = await response.json();
+    if (revision === audioRevision) showAudio(state);
   } catch (_) {
-    audioStatus.textContent = "Звук недоступен. Проверьте подключение выхода и повторите.";
+    if (revision === audioRevision) {
+      const mute = document.querySelector("#audio-mute");
+      mute.disabled = true;
+      mute.textContent = "?";
+      mute.setAttribute("aria-label", "Состояние звука неизвестно");
+      mute.removeAttribute("aria-pressed");
+      audioOutput.disabled = true;
+      audioVolume.disabled = true;
+      advancedAudio.actions().forEach(control => { control.disabled = true; });
+      audioStatus.textContent = "Звук недоступен. Проверьте подключение выхода и повторите.";
+    }
   }
 }
 
 async function changeAudio(action) {
+  const revision = ++audioRevision;
   try {
     const response = await remoteFetch("/api/audio", {
       method: "POST", headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
@@ -113,8 +137,10 @@ async function changeAudio(action) {
     });
     if (response.status === 401 || response.status === 403) return requireLogin();
     if (!response.ok) throw new Error("audio change failed");
-    showAudio(await response.json());
+    const state = await response.json();
+    if (revision === audioRevision) showAudio(state);
   } catch (_) {
+    if (revision !== audioRevision) return;
     await refreshAudio();
     audioStatus.textContent = "Не удалось изменить звук. Проверьте выход и повторите.";
   }
@@ -203,6 +229,7 @@ function say(text, error = false) {
 }
 
 function requireLogin() {
+  mediaControls.stop();
   csrf = "";
   transport.close();
   if (statusTimer !== null) clearInterval(statusTimer);
@@ -260,7 +287,7 @@ async function refreshStatus() {
     if (value.last_command_failure) visible.push("Последняя команда не выполнена. Повторите действие.");
     commandStatus.textContent = visible.join(" ");
     commandStatus.hidden = visible.length === 0;
-    if (phoneSettingsPanel && !remoteFace.hidden && pointerInflight.size === 0 &&
+    if (phoneSettingsPanel && !remoteFace.hidden && touchpadControls.isIdle() &&
         Date.now() - lastPointerSettingsRefresh >= 5000) {
       lastPointerSettingsRefresh = Date.now();
       void phoneSettingsPanel.refresh();
@@ -316,6 +343,7 @@ async function activateRemote(token, restored = false) {
   showPage("remote");
   if (!restored) say("Телефон подключён.");
   void refreshAudio();
+  mediaControls.start();
   void refreshDisplayTimer();
   void refreshStatus();
   if (statusTimer !== null) clearInterval(statusTimer);
@@ -431,7 +459,10 @@ document.querySelector("#show-timer").onclick = () => {
   showPage("timer");
   void refreshDisplayTimer();
 };
-document.querySelector("#show-menu").onclick = () => showPage("menu");
+document.querySelector("#show-menu").onclick = () => {
+  showPage("menu");
+  void refreshAudio();
+};
 document.querySelector("#show-settings").onclick = () => {
   showPage("settings");
   void phoneSettingsPanel?.refresh();
@@ -484,203 +515,14 @@ document.querySelector("#show-system").onclick = async () => {
 document.querySelectorAll(".return-remote").forEach(button => {
   button.onclick = () => showPage("remote");
 });
-let navigationSequence = Promise.resolve();
-function sendKey(key) {
-  if (["up", "down", "left", "right", "tab", "shift-tab"].includes(key))
-    setPadSelectionMode(true);
-  navigationSequence = navigationSequence.then(() => post("/api/input", {key}, ""));
-  return navigationSequence;
-}
-document.querySelector("#pad-tab").onclick = () => sendKey("tab");
-document.querySelector("#pad-shift-tab").onclick = () => sendKey("shift-tab");
-document.querySelector("#pad-enter").onclick = () => sendKey("enter");
-const touchpad = document.querySelector("#remote-touchpad");
-let padSelectionMode = false;
-function setPadSelectionMode(selection) {
-  padSelectionMode = selection;
-  document.querySelector("#touch-action-text").textContent = selection ? "Выбрать" : "Клик";
-  touchpad.setAttribute("aria-label", selection
-    ? "Навигация: стрелки или Tab выбирают элемент; тап активирует его; проведите пальцем для курсора"
-    : "Тачпад: ведите пальцем для курсора; тап кликает по курсору; края — стрелки; два пальца — прокрутка");
-}
-const touchIndicators = [document.querySelector("#touch-indicator"), document.querySelector("#touch-indicator-2")];
-const fingers = new Map();
-let pendingX = 0;
-let pendingY = 0;
-let pendingScroll = 0;
-let drainTimer = null;
-const pointerInflight = new Set();
-// Several ordered messages may be in flight on the same WebSocket.
-const maxPointerInflight = 3;
-let scrollFraction = 0;
-let pointerErrorShown = false;
-async function sendPointer(action) {
-  try {
-    const response = await remoteFetch("/api/pointer", {
-      method: "POST",
-      headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
-      body: JSON.stringify(action),
-    });
-    if (response.status === 401 || response.status === 403) return requireLogin();
-    if (!response.ok) throw new Error("pointer unavailable");
-    pointerErrorShown = false;
-  } catch (_) {
-    pendingX = 0;
-    pendingY = 0;
-    pendingScroll = 0;
-    scrollFraction = 0;
-    if (!pointerErrorShown) say("Курсор недоступен. Проверьте ТВ-режим и Wi-Fi.", true);
-    pointerErrorShown = true;
-  }
-}
-function hasPointerWork() {
-  return Math.abs(pendingX) >= 1 || Math.abs(pendingY) >= 1 || pendingScroll !== 0;
-}
-function dispatchPointer(action) {
-  const request = sendPointer(action);
-  pointerInflight.add(request);
-  void request.finally(() => {
-    pointerInflight.delete(request);
-    pumpPointer();
-  });
-}
-function pumpPointer() {
-  if (drainTimer !== null) clearTimeout(drainTimer);
-  drainTimer = null;
-  while (pointerInflight.size < maxPointerInflight &&
-      (Math.abs(pendingX) >= 1 || Math.abs(pendingY) >= 1)) {
-    const dx = Math.max(-600, Math.min(600, Math.round(pendingX)));
-    const dy = Math.max(-600, Math.min(600, Math.round(pendingY)));
-    pendingX -= dx;
-    pendingY -= dy;
-    if (dx || dy) dispatchPointer({dx, dy});
-  }
-  // One request at a time keeps compositor actions in gesture order.
-  if (pointerInflight.size === 0 && pendingScroll) {
-    const scroll = Math.max(-24, Math.min(24, pendingScroll));
-    pendingScroll -= scroll;
-    dispatchPointer({scroll});
-  }
-}
-async function drainPointer() {
-  pumpPointer();
-  while (hasPointerWork() || pointerInflight.size) {
-    if (pointerInflight.size) await Promise.race(pointerInflight);
-    else pumpPointer();
-  }
-}
-function schedulePointerDrain() {
-  if (drainTimer === null && pointerInflight.size < maxPointerInflight)
-    drainTimer = setTimeout(pumpPointer, 16);
-}
-function schedulePointerMove(finger, dx, dy, time) {
-  setPadSelectionMode(false);
-  const moved = finger.acceleration.move(dx, dy, time);
-  pendingX = Math.max(-4800, Math.min(4800, pendingX + moved.dx));
-  pendingY = Math.max(-4800, Math.min(4800, pendingY + moved.dy));
-  schedulePointerDrain();
-}
-function schedulePointerScroll(dy) {
-  setPadSelectionMode(false);
-  scrollFraction -= dy * 2;
-  const steps = Math.trunc(scrollFraction);
-  scrollFraction -= steps;
-  pendingScroll = Math.max(-96, Math.min(96, pendingScroll + steps));
-  schedulePointerDrain();
-}
-function showTouches() {
-  const rect = touchpad.getBoundingClientRect();
-  const active = Array.from(fingers.values());
-  touchIndicators.forEach((indicator, index) => {
-    const finger = active[index];
-    indicator.hidden = !finger;
-    if (!finger) return;
-    indicator.style.left = `${finger.x - rect.left}px`;
-    indicator.style.top = `${finger.y - rect.top}px`;
-  });
-}
-touchpad.addEventListener("pointerdown", event => {
-  event.preventDefault();
-  touchpad.setPointerCapture(event.pointerId);
-  const arrow = event.target.closest("[data-arrow]")?.dataset.arrow || null;
-  fingers.set(event.pointerId, {
-    startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
-    time: Date.now(), moved: false, multi: false, arrow,
-    acceleration: new PointerAcceleration(pointerAccelerationLevel),
-  });
-  if (fingers.size > 1) for (const finger of fingers.values()) finger.multi = true;
-  if (fingers.size > 1) { pendingX = 0; pendingY = 0; }
-  showTouches();
-  touchpad.classList.add("touch-active");
-});
-touchpad.addEventListener("pointermove", event => {
-  const finger = fingers.get(event.pointerId);
-  if (!finger) return;
-  event.preventDefault();
-  const dx = event.clientX - finger.x;
-  const dy = event.clientY - finger.y;
-  finger.x = event.clientX;
-  finger.y = event.clientY;
-  if (fingers.size > 1) {
-    schedulePointerScroll(dy / fingers.size);
-  } else if (!finger.multi) {
-    // Keep a painted key press despite normal finger jitter; a deliberate drag still moves the cursor.
-    const dragDistance = finger.arrow ? 32 : 9;
-    const wasMoving = finger.moved;
-    if (Math.hypot(event.clientX - finger.startX, event.clientY - finger.startY) > dragDistance) finger.moved = true;
-    if (finger.moved) {
-      schedulePointerMove(finger,
-      wasMoving ? dx : event.clientX - finger.startX,
-      wasMoving ? dy : event.clientY - finger.startY,
-      Number.isFinite(event.timeStamp) ? event.timeStamp : Date.now(),
-      );
-    }
-  }
-  showTouches();
-});
-function finishTouch(event, cancelled = false) {
-  const finger = fingers.get(event.pointerId);
-  if (!finger) return;
-  event.preventDefault();
-  fingers.delete(event.pointerId);
-  if (!fingers.size) touchpad.classList.remove("touch-active");
-  if (fingers.size === 1) {
-    const remaining = fingers.values().next().value;
-    if (remaining.multi) {
-      remaining.multi = false;
-      remaining.moved = true;
-      remaining.arrow = null;
-      remaining.startX = remaining.x;
-      remaining.startY = remaining.y;
-    }
-  }
-  showTouches();
-  if (cancelled) {
-    if (drainTimer !== null) clearTimeout(drainTimer);
-    drainTimer = null;
-    pendingX = 0;
-    pendingY = 0;
-    pendingScroll = 0;
-    scrollFraction = 0;
-    return;
-  }
-  if (finger.multi) return;
-  if (finger.moved) return void drainPointer();
-  if (!finger.arrow && Date.now() - finger.time > 650) return;
-  if (finger.arrow) void sendKey(finger.arrow);
-  else if (padSelectionMode) void sendKey("enter");
-  else void drainPointer().then(() => sendPointer({click: true}));
-}
-touchpad.addEventListener("pointerup", event => finishTouch(event));
-touchpad.addEventListener("pointercancel", event => finishTouch(event, true));
-touchpad.addEventListener("keydown", event => {
-  const key = {ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right"}[event.key];
-  if (key) { event.preventDefault(); void sendKey(key); }
-  if (event.key === "Enter" || event.key === " ") {
-    event.preventDefault();
-    void sendKey("enter");
-  }
-});
+const touchpadControls = createPhoneTouchpad(
+  post,
+  action => remoteFetch("/api/pointer", {method:"POST", body:JSON.stringify(action)}),
+  () => pointerAccelerationLevel,
+  () => requireLogin(),
+  message => say(message, true),
+);
+function sendKey(key) { return touchpadControls.sendKey(key); }
 document.querySelectorAll("[data-c]").forEach(button => {
   button.onclick = () => post("/api/command", {command: button.dataset.c}, "");
 });
