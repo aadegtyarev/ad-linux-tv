@@ -1,6 +1,6 @@
 # Feature contract: advanced audio levels
 
-- Status: Server and TV/phone controls installed on Beelink; Python/Node checks passed. Signed bridge 0.3.2 and real page-player acceptance pending, 2026-10-25.
+- Status: Server and TV/phone controls installed on Beelink; Python/Node checks passed. Signed bridge 0.3.2 is active (`signedState=2`). Local looping HTML-audio playback was pinned to a 37% target and returned to 37% after the page requested 80%. Real service playback and phone UI acceptance remain pending, 2026-10-25.
 - Approval: User confirmed all three levels in TV and phone settings, with the simple control below the touchpad retained.
 
 ## Goal and scenarios
@@ -20,7 +20,7 @@
 ## Interfaces and constraints
 - Store durable advanced levels in the existing private config.yaml. Existing configurations default Firefox and page media levels to 100%. Output selection/volume retain their current persistence path.
 - Reuse the authenticated audio endpoint and phone WebSocket; do not add a live transport. Respect the existing local-TV versus phone auth boundaries.
-- Update the signed Firefox extension for page-media level handling; installing the new extension requires a newly signed XPI. Until available, do not claim that page-level changes work on Beelink.
+- Update the signed Firefox extension for page-media level handling; installing the new extension requires a newly signed XPI. The signed 0.3.2 XPI has been installed interactively on Beelink; keep the real-service playback gate until observed.
 
 ## Acceptance and validation
 - Verify level validation, persistence, stream normalization to selected target, page-media target application and later site changes, unavailable states, and TV/phone UI requests. Run Python and Node tests and lint, then validate on Beelink. Check extension signature and real playback after installing the new signed XPI.
