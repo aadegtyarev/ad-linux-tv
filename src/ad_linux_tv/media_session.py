@@ -81,6 +81,8 @@ class MediaSession:
             status = self._value(properties, "PlaybackStatus")
             if status not in ("Playing", "Paused", "Stopped"):
                 raise ValueError("invalid playback state")
+            if status == "Stopped":
+                return {"available": False}, None, None
             can_control = self._value(properties, "CanControl") is True
             duration_us = self._value(metadata, "mpris:length")
             position_us = self._value(properties, "Position")

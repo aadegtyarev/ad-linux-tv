@@ -14,6 +14,7 @@ class FakeBus:
     def __init__(self):
         self.calls = []
         self.playing = True
+        self.playback_status = None
         self.next = False
         self.firefox = True
 
@@ -31,7 +32,10 @@ class FakeBus:
             }
             props = {
                 "Metadata": {"type": "a{sv}", "data": metadata},
-                "PlaybackStatus": {"type": "s", "data": "Playing" if self.playing else "Paused"},
+                "PlaybackStatus": {
+                    "type": "s",
+                    "data": self.playback_status or ("Playing" if self.playing else "Paused"),
+                },
                 "Position": {"type": "x", "data": 30_000_000},
                 "CanControl": {"type": "b", "data": True},
                 "CanPlay": {"type": "b", "data": True},
@@ -81,6 +85,15 @@ def test_missing_firefox_player_does_not_select_other_app():
     with pytest.raises(MediaUnavailable):
         media.command("play")
     assert not any("spotify" in str(call) for call in bus.calls[1:])
+
+
+def test_stopped_firefox_session_does_not_keep_stale_phone_panel():
+    bus = FakeBus()
+    bus.playback_status = "Stopped"
+    media = MediaSession(bus)
+    assert media.status() == {"available": False}
+    with pytest.raises(MediaUnavailable):
+        media.command("play")
 
 
 def test_media_poll_does_not_block_phone_status():
