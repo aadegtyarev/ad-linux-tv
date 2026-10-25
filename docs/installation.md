@@ -15,6 +15,8 @@ Troubleshoot: inspect terminal output, validate config with the installed venv C
 
 Version 0.3.1 also closes all launcher-managed service tabs on Home and closes the previous service tab when another service opens, preventing playback behind the tiles. The signed 0.3.1 XPI is active in the dedicated Beelink Firefox profile; background playback still needs checking across services.
 
+After installing a signed bridge update, restart the TV kiosk session before testing playback. Extension updates clear the session-only managed-tab registry; tabs opened by the previous version can keep playing even when the new bridge closes its own tabs. Restarting the browser closes those old tabs. On Beelink use `sudo systemctl restart ad-linux-tv-kiosk.service`, then verify that Firefox has no leftover audio stream before starting a new service.
+
 On Beelink, `ops/beelink/setup.sh` also installs `wlopm` and `swayidle`. The TV System and phone Menu expose Off, 15, 30, 60, 90 and 120-minute display timers. At expiry, the server pauses managed playback before powering off the HDMI output through `wlopm`; touch or a phone command wakes the output without resuming media. The Beelink remains running and the KDE recovery path is unchanged.
 
 ## Firefox command recovery semantics

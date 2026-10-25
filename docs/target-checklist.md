@@ -24,6 +24,7 @@ Observed on Beelink SER10 Max with HDMI (2026-10-24):
 - [x] Opened all six service tiles on Beelink and checked keyboard focus: Kinopoisk, KION, YouTube, VK Video, Yandex Music and Browser. Tab visibly focused a menu or control in Kinopoisk, KION, VK Video and Browser; repeated Tab reached a YouTube video card. Yandex Music accepted the key, but no visible focus change was established. On Kinopoisk and VK Video, ArrowDown scrolled content while focus stayed on the previous control; ArrowRight did not select an adjacent Kinopoisk card. Kinopoisk card click opened its details.
 - [x] After moving phone controls to one WebSocket, the user confirmed the real-phone cursor has almost no jerks and that scrolling works well. The TV launcher serves a visible System button on an ordinary TV; automated navigation confirms arrows and bridge OK stay on tiles, while pointer click opens System.
 - [x] Signed bridge 0.3.1 was copied to the dedicated Firefox profile and Firefox reports it active. Its source files match the unsigned archive submitted for signing; the manifest content matches after JSON parsing.
+- [x] Two Firefox audio streams for the same Kinopoisk film survived the bridge update; pausing the visible player left one stream active. Restarting the TV kiosk cleared both streams. Bridge updates now require a TV-session restart before playback checks.
 
 Still to verify on the actual setup:
 
