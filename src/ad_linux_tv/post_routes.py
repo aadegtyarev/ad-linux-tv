@@ -10,9 +10,10 @@ from .config import verify_pin
 from .control import QueueFullError
 from .http_errors import BodyTimeout
 from .security import loopback_source
+from .settings import SettingsError
 
 
-def handle_post(handler, config, queue, sessions, failures, display_timer):
+def handle_post(handler, config, queue, sessions, failures, display_timer, settings=None):
     path = urlparse(handler.path).path
     if path == "/extension/ack":
         return handle_ack(handler, queue)
@@ -77,6 +78,29 @@ def handle_post(handler, config, queue, sessions, failures, display_timer):
     token = handler.authorized()
     if not handler.private() or (not local_ui and not token):
         return handler.send(403, "{}")
+    if path == "/api/settings":
+        exact_local = (
+            local_ui and handler.headers.get("Host") == f"127.0.0.1:{handler.server.server_port}"
+        )
+        if (
+            os.environ.get("AD_LINUX_TV_KIOSK") != "1"
+            or settings is None
+            or not (
+                exact_local
+                or (token and sessions.csrf_valid(token, handler.headers.get("X-CSRF-Token")))
+            )
+        ):
+            return handler.send(403, "{}")
+        try:
+            return handler.send(200, json.dumps(settings.update(handler.read_payload())))
+        except OverflowError:
+            return handler.send(413, "{}")
+        except BodyTimeout:
+            return handler.send(408, "{}", headers=(("Connection", "close"),))
+        except (SettingsError, TypeError, ValueError):
+            return handler.send(400, "{}")
+        except (OSError, subprocess.TimeoutExpired):
+            return handler.send(503, "{}")
     if path == "/api/display-timer":
         exact_local = local_ui and handler.headers.get("Host") == (
             f"127.0.0.1:{handler.server.server_port}"

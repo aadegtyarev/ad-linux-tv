@@ -7,7 +7,14 @@ from .post_routes import handle_post
 
 GET_PATHS = frozenset({"/api/services", "/api/status", "/api/audio", "/api/display-timer"})
 POST_PATHS = frozenset(
-    {"/api/command", "/api/input", "/api/pointer", "/api/audio", "/api/display-timer"}
+    {
+        "/api/command",
+        "/api/input",
+        "/api/pointer",
+        "/api/audio",
+        "/api/display-timer",
+        "/api/settings",
+    }
 )
 
 
@@ -44,7 +51,9 @@ class RemoteRequest:
 class RemoteDispatcher:
     """Keep one phone transport while reusing the established action handlers."""
 
-    def __init__(self, handler, config, queue, sessions, failures, display_timer, static, csrf):
+    def __init__(
+        self, handler, config, queue, sessions, failures, display_timer, static, csrf, settings=None
+    ):
         self.handler = handler
         self.config = config
         self.queue = queue
@@ -53,6 +62,7 @@ class RemoteDispatcher:
         self.display_timer = display_timer
         self.static = static
         self.csrf = csrf
+        self.settings = settings
 
     def dispatch(self, method, path, body):
         if not isinstance(method, str) or not isinstance(path, str):
@@ -69,6 +79,13 @@ class RemoteDispatcher:
             finally:
                 self.handler.path = previous
             return status, json.loads(payload)
+        if (
+            method == "GET"
+            and path == "/api/settings"
+            and body is None
+            and self.settings is not None
+        ):
+            return 200, self.settings.state()
         if method == "POST" and path in POST_PATHS and isinstance(body, dict):
             request = RemoteRequest(self.handler, path, body, self.csrf)
             handle_post(
@@ -78,6 +95,7 @@ class RemoteDispatcher:
                 self.sessions,
                 self.failures,
                 self.display_timer,
+                self.settings,
             )
             status, payload = request.response
             return status, json.loads(payload)

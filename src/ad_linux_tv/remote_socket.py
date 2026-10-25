@@ -89,7 +89,9 @@ class RemoteSocket:
                 return
 
 
-def serve_remote_socket(handler, config, queue, sessions, failures, display_timer, static):
+def serve_remote_socket(
+    handler, config, queue, sessions, failures, display_timer, static, settings=None
+):
     """Authenticate the upgrade using the same cookie, Origin and CSRF as POST."""
     protocol = handler.headers.get("Sec-WebSocket-Protocol", "")
     token = handler.authorized()
@@ -122,6 +124,6 @@ def serve_remote_socket(handler, config, queue, sessions, failures, display_time
     handler.end_headers()
     handler.close_connection = True
     dispatcher = RemoteDispatcher(
-        handler, config, queue, sessions, failures, display_timer, static, csrf
+        handler, config, queue, sessions, failures, display_timer, static, csrf, settings
     )
     RemoteSocket(handler, dispatcher).run()

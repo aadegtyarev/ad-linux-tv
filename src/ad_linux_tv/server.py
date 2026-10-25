@@ -17,10 +17,11 @@ from .http_io import DeadlineReader
 from .pages import get_response
 from .post_routes import handle_post
 from .remote_socket import serve_remote_socket
+from .settings import SettingsManager
 from .sleep_timer import DisplaySleepTimer
 
 
-def make_handler(config):
+def make_handler(config, config_path=None):
     queue = CommandQueue()
     display_timer = DisplaySleepTimer(queue)
     pin_file = (
@@ -33,6 +34,7 @@ def make_handler(config):
     auth_material = verifier if config["auth"].get("require_pin", True) else f"{verifier}:no-pin"
     auth_tag = hashlib.sha256(auth_material.encode()).hexdigest()
     sessions = Sessions(storage_path=session_file, auth_tag=auth_tag)
+    settings = SettingsManager(config, config_path, sessions, pin_file=pin_file)
     failures = RateLimiter()
     static = Path(__file__).parent / "static"
 
@@ -122,8 +124,20 @@ def make_handler(config):
         def do_GET(self):
             if urlparse(self.path).path == "/api/remote-ws":
                 return serve_remote_socket(
-                    self, config, queue, sessions, failures, display_timer, static
+                    self, config, queue, sessions, failures, display_timer, static, settings
                 )
+            if urlparse(self.path).path == "/api/settings":
+                local = (
+                    security.loopback_source(self.client_address[0])
+                    and self.headers.get("Host") == f"127.0.0.1:{self.server.server_port}"
+                )
+                if (
+                    os.environ.get("AD_LINUX_TV_KIOSK") != "1"
+                    or not self.private()
+                    or not (local or self.authorized())
+                ):
+                    return self.send(403, "{}")
+                return self.send(200, json.dumps(settings.state()))
             if urlparse(self.path).path == "/api/display-timer":
                 host = self.headers.get("Host", "")
                 local = security.loopback_source(self.client_address[0]) and host == (
@@ -184,6 +198,6 @@ def make_handler(config):
             self.send(status, body, kind)
 
         def do_POST(self):
-            return handle_post(self, config, queue, sessions, failures, display_timer)
+            return handle_post(self, config, queue, sessions, failures, display_timer, settings)
 
     return Handler

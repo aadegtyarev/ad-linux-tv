@@ -10,19 +10,18 @@ import yaml
 
 from .config_errors import ConfigurationError
 from .service_url import validate_service_url
+from .settings import SettingsError, validate_proxy
 from .yaml_config import load_yaml
 
 
 def load_config(path):
     try:
         data = load_yaml(Path(path).read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or set(data) != {
-            "bind",
-            "port",
-            "page_size",
-            "auth",
-            "services",
-        }:
+        if (
+            not isinstance(data, dict)
+            or not {"bind", "port", "page_size", "auth", "services"} <= set(data)
+            or set(data) - {"bind", "port", "page_size", "auth", "services", "proxy"}
+        ):
             raise ConfigurationError("expected bind, port, page_size, auth and services")
         if not isinstance(data["bind"], str) or not data["bind"]:
             raise ConfigurationError("bind must be an IP address")
@@ -43,6 +42,11 @@ def load_config(path):
         if "require_pin" in auth and type(auth["require_pin"]) is not bool:
             raise ConfigurationError("auth.require_pin must be true or false")
         auth.setdefault("require_pin", True)
+        proxy = data.get("proxy", {"mode": "system"})
+        try:
+            validate_proxy(proxy)
+        except SettingsError as exc:
+            raise ConfigurationError(str(exc)) from None
         for key in ("salt", "verifier"):
             base64.b64decode(auth[key], validate=True)
         if (

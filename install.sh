@@ -40,7 +40,10 @@ cp -R "$ROOT/src" "$ROOT/extension" "$DATA/"
 cp "$ROOT/pyproject.toml" "$ROOT/run.sh" "$DATA/"
 python3 -m venv "$DATA/venv"
 "$DATA/venv/bin/pip" install "$DATA"
-if [[ ! -e "$CONFIG" ]]; then "$DATA/venv/bin/ad-linux-tv" init-config --config "$CONFIG"; fi
+if [[ ! -e "$CONFIG" ]]; then
+  "$DATA/venv/bin/ad-linux-tv" init-config --config "$CONFIG"
+  "$DATA/venv/bin/python" -c 'from pathlib import Path; from ad_linux_tv.settings import write_proxy_profile; write_proxy_profile(Path.home() / "snap/firefox/common/ad-linux-tv-profile/user.js", {"mode": "system"})'
+fi
 if (( AUTOSTART )); then
   mkdir -p "$(dirname "$AUTO")"
   cat > "$AUTO" <<EOF

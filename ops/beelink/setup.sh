@@ -60,7 +60,9 @@ fi
 install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/.config
 install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/.config/ad-linux-tv
 install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/snap /home/ad-tv/snap/firefox /home/ad-tv/snap/firefox/common
-if python3 -c 'import socket; s=socket.socket(); s.settimeout(1); result=s.connect_ex(("127.0.0.1",1081)); s.close(); raise SystemExit(result)' ; then
+if [[ -f /home/ad-tv/.config/ad-linux-tv/config.yaml ]] && grep -q '^proxy:' /home/ad-tv/.config/ad-linux-tv/config.yaml; then
+  echo 'TV proxy is configured in config.yaml; keeping that choice.'
+elif python3 -c 'import socket; s=socket.socket(); s.settimeout(1); result=s.connect_ex(("127.0.0.1",1081)); s.close(); raise SystemExit(result)' ; then
   "$ROOT/configure-firefox.sh" --configure
 else
   echo 'Local Xray proxy unavailable; run configure-firefox.sh --configure when it is ready.'

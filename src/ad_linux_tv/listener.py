@@ -58,9 +58,9 @@ def make_server(address, port, handler, worker_slots=None):
     return server_class((address, port), handler, worker_slots or Semaphore(32))
 
 
-def serve(config):
+def serve(config, config_path=None):
     address = ipaddress.ip_address(config["bind"])
-    handler = make_handler(config)
+    handler = make_handler(config, config_path)
     worker_slots = Semaphore(32)
     servers = [make_server(str(address), config["port"], handler, worker_slots)]
     if str(address) != "127.0.0.1" and not (address.version == 4 and address.is_unspecified):

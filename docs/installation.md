@@ -1,7 +1,7 @@
 # Installation / update / removal
 
 1. Review `./install.sh --dry-run`; it previews `~/.local/share/ad-linux-tv`, `~/.config/ad-linux-tv/config.yaml`, `~/snap/firefox/common/ad-linux-tv-profile`, and, by default, `~/.config/autostart/ad-linux-tv.desktop`. Use `--no-autostart` for a separately managed TV session.
-2. Run `./install.sh --install` with a TTY for PIN entry. It uses a user venv and silently prompts for the PIN. Existing config is preserved. The persistent Firefox Snap profile is `~/snap/firefox/common/ad-linux-tv-profile`; no sudo or profile-internal edits are performed. A graphical session is required when opening a signed XPI for confirmation.
+2. Run `./install.sh --install`. It uses a user venv and creates a PIN-free configuration on first install; PIN can be enabled later in TV or phone settings. Existing config is preserved. The persistent Firefox Snap profile is `~/snap/firefox/common/ad-linux-tv-profile`; no sudo or profile-internal edits are performed. A graphical session is required when opening a signed XPI for confirmation.
 3. Firefox Snap support and persistent profile behavior must be checked on each target Kubuntu system. An AMO-signed XPI was installed interactively on the Beelink target and survived Firefox restarts. For a new target or update, provide an HTTPS URL and SHA256 as `AD_LINUX_TV_XPI_URL` and `AD_LINUX_TV_XPI_SHA256`; the installer verifies the digest, saves it in `~/snap/firefox/common`, and opens the XPI for explicit Firefox confirmation. The public release asset is still pending. No unattended registration.
 4. Update by backing up config and rerunning install. `./uninstall.sh --dry-run` previews removal; `--remove` removes app/autostart and preserves config plus the Firefox Snap profile/XPI.
 

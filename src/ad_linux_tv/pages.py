@@ -137,6 +137,7 @@ def get_response(handler, config, queue, static):
         "/launcher_ui.js": ("launcher_ui.js", "text/javascript"),
         "/remote.js": ("remote.js", "text/javascript"),
         "/remote_transport.js": ("remote_transport.js", "text/javascript"),
+        "/settings_controls.js": ("settings_controls.js", "text/javascript"),
         "/style.css": ("style.css", "text/css"),
     }
     if path in assets:

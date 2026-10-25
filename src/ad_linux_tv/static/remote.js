@@ -15,6 +15,11 @@ function remoteFetch(path, options = {}) {
   const body = options.body === undefined ? null : JSON.parse(options.body);
   return transport.request(csrf, method, path, body);
 }
+const phoneSettingsRoot = document.querySelector("#phone-settings-controls");
+const phoneSettingsPanel = phoneSettingsRoot ? new SettingsControls(phoneSettingsRoot,
+  (method, action) => remoteFetch("/api/settings", {
+    method, ...(action ? {body: JSON.stringify(action)} : {}),
+  }), () => window.location.reload()) : null;
 let statusTimer = null;
 let statusRequestId = 0;
 let redirecting = false;
@@ -386,12 +391,14 @@ const keyboardPage = document.querySelector("#remote-keyboard-page");
 const timerPage = document.querySelector("#remote-timer-page");
 const menuPage = document.querySelector("#remote-menu-page");
 const sharePage = document.querySelector("#remote-share-page");
+const settingsPage = document.querySelector("#remote-settings-page");
 function showPage(page) {
   remoteFace.hidden = page !== "remote";
   keyboardPage.hidden = page !== "keyboard";
   timerPage.hidden = page !== "timer";
   menuPage.hidden = page !== "menu";
   sharePage.hidden = page !== "share";
+  settingsPage.hidden = page !== "settings";
   window.scrollTo(0, 0);
   if (page === "keyboard") document.querySelector("#remote-text").focus();
 }
@@ -401,6 +408,11 @@ document.querySelector("#show-timer").onclick = () => {
   void refreshDisplayTimer();
 };
 document.querySelector("#show-menu").onclick = () => showPage("menu");
+document.querySelector("#show-settings").onclick = () => {
+  showPage("settings");
+  void phoneSettingsPanel?.refresh();
+};
+document.querySelector("#back-to-menu").onclick = () => showPage("menu");
 document.querySelector("#show-share").onclick = async () => {
   showPage("share");
   const qr = document.querySelector("#share-qr");

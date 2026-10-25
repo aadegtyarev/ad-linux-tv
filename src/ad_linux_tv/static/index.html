@@ -29,14 +29,19 @@
     </div>
   </section>
   <section id="settings" hidden>
-    <p class="eyebrow">ad-linux-tv</p><h1>Система</h1>
-    <div class="settings-actions"><button id="settings-back">← К сервисам</button></div>
-    <div class="system-audio"><h2>Звук</h2><p id="audio-status" role="status"></p>
+    <header class="system-head"><div><p class="eyebrow">ad-linux-tv</p><h1>Система</h1></div><button id="settings-back">← К сервисам</button></header>
+    <div class="settings-grid"><div class="settings-column"><div class="system-audio"><h2>Звук</h2><p id="audio-status" role="status"></p>
       <label for="audio-output">Выход звука</label><div class="system-audio-row"><select id="audio-output"></select><button id="audio-refresh">Обновить список</button></div>
       <label for="audio-volume">Громкость выхода: <span id="audio-volume-value">100%</span></label>
       <div class="system-audio-row"><input id="audio-volume" type="range" min="0" max="100" step="5" value="100"><button id="audio-mute">Выключить звук</button></div><button id="audio-test" type="button">▶ Проверить звук</button>
     </div>
-    <div class="system-timer"><h2>Таймер экрана</h2><p id="tv-timer-status" role="status">Выключен</p><div class="timer-presets"><button data-timer="15">15 мин</button><button data-timer="30">30 мин</button><button data-timer="60">1 час</button><button data-timer="90">1,5 часа</button><button data-timer="120">2 часа</button><button data-timer="0">Отменить</button></div><p class="timer-hint">Ставит видео на паузу и гасит HDMI. Касание или команда с телефона разбудит экран.</p></div>
+    <div class="system-timer"><h2>Таймер экрана</h2><p id="tv-timer-status" role="status">Выключен</p><div class="timer-presets"><button data-timer="15">15 мин</button><button data-timer="30">30 мин</button><button data-timer="60">1 час</button><button data-timer="90">1,5 часа</button><button data-timer="120">2 часа</button><button data-timer="0">Отменить</button></div></div>
+    </div><div class="settings-column"><div id="tv-settings-controls" class="settings-control-panel">
+      <div class="settings-control"><h2>Доступ с телефона</h2><form data-role="pin-form"><div class="settings-inline"><label>PIN <select data-role="pin-mode"><option value="off">Выключен</option><option value="on">Включен</option></select></label><label data-role="pin-fields">Новый PIN <input data-role="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off"></label><label data-role="pin-fields">Повтор <input data-role="pin-confirm" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off"></label><button type="submit">Сохранить</button></div></form></div>
+      <div class="settings-control"><h2>Лупа под курсором</h2><button data-role="magnifier" type="button">Включить ×2,5</button></div>
+      <div class="settings-control"><h2>Прокси Firefox</h2><form data-role="proxy-form"><div class="settings-inline"><label>Режим <select data-role="proxy-mode"><option value="system">Системный</option><option value="none">Без прокси</option><option value="custom">Указать</option></select></label><label data-role="proxy-fields">Тип <select data-role="proxy-protocol"><option value="http">HTTP</option><option value="socks5">SOCKS5</option></select></label><label data-role="proxy-fields">Адрес <input data-role="proxy-host" type="text" autocomplete="off" spellcheck="false" placeholder="127.0.0.1"></label><label data-role="proxy-fields">Порт <input data-role="proxy-port" type="number" min="1" max="65535" placeholder="1081"></label><button type="submit">Сохранить</button></div></form><div data-role="proxy-restart" hidden><p>Прокси применится после перезапуска ТВ-режима.</p><button data-role="restart" type="button">Перезапустить ТВ-режим</button></div></div>
+      <p data-role="settings-status" role="status"></p>
+    </div></div></div>
     <div class="settings-actions"><button id="open-kde">Выйти из ТВ-режима → KDE</button></div>
     <div id="confirm-kde" hidden><p>Закрыть ТВ-режим и открыть KDE?</p><button id="cancel-kde">Отмена</button><button id="confirm-kde-yes">Да, открыть KDE</button></div>
     <p id="system-status" role="status"></p>
@@ -44,5 +49,6 @@
 </main>
 <script src="/layout.js"></script>
 <script src="/launcher_ui.js"></script>
+<script src="/settings_controls.js"></script>
 <script src="/app.js"></script>
 </html>

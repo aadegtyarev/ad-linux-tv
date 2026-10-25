@@ -25,6 +25,7 @@ Observed on Beelink SER10 Max with HDMI (2026-10-24):
 - [x] After moving phone controls to one WebSocket, the user confirmed the real-phone cursor has almost no jerks and that scrolling works well. The TV launcher serves a visible System button on an ordinary TV; automated navigation confirms arrows and bridge OK stay on tiles, while pointer click opens System.
 - [x] Signed bridge 0.3.1 was copied to the dedicated Firefox profile and Firefox reports it active. Its source files match the unsigned archive submitted for signing; the manifest content matches after JSON parsing.
 - [x] Two Firefox audio streams for the same Kinopoisk film survived the bridge update; pausing the visible player left one stream active. Restarting the TV kiosk cleared both streams. Bridge updates now require a TV-session restart before playback checks.
+- [x] TV System now fits the 1360×768 target screen without a scrollbar and shows PIN, magnifier and Firefox proxy controls. The built-in labwc 2.5× magnifier visibly activated on the TV and was switched off again. The live settings API reports PIN off and retains the existing local Xray proxy; phone WebSocket settings read/write passed without changing either preference.
 
 Still to verify on the actual setup:
 
@@ -38,5 +39,6 @@ Still to verify on the actual setup:
 - [ ] Touch the sound icon and adjust the single output slider during playback; confirm the panel stays open while dragging. Check the same level in remote/System, mute, and output selection with a connected Bluetooth speaker or other output. Confirm Firefox stream and managed HTML media are normalized to 100% while the chosen output level stays unchanged. Confirm website playback audio, service logins/cookies across reboot, and DRM availability without bypasses; confirm behavior after Firefox updates.
 - [ ] Set, replace and cancel the display timer from the phone remote, touch overlay and TV System. During playing video, confirm it pauses before HDMI turns off; wake with touch and with a phone command, and confirm the video does not resume. Check that an unavailable bridge/player leaves HDMI lit with a useful message.
 - [ ] On each of the six services, confirm playback stops on Home and service switching with signed bridge 0.3.1 active.
+- [ ] On a real phone, open Menu → Settings and verify PIN enable/change/disable, magnifier toggle, and proxy mode/restart. Check the TV pairing display and phone relogin after PIN change. Test an actual proxy change and restoring the local Xray setting; confirm websites and LAN pult work afterward.
 
 Treat the built-in HTTP remote as trusted-LAN only; keep its port off the public internet.

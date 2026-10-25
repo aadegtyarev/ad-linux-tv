@@ -91,10 +91,13 @@ def test_cli_starts_server_without_init_config(tmp_path, monkeypatch):
     path = write_config(tmp_path, config_data())
     served = []
     monkeypatch.setattr("sys.argv", ["ad-linux-tv", "--config", str(path)])
-    monkeypatch.setattr(cli, "serve", served.append)
+    monkeypatch.setattr(
+        cli, "serve", lambda config, config_path: served.append((config, config_path))
+    )
     cli.main()
     assert len(served) == 1
-    assert served[0]["port"] == 8765
+    assert served[0][0]["port"] == 8765
+    assert served[0][1] == path
 
 
 def test_cli_init_config_creates_usable_private_config(tmp_path, monkeypatch):
@@ -102,7 +105,9 @@ def test_cli_init_config_creates_usable_private_config(tmp_path, monkeypatch):
 
     path = tmp_path / "new-config.yaml"
     monkeypatch.setattr("sys.argv", ["ad-linux-tv", "init-config", "--config", str(path)])
-    monkeypatch.setattr(cli.getpass, "getpass", lambda _prompt: "test-pin-1234")
     cli.main()
     assert path.stat().st_mode & 0o777 == 0o600
-    assert verify_pin("test-pin-1234", load_config(path)["auth"])
+    data = load_config(path)
+    assert data["auth"]["require_pin"] is False
+    assert not verify_pin("test-pin-1234", data["auth"])
+    assert data["proxy"] == {"mode": "system"}

@@ -24,7 +24,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
     focus() {}
   }
   const ids = ["#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#touch-indicator", "#touch-indicator-2", "#pin", "#pin-visibility",
-    "#services", "#history-back", "#history-forward", "#remote-face", "#remote-keyboard-page", "#remote-timer-page", "#remote-menu-page", "#show-keyboard", "#show-timer", "#show-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
+    "#services", "#history-back", "#history-forward", "#remote-face", "#remote-keyboard-page", "#remote-timer-page", "#remote-menu-page", "#remote-settings-page", "#show-keyboard", "#show-timer", "#show-menu", "#show-settings", "#back-to-menu", "#show-system", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
     "#audio-mute", "#audio-refresh", "#audio-test", "#menu-tab", "#menu-shift-tab", "#open", "#text-form", "#remote-text", "#url-form",
     "#remote-url", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address", "#phone-timer-status", "#remote-share-page", "#show-share", "#share-qr", "#share-status", "#share-url", "#pad-tab", "#pad-shift-tab", "#pad-enter", "#touch-action-text"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
@@ -184,6 +184,10 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   const html = fs.readFileSync("src/ad_linux_tv/static/remote.html", "utf8");
   assert.equal((html.match(/type="range"/g) || []).length, 1);
   assert.equal(elements["#remote-face"].hidden, true);
+  assert.equal(elements["#remote-menu-page"].hidden, false);
+  elements["#show-settings"].onclick();
+  assert.equal(elements["#remote-settings-page"].hidden, false);
+  elements["#back-to-menu"].onclick();
   assert.equal(elements["#remote-menu-page"].hidden, false);
   await elements["#show-share"].onclick();
   assert.equal(elements["#remote-share-page"].hidden, false);

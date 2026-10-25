@@ -12,9 +12,16 @@ const audioStatus = document.querySelector("#audio-status");
 const audioMute = document.querySelector("#audio-mute");
 const timerButtons = Array.from(document.querySelectorAll("#settings [data-timer]"));
 const tvTimerStatus = document.querySelector("#tv-timer-status");
+const tvSettingsRoot = document.querySelector("#tv-settings-controls");
+const tvSettingsPanel = tvSettingsRoot ? new SettingsControls(tvSettingsRoot,
+  (method, action) => fetch("/api/settings", {
+    method, headers: {"Content-Type": "application/json"},
+    ...(action ? {body: JSON.stringify(action)} : {}),
+  }), () => void loadPairingPin()) : null;
 const settingsActions = [document.querySelector("#settings-back"), audioOutput, audioVolume,
   audioMute, document.querySelector("#audio-refresh"),
-  document.querySelector("#audio-test"), ...timerButtons, document.querySelector("#open-kde")];
+  document.querySelector("#audio-test"), ...timerButtons,
+  ...(tvSettingsPanel?.actions() || []), document.querySelector("#open-kde")];
 const confirmActions = [document.querySelector("#cancel-kde"), document.querySelector("#confirm-kde-yes")];
 let currentRemoteAddress = "";
 let pressedTvButton = null;
@@ -171,6 +178,7 @@ function openSettings() {
   settingsActions[0].focus();
   void refreshAudio();
   void refreshDisplayTimer();
+  void tvSettingsPanel?.refresh();
 }
 
 function closeSettings() {
@@ -221,7 +229,9 @@ document.addEventListener("keydown", event => {
   }
   if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
   event.preventDefault();
-  const actions = confirmation.hidden ? settingsActions : confirmActions;
+  const actions = confirmation.hidden
+    ? settingsActions.filter(action => !action.disabled && !action.closest?.("[hidden]"))
+    : confirmActions;
   const index = actions.indexOf(document.activeElement);
   if (confirmation.hidden && (event.key === "ArrowRight" || event.key === "ArrowLeft") &&
       document.activeElement === audioVolume) {
@@ -233,6 +243,11 @@ document.addEventListener("keydown", event => {
     const change = event.key === "ArrowRight" ? 1 : -1;
     audioOutput.selectedIndex = (audioOutput.selectedIndex + change + audioOutput.options.length) % audioOutput.options.length;
     audioOutput.onchange();
+  } else if (confirmation.hidden && (event.key === "ArrowLeft" || event.key === "ArrowRight") && document.activeElement?.tagName === "SELECT") {
+    const select = document.activeElement;
+    const change = event.key === "ArrowRight" ? 1 : -1;
+    select.selectedIndex = (select.selectedIndex + change + select.options.length) % select.options.length;
+    select.onchange?.();
   } else {
     const change = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
     let target = (index + change + actions.length) % actions.length;

@@ -6,7 +6,9 @@
     <keybind key="F12">
       <action name="Execute" command="/usr/local/libexec/ad-linux-tv/cycle-keyboard-language.sh" />
     </keybind>
+    <keybind key="F9"><action name="ToggleMagnify" /></keybind>
   </keyboard>
+  <magnifier><width>440</width><height>320</height><initScale>2.5</initScale><useFilter>yes</useFilter></magnifier>
   <windowRules>
     <windowRule identifier="*firefox*" type="normal" serverDecoration="no">
       <action name="Maximize"/>

@@ -178,3 +178,10 @@ class Sessions:
             return None
         with self.lock:
             return self.csrf_tokens.get(token)
+
+    def reset(self, auth_tag):
+        with self.lock:
+            self.auth_tag = auth_tag
+            self.tokens.clear()
+            self.csrf_tokens.clear()
+            self._save()
