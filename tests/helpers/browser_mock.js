@@ -22,7 +22,7 @@ function browserMock(initial = [], offeredServices = services) {
     storage: {local:area(local), session:area(session)},
     scripting: {executeScript: async options => {
       calls.push(["script", options]);
-      return scriptingResults;
+      return typeof scriptingResults === "function" ? scriptingResults(options) : scriptingResults;
     }},
     windows: {update: async (id, value) => calls.push(["window", id, value])},
     tabs: {

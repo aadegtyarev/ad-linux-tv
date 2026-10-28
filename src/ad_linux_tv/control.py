@@ -20,6 +20,7 @@ COMMANDS = {
     "player_get",
     "player_set",
     "player_pause",
+    "fullscreen",
 }
 FAILURE_TTL_SECONDS = 300
 RESULT_TTL_SECONDS = 300

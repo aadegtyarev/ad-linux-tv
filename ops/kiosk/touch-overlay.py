@@ -45,6 +45,7 @@ window { background: transparent; }
 
 AUDIO_URL = "http://127.0.0.1:8765/api/audio"
 TIMER_URL = "http://127.0.0.1:8765/api/display-timer"
+COMMAND_URL = "http://127.0.0.1:8765/api/command"
 POSITION_FILE = Path.home() / ".config/ad-linux-tv/touch-panel-position.json"
 
 
@@ -103,6 +104,19 @@ def timer_request(minutes=None):
     response = request.Request(TIMER_URL, data=payload, headers=headers)
     with request.urlopen(response, timeout=1) as reply:
         return json.load(reply)
+
+
+def toggle_fullscreen():
+    """The bridge fullscreens the page's video or leaves fullscreen; failures stay silent here."""
+    payload = json.dumps({"command": "fullscreen"}).encode()
+    headers = {"Origin": "http://127.0.0.1:8765", "Content-Type": "application/json"}
+    try:
+        with request.urlopen(
+            request.Request(COMMAND_URL, data=payload, headers=headers), timeout=1
+        ):
+            pass
+    except OSError:
+        pass
 
 
 def history(direction):
@@ -497,7 +511,15 @@ def main():
         GLib.timeout_add(360, clear_flash)
         callback(button)
 
+    def on_fullscreen(_button):
+        toggle_fullscreen()
+        # Switch between the full and the compact panel without waiting for the next poll.
+        GLib.timeout_add(700, update_visibility_once)
+
+    regular_buttons = []
+    fullscreen_button = None
     for label, tooltip, callback in (
+        ("⛶", "Видео на весь экран или обратно", on_fullscreen),
         ("⌂", "К плиткам", on_home),
         ("←", "Назад", on_back),
         ("→", "Вперёд", on_forward),
@@ -510,19 +532,25 @@ def main():
         button.get_style_context().add_class("touch-button")
         button.connect("clicked", lambda widget, action=callback: on_touch_click(widget, action))
         buttons.pack_start(button, True, True, 0)
+        if callback is on_fullscreen:
+            fullscreen_button = button
+        else:
+            regular_buttons.append(button)
     window.add(panel)
     window.connect("destroy", Gtk.main_quit)
     visible = False
 
     def update_visibility():
         nonlocal visible, pinned
-        should_show = touch_available() and not fullscreen_active()
-        if not should_show and pinned:
+        should_show = touch_available()
+        # Over fullscreen video only the fullscreen button stays, so touch users can leave it.
+        compact = fullscreen_active()
+        if (not should_show or compact) and pinned:
             pinned = False
             set_keyboard_visible(False)
-        if not should_show and volume_panel.get_visible():
+        if (not should_show or compact) and volume_panel.get_visible():
             close_volume()
-        if not should_show and timer_panel.get_visible():
+        if (not should_show or compact) and timer_panel.get_visible():
             close_timer()
         if should_show and visible and not dragging:
             apply_position(position["top"], position["right"])
@@ -533,7 +561,16 @@ def main():
             else:
                 window.hide()
             visible = should_show
+        if visible:
+            handle.set_visible(not compact)
+            for button in regular_buttons:
+                button.set_visible(not compact)
+            fullscreen_button.set_visible(True)
         return True
+
+    def update_visibility_once():
+        update_visibility()
+        return False
 
     def keep_keyboard_open():
         if pinned and keyboard_visible() is False:

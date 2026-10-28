@@ -17,7 +17,12 @@ Scan the TV QR code with a phone on the same home network. No PIN is needed by d
 - **Text:** opens a field and the phone keyboard for the focused Firefox field.
 - **Volume:** slider and mute for the selected output. **Menu → Sound** has output choice, a test chime and separate levels for output, Firefox stream and page player.
 - **Magnifier:** button next to the volume.
+- **⛶ Экран:** puts the video on the current page into fullscreen; press again to return. Only on press, never automatically.
 - **Media panel:** appears when the site exposes playback (title, play/pause, position, previous/next where supported).
+
+## Touch panel
+
+On a touchscreen, a small panel offers Home, Back/Forward, keyboard, volume, timer and **⛶** for video fullscreen. Over fullscreen video only the **⛶** button stays, to return.
 
 ## Timer
 
