@@ -48,6 +48,9 @@ TIMER_URL = "http://127.0.0.1:8765/api/display-timer"
 COMMAND_URL = "http://127.0.0.1:8765/api/command"
 ICON_SIZE = 24
 POSITION_FILE = Path.home() / ".config/ad-linux-tv/touch-panel-position.json"
+# The compact panel over fullscreen video keeps its own place, so moving it off the picture
+# does not move the full panel.
+COMPACT_POSITION_FILE = Path.home() / ".config/ad-linux-tv/touch-panel-compact-position.json"
 
 
 def draw_icon(name, cr, width, height):
@@ -122,9 +125,9 @@ def clamp_position(top, right, panel_width, panel_height, screen_width, screen_h
     }
 
 
-def load_position():
+def load_position(path=POSITION_FILE):
     try:
-        value = json.loads(POSITION_FILE.read_text())
+        value = json.loads(path.read_text())
         if set(value) != {"top", "right"}:
             raise ValueError("invalid position")
         if any(type(value[key]) is not int or not 0 <= value[key] <= 10000 for key in value):
@@ -134,17 +137,15 @@ def load_position():
         return {"top": 2, "right": 12}
 
 
-def save_position(value):
-    POSITION_FILE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+def save_position(value, path=POSITION_FILE):
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", dir=POSITION_FILE.parent, delete=False
-        ) as stream:
+        with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as stream:
             temporary = Path(stream.name)
             json.dump(value, stream)
         os.chmod(temporary, 0o600)
-        os.replace(temporary, POSITION_FILE)
+        os.replace(temporary, path)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -345,6 +346,8 @@ def main():
         return False
 
     drag_origin = {"top": position["top"], "right": position["right"]}
+    compact_position = load_position(COMPACT_POSITION_FILE)
+    compact_shown = False
     dragging = False
     drag = Gtk.GestureDrag.new(handle)
 
@@ -364,7 +367,7 @@ def main():
         dragging = False
         apply_position(position["top"], position["right"])
         try:
-            save_position(position)
+            save_position(position, COMPACT_POSITION_FILE if compact_shown else POSITION_FILE)
         except OSError:
             pass
 
@@ -607,10 +610,10 @@ def main():
     visible = False
 
     def update_visibility():
-        nonlocal visible, pinned
+        nonlocal visible, pinned, position, compact_position, compact_shown
         should_show = touch_available()
-        # Over fullscreen video only the fullscreen and volume buttons stay, so touch users
-        # can leave fullscreen and adjust the sound.
+        # Over fullscreen video only the handle, fullscreen and volume buttons stay, so touch
+        # users can leave fullscreen, adjust the sound and move the panel off the picture.
         compact = fullscreen_active()
         if (not should_show or compact) and pinned:
             pinned = False
@@ -619,6 +622,10 @@ def main():
             close_volume()
         if (not should_show or compact) and timer_panel.get_visible():
             close_timer()
+        if compact != compact_shown and not dragging:
+            # Swap to the remembered place of the panel being shown.
+            position, compact_position = compact_position, position
+            compact_shown = compact
         if should_show and visible and not dragging:
             apply_position(position["top"], position["right"])
         if should_show != visible:
@@ -629,7 +636,6 @@ def main():
                 window.hide()
             visible = should_show
         if visible:
-            handle.set_visible(not compact)
             for button in regular_buttons:
                 button.set_visible(not compact)
             for button in compact_buttons:
