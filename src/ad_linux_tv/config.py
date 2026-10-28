@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from .audio import OUTPUT_ID
 from .browser_locale import validate_browser
 from .config_errors import ConfigurationError
 from .discovery import validate_discovery
@@ -69,15 +70,21 @@ def load_config(path):
         if (
             not isinstance(levels, dict)
             or not {"browser", "player"} <= set(levels)
-            or set(levels) - {"browser", "player", "browser_muted"}
+            or set(levels) - {"browser", "player", "browser_muted", "output"}
             or any(
                 type(levels[name]) is not int or not 0 <= levels[name] <= 100
                 for name in ("browser", "player")
             )
             or type(levels.get("browser_muted", False)) is not bool
+            or (
+                "output" in levels
+                and not (
+                    isinstance(levels["output"], str) and OUTPUT_ID.fullmatch(levels["output"])
+                )
+            )
         ):
             raise ConfigurationError(
-                "audio levels must be 0..100 and browser_muted must be boolean"
+                "audio levels must be 0..100, browser_muted boolean and output an output ID"
             )
         pointer = data.get("pointer", {"acceleration": 50})
         if (

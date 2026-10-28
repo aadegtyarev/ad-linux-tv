@@ -257,6 +257,9 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
                         pass
             else:
                 result = audio.apply(action)
+                if isinstance(action, dict) and set(action) & {"output", "volume"}:
+                    # A chosen output or a manual level marks the output as configured.
+                    settings.set_audio_output(result["selected"])
             levels = settings.audio_levels()
             result.update(
                 browser_target=levels["browser"],

@@ -1,9 +1,9 @@
 """Audio controls for the dedicated TV user's PipeWire/PulseAudio session."""
 
 import json
-import os
+import re
 import subprocess
-import tempfile
+import sys
 from pathlib import Path
 
 
@@ -30,6 +30,45 @@ def _sinks():
         return {sink["name"]: sink for sink in data}
     except (TypeError, ValueError, KeyError) as exc:
         raise AudioUnavailable from exc
+
+
+OUTPUT_ID = re.compile(r"[A-Za-z0-9_.:@-]{1,256}")
+
+
+def output_id(name):
+    """PipeWire may add a numeric suffix (".2") to a sink name after a restart."""
+    return re.sub(r"\.\d+$", "", name)
+
+
+def _active_port(item):
+    active = item.get("active_port")
+    return next((port for port in item.get("ports") or [] if port.get("name") == active), None)
+
+
+def _available(item):
+    """Outputs without port information (e.g. Bluetooth) count as available."""
+    port = _active_port(item)
+    return port is None or port.get("availability") != "not available"
+
+
+def _find_output(sinks, wanted):
+    matches = [name for name in sinks if output_id(name) == wanted]
+    return next(
+        (name for name in matches if _available(sinks[name])), matches[0] if matches else None
+    )
+
+
+def choose_output(sinks, saved=None):
+    """Startup choice: the saved output if connected, otherwise the first connected HDMI."""
+    if saved:
+        name = _find_output(sinks, saved)
+        if name and _available(sinks[name]):
+            return name
+    for name, item in sinks.items():
+        port = _active_port(item) or {}
+        if _available(item) and ("hdmi" in name.lower() or port.get("type") == "HDMI"):
+            return name
+    return None
 
 
 def _browser_inputs():
@@ -110,6 +149,9 @@ def get_state():
     browser = _browser_inputs()
 
     def label(name, item):
+        port = _active_port(item)
+        if port and port.get("description"):
+            return port["description"]
         description = item.get("description")
         if description and description != "(null)":
             return description
@@ -122,8 +164,13 @@ def get_state():
         return name
 
     return {
-        "outputs": [{"id": name, "name": label(name, item)} for name, item in sinks.items()],
-        "selected": selected,
+        # Only outputs with something connected, plus the current one so the choice stays truthful.
+        "outputs": [
+            {"id": output_id(name), "name": label(name, item)}
+            for name, item in sinks.items()
+            if _available(item) or name == selected
+        ],
+        "selected": output_id(selected),
         "volume": _volume_percent(sink),
         "muted": mute,
         "browser_volume": _volume_percent(browser[0]) if browser else None,
@@ -131,23 +178,6 @@ def get_state():
             any(bool(item.get("mute", False)) for item in browser) if browser else None
         ),
     }
-
-
-def _remember_output(name):
-    filename = os.environ.get("AD_LINUX_TV_AUDIO_FILE")
-    if not filename:
-        raise AudioUnavailable
-    target = Path(filename)
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", dir=target.parent, delete=False) as stream:
-            temporary = Path(stream.name)
-            stream.write(name + "\n")
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, target)
-    except OSError as exc:
-        if "temporary" in locals():
-            temporary.unlink(missing_ok=True)
-        raise AudioUnavailable from exc
 
 
 def _sink_input_ids():
@@ -173,7 +203,6 @@ def _select_output(name):
                     raise
             else:
                 moved.append(input_id)
-        _remember_output(name)
     except AudioUnavailable:
         for input_id in moved:
             try:
@@ -192,14 +221,15 @@ def apply(action):
         raise ValueError("invalid audio action")
     key, value = next(iter(action.items()))
     if key == "output":
-        if not isinstance(value, str) or value not in _sinks():
+        sinks = _sinks()
+        name = _find_output(sinks, value) if isinstance(value, str) else None
+        if name is None:
             raise ValueError("unknown output")
-        _select_output(value)
+        _select_output(name)
     elif key == "volume":
         if type(value) is not int or not 0 <= value <= 100:
             raise ValueError("invalid volume")
         _pactl("set-sink-volume", "@DEFAULT_SINK@", f"{value}%")
-        _remember_output(_pactl("get-default-sink"))
     elif key == "browser_volume":
         if type(value) is not int or not 0 <= value <= 100:
             raise ValueError("invalid browser volume")
@@ -243,3 +273,46 @@ def apply(action):
     else:
         raise ValueError("unknown audio action")
     return get_state()
+
+
+def select_saved_output(saved):
+    """Apply the startup choice. Returns False while the audio server has no outputs yet."""
+    sinks = _sinks()
+    if not sinks:
+        return False
+    name = choose_output(sinks, saved)
+    if name and _pactl("get-default-sink") != name:
+        _pactl("set-default-sink", name)
+    if name and not saved:
+        # First start: an untouched HDMI output begins audible at full level.
+        _pactl("set-sink-volume", name, "100%")
+        _pactl("set-sink-mute", name, "0")
+    return True
+
+
+def main():
+    """`python -m ad_linux_tv.audio select CONFIG [LEGACY_FILE]` used by the TV session."""
+    from .config import load_config
+
+    if len(sys.argv) not in (3, 4) or sys.argv[1] != "select":
+        print("usage: python -m ad_linux_tv.audio select CONFIG [LEGACY_FILE]", file=sys.stderr)
+        raise SystemExit(2)
+    saved = None
+    try:
+        saved = load_config(sys.argv[2]).get("audio", {}).get("output")
+    except (OSError, ValueError):
+        pass
+    if saved is None and len(sys.argv) == 4:
+        try:
+            saved = output_id(Path(sys.argv[3]).read_text().strip()) or None
+        except OSError:
+            pass
+    try:
+        ready = select_saved_output(saved)
+    except AudioUnavailable:
+        ready = False
+    raise SystemExit(0 if ready else 3)
+
+
+if __name__ == "__main__":
+    main()
