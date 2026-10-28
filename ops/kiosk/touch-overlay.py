@@ -46,16 +46,17 @@ window { background: transparent; }
 AUDIO_URL = "http://127.0.0.1:8765/api/audio"
 TIMER_URL = "http://127.0.0.1:8765/api/display-timer"
 COMMAND_URL = "http://127.0.0.1:8765/api/command"
+ICON_SIZE = 24
 POSITION_FILE = Path.home() / ".config/ad-linux-tv/touch-panel-position.json"
 
 
 def draw_icon(name, cr, width, height):
     """Line icons on one 24-unit grid, so every button centers its icon the same way."""
-    scale = min(width, height) / 24
+    scale = min(width, height, ICON_SIZE) / 24
     cr.translate((width - 24 * scale) / 2, (height - 24 * scale) / 2)
     cr.scale(scale, scale)
     cr.set_source_rgb(1, 1, 1)
-    cr.set_line_width(2.2)
+    cr.set_line_width(2)
     cr.set_line_cap(1)  # round
     cr.set_line_join(1)  # round
 
