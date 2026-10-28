@@ -42,7 +42,10 @@ def sink(name, port_type=None, available=True, description=None, volume="100%"):
 
 def test_output_selection_uses_stable_ids_and_moves_streams(monkeypatch):
     calls = []
+    speaker = sink("card.HiFi__Speaker__sink", description="Long card name")
+    speaker["properties"] = {"device.profile.description": "Speakers"}
     outputs = [
+        speaker,
         sink("card.HiFi__HDMI1__sink.2", "HDMI", description="Long card name HDMI"),
         sink("card.HiFi__Headphones__sink", "Headphones", available=False),
         sink("bluez_output.test", description="Bluetooth speaker", volume="60%"),
@@ -65,6 +68,7 @@ def test_output_selection_uses_stable_ids_and_moves_streams(monkeypatch):
     monkeypatch.setattr(audio, "_pactl", pactl)
     state = audio.get_state()
     assert state["outputs"] == [
+        {"id": "card.HiFi__Speaker__sink", "name": "Speakers"},
         {"id": "card.HiFi__HDMI1__sink", "name": "HDMI Output"},
         {"id": "bluez_output.test", "name": "Bluetooth speaker"},
     ]
