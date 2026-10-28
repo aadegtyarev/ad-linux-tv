@@ -33,6 +33,8 @@ managed = {
     # The fullscreen button reaches the page through the bridge, not a user gesture.
     "full-screen-api.allow-trusted-requests-only": "false",
     "full-screen-api.warning.timeout": "0",
+    # A TV has no click before playback; without this sites such as KION start muted.
+    "media.autoplay.default": "0",
 }
 existing = user_js.read_text() if user_js.exists() else ""
 kept = [line for line in existing.splitlines()
