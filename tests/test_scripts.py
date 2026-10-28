@@ -137,34 +137,3 @@ def test_uninstall_preserves_source_config_and_firefox_profile(tmp_path):
     )
     assert not installed.exists()
     assert all(path.read_text(encoding="utf-8") == "keep" for path in (source, config, profile))
-
-
-def test_first_tv_audio_start_sets_hdmi_full_without_overriding_saved_volume(tmp_path):
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    log = tmp_path / "pactl-calls"
-    pactl = fake_bin / "pactl"
-    pactl.write_text(
-        "#!/bin/sh\n"
-        'case "$*" in\n'
-        '  "list short sinks") printf \x271\\talsa_output.test.hdmi-stereo\\tPipeWire\\n\x27 ;;\n'
-        "  info) printf \x27Default Sink: alsa_output.test.hdmi-stereo\\n\x27 ;;\n"
-        '  *) printf \x27%s\\n\x27 "$*" >> "$PACTL_LOG" ;;\n'
-        "esac\n",
-        encoding="utf-8",
-    )
-    pactl.chmod(0o755)
-    preference = tmp_path / "audio-output.txt"
-    env = {
-        **os.environ,
-        "PATH": f"{fake_bin}:{os.environ['PATH']}",
-        "PACTL_LOG": str(log),
-        "AD_LINUX_TV_AUDIO_FILE": str(preference),
-    }
-    script = ROOT / "ops/kiosk/select-audio.sh"
-    subprocess.run([BASH, str(script)], env=env, check=True, timeout=3)
-    assert "set-sink-volume alsa_output.test.hdmi-stereo 100%" in log.read_text()
-    preference.write_text("alsa_output.test.hdmi-stereo\n")
-    log.unlink()
-    subprocess.run([BASH, str(script)], env=env, check=True, timeout=3)
-    assert not log.exists()

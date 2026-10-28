@@ -174,6 +174,23 @@ def test_browser_locale_writes_managed_block_and_requires_restart(tmp_path):
     assert settings.state()["browser_locales_installed"] == ["ru", "en"]
 
 
+def test_audio_output_is_saved_in_config_with_levels(tmp_path):
+    settings, _sessions, path, _profile = manager(tmp_path)
+    settings.set_audio_level("player", 70)
+    settings.set_audio_output("card.HiFi__HDMI1__sink")
+    settings.set_browser_mute(True)
+    audio = load_config(path)["audio"]
+    assert audio["output"] == "card.HiFi__HDMI1__sink"
+    assert audio["player"] == 70 and audio["browser_muted"] is True
+    with pytest.raises(SettingsError):
+        settings.set_audio_output("bad name; rm")
+    data = yaml.safe_load(path.read_text())
+    data["audio"]["output"] = "bad name"
+    path.write_text(yaml.safe_dump(data))
+    with pytest.raises(ValueError, match="output"):
+        load_config(path)
+
+
 def test_browser_locale_config_rejects_unknown_language(tmp_path):
     path = tmp_path / "config.yaml"
     data = make_data()

@@ -5,6 +5,8 @@ from subprocess import CompletedProcess
 
 from conftest import command_headers, login, make_config, request
 
+from ad_linux_tv.settings import SettingsManager
+
 
 def test_public_services_and_login_ignore_forwarded_headers(endpoint):
     connection, port = endpoint
@@ -346,6 +348,10 @@ def test_audio_control_requires_pairing_and_csrf(endpoint, monkeypatch):
     calls = []
     monkeypatch.setattr(audio, "get_state", lambda: state)
     monkeypatch.setattr(audio, "apply", lambda command: calls.append(command) or state)
+    saved = []
+    monkeypatch.setattr(
+        SettingsManager, "set_audio_output", lambda _self, value: saved.append(value)
+    )
     response, _ = request(connection, "GET", "/api/audio")
     assert response.status == 403
     _, auth, cookie = login(connection, port)
@@ -358,6 +364,7 @@ def test_audio_control_requires_pairing_and_csrf(endpoint, monkeypatch):
     response, body = request(connection, "POST", "/api/audio", '{"volume":45}', headers)
     assert response.status == 200 and json.loads(body)["selected"] == "hdmi"
     assert calls == [{"volume": 45}]
+    assert saved == ["hdmi"]
     headers["Origin"] = "http://attacker.example"
     response, _ = request(connection, "POST", "/api/audio", '{"volume":10}', headers)
     assert response.status == 403 and calls == [{"volume": 45}]

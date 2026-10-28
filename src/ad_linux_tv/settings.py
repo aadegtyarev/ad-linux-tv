@@ -13,6 +13,7 @@ from threading import RLock, Timer
 
 import yaml
 
+from .audio import OUTPUT_ID
 from .browser_locale import (
     browser_locale,
     installed_locales,
@@ -216,7 +217,16 @@ class SettingsManager:
         with self.lock:
             current = self.config.get("audio", {})
             if current.get("browser_muted", False) != value or "browser_muted" not in current:
-                updated = dict(self.audio_levels(), browser_muted=value)
+                updated = {**self.audio_levels(), **current, "browser_muted": value}
+                self._save_config(dict(self.config, audio=updated))
+
+    def set_audio_output(self, value):
+        if not isinstance(value, str) or not OUTPUT_ID.fullmatch(value):
+            raise SettingsError("invalid audio output")
+        with self.lock:
+            current = self.config.get("audio", {})
+            if current.get("output") != value:
+                updated = {**self.audio_levels(), **current, "output": value}
                 self._save_config(dict(self.config, audio=updated))
 
     def set_audio_level(self, name, value):

@@ -22,45 +22,96 @@ def test_volume_rejects_out_of_range_and_boolean(monkeypatch):
     assert calls == []
 
 
-def test_output_selection_moves_streams_and_remembers_choice(monkeypatch, tmp_path):
+def sink(name, port_type=None, available=True, description=None, volume="100%"):
+    item = {"name": name, "volume": {"left": {"value_percent": volume}}, "mute": False}
+    if description:
+        item["description"] = description
+    if port_type:
+        port = f"[Out] {port_type}"
+        item["active_port"] = port
+        item["ports"] = [
+            {
+                "name": port,
+                "type": port_type,
+                "availability": "available" if available else "not available",
+                "description": f"{port_type} Output",
+            }
+        ]
+    return item
+
+
+def test_output_selection_uses_stable_ids_and_moves_streams(monkeypatch):
     calls = []
     outputs = [
-        {
-            "name": "hdmi",
-            "description": "HDMI",
-            "volume": {"left": {"value_percent": "100%"}},
-            "mute": False,
-        },
-        {
-            "name": "bluez_output.test",
-            "description": "Bluetooth speaker",
-            "volume": {"left": {"value_percent": "60%"}},
-            "mute": False,
-        },
+        sink("card.HiFi__HDMI1__sink.2", "HDMI", description="Long card name HDMI"),
+        sink("card.HiFi__Headphones__sink", "Headphones", available=False),
+        sink("bluez_output.test", description="Bluetooth speaker", volume="60%"),
     ]
+    default = "card.HiFi__HDMI1__sink.2"
 
     def pactl(*args):
+        nonlocal default
         calls.append(args)
         if args == ("-f", "json", "list", "sinks"):
             return json.dumps(outputs)
         if args == ("-f", "json", "list", "sink-inputs"):
             return json.dumps([{"index": 7}])
         if args == ("get-default-sink",):
-            return "bluez_output.test"
+            return default
+        if args[0] == "set-default-sink":
+            default = args[1]
         return ""
 
     monkeypatch.setattr(audio, "_pactl", pactl)
-    preference = tmp_path / "audio-output.txt"
-    monkeypatch.setenv("AD_LINUX_TV_AUDIO_FILE", str(preference))
+    state = audio.get_state()
+    assert state["outputs"] == [
+        {"id": "card.HiFi__HDMI1__sink", "name": "HDMI Output"},
+        {"id": "bluez_output.test", "name": "Bluetooth speaker"},
+    ]
+    assert state["selected"] == "card.HiFi__HDMI1__sink"
     state = audio.apply({"output": "bluez_output.test"})
     assert state["selected"] == "bluez_output.test"
     assert state["volume"] == 60
     assert ("move-sink-input", "7", "bluez_output.test") in calls
-    assert preference.read_text() == "bluez_output.test\n"
-    assert preference.stat().st_mode & 0o777 == 0o600
+    audio.apply({"output": "card.HiFi__HDMI1__sink"})
+    assert default == "card.HiFi__HDMI1__sink.2"
 
 
-def test_failed_stream_move_restores_default_output(monkeypatch, tmp_path):
+def test_startup_choice_prefers_saved_then_connected_hdmi():
+    sinks = {
+        "card.HiFi__Speaker__sink": sink("card.HiFi__Speaker__sink"),
+        "card.HiFi__HDMI2__sink.3": sink("card.HiFi__HDMI2__sink.3", "HDMI", available=False),
+        "card.HiFi__HDMI1__sink.3": sink("card.HiFi__HDMI1__sink.3", "HDMI"),
+    }
+    assert audio.choose_output(sinks) == "card.HiFi__HDMI1__sink.3"
+    assert audio.choose_output(sinks, "card.HiFi__Speaker__sink") == "card.HiFi__Speaker__sink"
+    # A saved but disconnected output falls back to the connected HDMI.
+    assert audio.choose_output(sinks, "card.HiFi__HDMI2__sink") == "card.HiFi__HDMI1__sink.3"
+    assert audio.choose_output({"spk": sink("spk")}) is None
+
+
+def test_startup_selection_sets_full_level_only_without_saved_output(monkeypatch, tmp_path):
+    calls = []
+    sinks = [sink("card.HiFi__HDMI1__sink.2", "HDMI")]
+
+    def pactl(*args):
+        calls.append(args)
+        if args == ("-f", "json", "list", "sinks"):
+            return json.dumps(sinks)
+        return "other" if args == ("get-default-sink",) else ""
+
+    monkeypatch.setattr(audio, "_pactl", pactl)
+    assert audio.select_saved_output(None) is True
+    assert ("set-default-sink", "card.HiFi__HDMI1__sink.2") in calls
+    assert ("set-sink-volume", "card.HiFi__HDMI1__sink.2", "100%") in calls
+    calls.clear()
+    assert audio.select_saved_output("card.HiFi__HDMI1__sink") is True
+    assert not [call for call in calls if call[0] == "set-sink-volume"]
+    sinks.clear()
+    assert audio.select_saved_output(None) is False
+
+
+def test_failed_stream_move_restores_default_output(monkeypatch):
     current = "hdmi"
     calls = []
 
@@ -81,28 +132,18 @@ def test_failed_stream_move_restores_default_output(monkeypatch, tmp_path):
         return ""
 
     monkeypatch.setattr(audio, "_pactl", pactl)
-    preference = tmp_path / "audio-output.txt"
-    monkeypatch.setenv("AD_LINUX_TV_AUDIO_FILE", str(preference))
     with pytest.raises(audio.AudioUnavailable):
         audio.apply({"output": "bluetooth"})
-    assert current == "hdmi" and not preference.exists()
+    assert current == "hdmi"
     assert calls[-1] == ("set-default-sink", "hdmi")
 
 
-def test_volume_change_remembers_current_output(monkeypatch, tmp_path):
+def test_volume_change_applies_to_default_output(monkeypatch):
     calls = []
-
-    def pactl(*args):
-        calls.append(args)
-        return "hdmi" if args == ("get-default-sink",) else ""
-
-    monkeypatch.setattr(audio, "_pactl", pactl)
+    monkeypatch.setattr(audio, "_pactl", lambda *args: calls.append(args) or "")
     monkeypatch.setattr(audio, "get_state", lambda: {"volume": 45})
-    preference = tmp_path / "audio-output.txt"
-    monkeypatch.setenv("AD_LINUX_TV_AUDIO_FILE", str(preference))
     assert audio.apply({"volume": 45})["volume"] == 45
     assert ("set-sink-volume", "@DEFAULT_SINK@", "45%") in calls
-    assert preference.read_text() == "hdmi\n"
 
 
 def test_browser_volume_targets_only_firefox_streams(monkeypatch):
