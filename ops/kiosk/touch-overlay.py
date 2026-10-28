@@ -24,7 +24,8 @@ STYLE = b"""
 window { background: transparent; }
 .touch-panel { background: rgba(13, 27, 48, 0.90); border-radius: 10px; padding: 3px; }
 .touch-button { background-image: none; background-color: transparent; color: white;
-  border: 0; box-shadow: none; border-radius: 8px; font: 26px sans-serif;
+  border: 0; box-shadow: none; border-radius: 8px;
+  font: 26px "Noto Sans Symbols 2", "Noto Sans Symbols", sans-serif;
   min-width: 50px; min-height: 53px; padding: 0; }
 .drag-handle { color: #dcefff; background-color: rgba(105, 153, 188, 0.23);
   border-radius: 8px; min-width: 62px; min-height: 53px; font: 30px sans-serif; }
@@ -501,7 +502,7 @@ def main():
         ("←", "Назад", on_back),
         ("→", "Вперёд", on_forward),
         ("⌨", "Клавиатура", on_keyboard),
-        ("🔊", "Громкость", on_volume),
+        ("🔊\ufe0e", "Громкость", on_volume),
         ("◷", "Таймер экрана", on_timer),
     ):
         button = Gtk.Button.new_with_label(label)
