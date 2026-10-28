@@ -10,7 +10,7 @@ from test_config_edges import make_data, write_config
 
 from ad_linux_tv import cli
 from ad_linux_tv.config import load_config
-from ad_linux_tv.discovery import new_discovery
+from ad_linux_tv.discovery import device_identity, new_discovery
 from ad_linux_tv.listener import make_server
 from ad_linux_tv.server import make_handler
 
@@ -53,6 +53,24 @@ def test_new_init_has_identity_but_disabling_unconfigured_legacy_is_noop(tmp_pat
     before = legacy.read_bytes()
     invoke(monkeypatch, legacy, "disable-discovery")
     assert legacy.read_bytes() == before
+
+
+def test_upgrade_adds_hostname_discovery_but_keeps_existing_choice(tmp_path, monkeypatch):
+    monkeypatch.setattr("socket.gethostname", lambda: "ad-server.lan")
+    path = write_config(tmp_path, make_data())
+    invoke(monkeypatch, path, "ensure-discovery")
+    added = load_config(path)["discovery"]
+    assert added["enabled"] is True and "name" not in added
+    assert device_identity(load_config(path))["name"] == "ad-server TV"
+    invoke(monkeypatch, path, "disable-discovery")
+    before = path.read_bytes()
+    invoke(monkeypatch, path, "ensure-discovery")
+    assert path.read_bytes() == before
+    invoke(monkeypatch, path, "enable-discovery", "--discovery-name", "Спальня")
+    assert device_identity(load_config(path))["name"] == "Спальня"
+    invoke(monkeypatch, path, "enable-discovery", "--discovery-name", "")
+    assert "name" not in load_config(path)["discovery"]
+    assert load_config(path)["discovery"]["id"] == added["id"]
 
 
 @pytest.mark.parametrize("value", [None, {}, {"enabled": True}, True])

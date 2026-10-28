@@ -45,6 +45,9 @@ python3 -m venv "$DATA/venv"
 if [[ ! -e "$CONFIG" ]]; then
   "$DATA/venv/bin/ad-linux-tv" init-config --config "$CONFIG"
   "$DATA/venv/bin/python" -c 'from pathlib import Path; from ad_linux_tv.settings import write_proxy_profile; write_proxy_profile(Path.home() / "snap/firefox/common/ad-linux-tv-profile/user.js", {"mode": "system"})'
+else
+  # Older configs gain LAN discovery named after the computer; a disabled choice stays.
+  "$DATA/venv/bin/ad-linux-tv" ensure-discovery --config "$CONFIG"
 fi
 if (( AUTOSTART )); then
   mkdir -p "$(dirname "$AUTO")"

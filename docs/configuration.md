@@ -46,11 +46,11 @@ Mobile mode only changes the User-Agent and zoom; a site may ignore it. Needs th
 
 Port 8765 is fixed. Phones get a 14-day session cookie. Traffic is unencrypted HTTP: use a trusted LAN and never port-forward.
 
-New configs include `discovery: {enabled: true, id, name}` for the [Android app](android.md). For an old config:
+The TV announces itself on the LAN for the [Android app](android.md) as `<computer name> TV` and follows the computer name after a restart. Installing or updating adds this to older configs; a manually disabled announcement stays off. To set your own name, or `''` to follow the computer name again:
 
 ```sh
 ~/.local/share/ad-linux-tv/venv/bin/ad-linux-tv enable-discovery \
   --config ~/.config/ad-linux-tv/config.yaml --discovery-name 'Living room TV'
 ```
 
-Then restart the TV session. `disable-discovery` keeps the ID. Do not copy one ID to another TV.
+Then restart the TV session. `disable-discovery` turns it off and keeps the ID. Do not copy one ID to another TV.

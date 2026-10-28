@@ -6,7 +6,7 @@ The Android app is a thin shell: it finds media centers on the LAN, remembers th
 
 - Android 9+ with an Android System WebView that supports multi-profile (update WebView if the app asks).
 - Phone and TV on the same trusted LAN. HTTP is unencrypted; discovery IDs are not authentication.
-- Discovery enabled on the server (new configs have it; for old ones see [Settings](configuration.md#network-and-discovery)).
+- Discovery enabled on the server (on by default, named after the computer; see [Settings](configuration.md#network-and-discovery)).
 
 ## Install and connect
 
