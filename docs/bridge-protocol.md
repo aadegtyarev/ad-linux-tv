@@ -30,7 +30,7 @@ The bridge applies the effective `view` (`desktop`/`mobile`, zoom 50–300) from
 
 ## Video fullscreen (`video_fullscreen_v1`, bridge 0.4.2+)
 
-Queue command `fullscreen` toggles: if any frame of the active owned tab is fullscreen, the bridge leaves fullscreen; otherwise it fullscreens the largest visible video (a playing one wins), using the site's player box of the same size so its controls stay. No video means `no_media`. `POST /api/command` answers 409 while the bridge does not report the capability. The dedicated profile sets `full-screen-api.allow-trusted-requests-only=false` because a bridge call is not a user gesture.
+Queue command `fullscreen` toggles: if any frame of the active owned tab is fullscreen, the bridge leaves fullscreen; otherwise it fullscreens the largest visible video (a playing one wins), using the site's player box of the same size so its controls stay. From 0.4.3 the search also enters shadow roots (VK Video keeps its `<video>` there) and climbs out through the shadow host; managed-HTML media status does the same. No video means `no_media`. `POST /api/command` answers 409 while the bridge does not report the capability. The dedicated profile sets `full-screen-api.allow-trusted-requests-only=false` because a bridge call is not a user gesture.
 
 ## Outside the bridge
 

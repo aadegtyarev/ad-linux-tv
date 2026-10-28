@@ -58,9 +58,9 @@ function page(paused = false) {
   const column = {getBoundingClientRect:box(0,60,1920,1400), parentElement:body};
   const player = {getBoundingClientRect:box(40,80,1280,720), parentElement:column,
     requestFullscreen:async () => requested.push("player")};
-  const video = {getBoundingClientRect:box(40,80,1280,720), parentElement:player, paused,
+  const video = {tagName:"VIDEO", getBoundingClientRect:box(40,80,1280,720), parentElement:player, paused,
     ended:false, requestFullscreen:async () => requested.push("video")};
-  const preview = {getBoundingClientRect:box(0,900,1600,900), parentElement:body, paused:true,
+  const preview = {tagName:"VIDEO", getBoundingClientRect:box(0,900,1600,900), parentElement:body, paused:true,
     ended:false, requestFullscreen:async () => requested.push("preview")};
   const document = {body, documentElement:{}, fullscreenElement:null,
     querySelectorAll:() => [preview, video], exitFullscreen:async () => requested.push("exit")};
@@ -82,4 +82,26 @@ test("page function fullscreens the playing video's player box and exits on dema
   assert.equal(await view.fullscreen("exit"),true);
   assert.deepEqual(view.requested,["player","exit"]);
   assert.equal(await view.fullscreen("seek"),null);
+});
+
+test("page function finds a video inside a shadow root and fullscreens its host player", async () => {
+  const requested = [];
+  const box = (left, top, width, height) => () => ({left, top, width, height});
+  const body = {getBoundingClientRect:box(0,0,1920,3000)};
+  const column = {getBoundingClientRect:box(0,60,1920,1400), parentElement:body};
+  const host = {tagName:"VK-VIDEO-PLAYER", getBoundingClientRect:box(84,64,1447,796),
+    parentElement:column, requestFullscreen:async () => requested.push("host")};
+  const wrapper = {tagName:"DIV", getBoundingClientRect:box(84,64,1447,796), parentElement:null,
+    getRootNode:() => ({host}), requestFullscreen:async () => requested.push("wrapper")};
+  const video = {tagName:"VIDEO", getBoundingClientRect:box(84,64,1447,796), parentElement:wrapper,
+    paused:false, ended:false, requestFullscreen:async () => requested.push("video")};
+  host.shadowRoot = {querySelectorAll:() => [wrapper, video]};
+  const document = {body, documentElement:{}, fullscreenElement:null, querySelectorAll:() => [host]};
+  const context = {document, getComputedStyle:() => ({visibility:"visible"}), module:{exports:{}}};
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync("extension/player_media.js","utf8"), context);
+  const fullscreen = context.module.exports.videoFullscreen;
+  assert.equal((await fullscreen("probe")).score,1447 * 796 * 4);
+  assert.equal(await fullscreen("enter"),true);
+  assert.deepEqual(requested,["host"]);
 });
