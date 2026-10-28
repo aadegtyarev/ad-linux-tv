@@ -152,10 +152,15 @@ def get_state():
         description = item.get("description")
         if name.startswith("bluez_output.") and description:
             return description  # The speaker's own name, e.g. "JBL Flip".
-        port = _active_port(item)
-        profile = (item.get("properties") or {}).get("device.profile.description")
-        for short in (port and port.get("description"), profile):
-            if short:
+        port = _active_port(item) or {}
+        properties = item.get("properties") or {}
+        # pactl prints missing values as the literal string "(null)".
+        for short in (
+            port.get("description"),
+            properties.get("device.profile.description"),
+            properties.get("node.nick"),
+        ):
+            if short and short != "(null)":
                 return short
         if description and description != "(null)":
             return description
