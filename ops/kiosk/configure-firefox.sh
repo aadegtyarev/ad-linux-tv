@@ -6,20 +6,19 @@ case "$MODE" in
   --dry-run|--configure) ;;
   *) echo 'usage: configure-firefox.sh [--dry-run|--configure]' >&2; exit 2 ;;
 esac
-PROFILE=/home/ad-tv/snap/firefox/common/ad-linux-tv-profile
-printf '%s TV Firefox proxy 127.0.0.1:1081 and compact browser toolbar in %s\n' "$MODE" "$PROFILE"
+COMMON=/home/ad-tv/snap/firefox/common
+PROFILE=$COMMON/ad-linux-tv-profile
+XPI=$COMMON/ad-linux-tv-signed.xpi
+BRIDGE_ID=ad-linux-tv@aadegtyarev.github.io
+LANGPACKS=(ru)
+printf '%s dedicated TV Firefox profile %s: hidden browser chrome, signed bridge from %s, language packs %s\n' \
+  "$MODE" "$PROFILE" "$XPI" "${LANGPACKS[*]}"
 [[ "$MODE" == --dry-run ]] && exit 0
 (( EUID == 0 )) || { echo 'Run with sudo for --configure.' >&2; exit 1; }
-python3 - <<'PY'
-import socket
-with socket.socket() as connection:
-    connection.settimeout(1)
-    try:
-        connection.connect(("127.0.0.1", 1081))
-    except OSError:
-        raise SystemExit("Local Xray proxy is unavailable at 127.0.0.1:1081") from None
-PY
-install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/snap /home/ad-tv/snap/firefox /home/ad-tv/snap/firefox/common "$PROFILE" "$PROFILE/chrome"
+
+install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/snap /home/ad-tv/snap/firefox "$COMMON" "$PROFILE" "$PROFILE/chrome" "$PROFILE/extensions"
+
+# Browser chrome and extension policy are kiosk behavior; the proxy is a separate setting.
 PROFILE_PATH="$PROFILE" python3 - <<'PY_PROFILE'
 import os
 from pathlib import Path
@@ -27,13 +26,10 @@ from pathlib import Path
 profile = Path(os.environ["PROFILE_PATH"])
 user_js = profile / "user.js"
 managed = {
-    "network.proxy.type": "1",
-    "network.proxy.http": '"127.0.0.1"',
-    "network.proxy.http_port": "1081",
-    "network.proxy.ssl": '"127.0.0.1"',
-    "network.proxy.ssl_port": "1081",
-    "network.proxy.no_proxies_on": '"localhost, 127.0.0.1, 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12"',
     "toolkit.legacyUserProfileCustomizations.stylesheets": "true",
+    # Enable the signed bridge and language packs placed in this profile without a prompt.
+    # Firefox still enforces the add-on signature.
+    "extensions.autoDisableScopes": "0",
 }
 existing = user_js.read_text() if user_js.exists() else ""
 kept = [line for line in existing.splitlines()
@@ -53,4 +49,43 @@ css.write_text("\n".join(kept_css + [managed_rules[0], *managed_rules[2:]]) + "\
 PY_PROFILE
 chown ad-tv:ad-tv "$PROFILE/user.js" "$PROFILE/chrome/userChrome.css"
 chmod 600 "$PROFILE/user.js" "$PROFILE/chrome/userChrome.css"
+
+if [[ -f "$XPI" ]]; then
+  install -o ad-tv -g ad-tv -m 600 "$XPI" "$PROFILE/extensions/$BRIDGE_ID.xpi"
+  echo 'Signed bridge placed in the dedicated profile.'
+else
+  echo "No signed bridge at $XPI; Firefox tab control stays unavailable until one is supplied."
+fi
+
+# Language packs must match the installed Firefox version exactly.
+version=$(sed -n 's/^Version=//p' /snap/firefox/current/usr/lib/firefox/application.ini 2>/dev/null || true)
+case $(uname -m) in
+  x86_64) platform=linux-x86_64 ;;
+  aarch64) platform=linux-aarch64 ;;
+  *) platform= ;;
+esac
+if [[ -z $version || -z $platform ]]; then
+  echo 'Firefox Snap version or platform unknown; language packs skipped.' >&2
+  exit 0
+fi
+base="https://releases.mozilla.org/pub/firefox/releases/$version"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+if ! curl -fsS --proto '=https' --tlsv1.2 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"; then
+  echo "Firefox $version checksums unavailable; language packs skipped." >&2
+  exit 0
+fi
+for locale in "${LANGPACKS[@]}"; do
+  expected=$(awk -v name="$platform/xpi/$locale.xpi" '$2 == name {print $1}' "$tmp/SHA256SUMS")
+  if [[ -z $expected ]] || ! curl -fsS --proto '=https' --tlsv1.2 -o "$tmp/$locale.xpi" "$base/$platform/xpi/$locale.xpi"; then
+    echo "Firefox $version language pack $locale unavailable; skipped." >&2
+    continue
+  fi
+  if ! printf '%s  %s\n' "$expected" "$tmp/$locale.xpi" | sha256sum --check --status; then
+    echo "Language pack $locale checksum mismatch; skipped." >&2
+    continue
+  fi
+  install -o ad-tv -g ad-tv -m 600 "$tmp/$locale.xpi" "$PROFILE/extensions/langpack-$locale@firefox.mozilla.org.xpi"
+  echo "Firefox $version language pack $locale installed."
+done
 echo 'Dedicated TV Firefox profile configured; restart the TV session to apply it.'

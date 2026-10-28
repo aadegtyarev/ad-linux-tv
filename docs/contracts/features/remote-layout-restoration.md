@@ -5,7 +5,7 @@ Status: implemented; static UI deployed and checked; APK handoff unconfirmed. Th
 ## Goal and visible behavior
 Restore the design and composition of the pre-redesign phone remote (repository HEAD a19e967), which the operator considers close to ideal. Keep a large touchpad and compact, usable media panel; remove added prose and coarse layout styling. Fix layout jumps/unexpected effects on taps instead of replacing the design. Reconsider settings: service tile selection, website address entry and browser key/Tab command collections do not belong in Settings and are removed from the phone menu/settings UI, not moved into another equally cluttered panel.
 
-The operator approved this as a separate corrective task including a subsequent Beelink update. Preserve discovery/selection, per-center authorization, input retirement, media identity/preconditions and uncertainty/no-replay safeguards. Remove the notification-player activation button from the primary native remote screen; do not auto-start notifications or request new permission to compensate. Widget/new notification automation is not this task.
+The operator approved this as a separate corrective task including a subsequent reference TV update. Preserve discovery/selection, per-center authorization, input retirement, media identity/preconditions and uncertainty/no-replay safeguards. Remove the notification-player activation button from the primary native remote screen; do not auto-start notifications or request new permission to compensate. Widget/new notification automation is not this task.
 
 ## Scenarios
 - Opening the remote shows the familiar concise top actions, large pad/edge arrows, volume and available inline media; native chrome must not crowd the web remote.
@@ -18,7 +18,7 @@ The operator approved this as a separate corrective task including a subsequent 
 - [Phone remote](../surfaces/phone-remote.md)
 - [Android shell](../surfaces/android-remote.md)
 - [Configuration](../surfaces/configuration.md)
-- [Kubuntu operation](../surfaces/kubuntu-operation.md)
+- [Kubuntu operation](../surfaces/linux-operation.md)
 TV launcher rendering, bridge permissions and server control protocols are unchanged.
 
 ## Constraints and non-goals

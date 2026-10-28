@@ -27,10 +27,10 @@ class ModelTest {
     }
 
     @Test fun hostnameResolutionMustBeAllPrivateAndPinnedToLiteral() {
-        val endpoint = Endpoint.parse("beelink.local") { listOf("192.168.1.21", "192.168.1.20") }
+        val endpoint = Endpoint.parse("tv.local") { listOf("192.168.1.21", "192.168.1.20") }
         assertEquals("http://192.168.1.20:8765", endpoint.origin)
         assertThrows(IllegalArgumentException::class.java) {
-            Endpoint.parse("beelink.local") { listOf("192.168.1.20", "8.8.8.8") }
+            Endpoint.parse("tv.local") { listOf("192.168.1.20", "8.8.8.8") }
         }
         assertThrows(IllegalArgumentException::class.java) { Endpoint.parse("unknown.local") }
     }

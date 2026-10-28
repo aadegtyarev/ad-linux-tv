@@ -2,7 +2,7 @@
 
 - Status: Approved for implementation; physical target check pending
 - Date: 2026-10-24
-- Approval: User reported that touching digits on the Beelink on-screen keyboard does not enter a KION profile PIN and asked to make KION usable.
+- Approval: User reported that touching digits on the reference TV on-screen keyboard does not enter a KION profile PIN and asked to make KION usable.
 
 ## Goal and user-visible behavior
 
@@ -20,7 +20,7 @@ Changing KION's authentication flow, bypassing a profile PIN, or changing the us
 
 ## Affected surfaces
 
-- [Kubuntu operation](../surfaces/kubuntu-operation.md): dedicated TV keyboard layout installation.
+- [Kubuntu operation](../surfaces/linux-operation.md): dedicated TV keyboard layout installation.
 
 ## Interfaces and constraints
 
@@ -34,4 +34,4 @@ Update only the dedicated `ad-tv` Squeekboard layouts and their installer. The K
 
 ## Validation
 
-Run shell checks and a layout generation check, then test on the Beelink touchscreen without exposing the PIN.
+Run shell checks and a layout generation check, then test on the reference TV touchscreen without exposing the PIN.

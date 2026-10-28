@@ -17,11 +17,11 @@
 
 ## Affected surfaces
 - [Phone remote](../surfaces/phone-remote.md)
-- [Kubuntu operation](../surfaces/kubuntu-operation.md)
+- [Kubuntu operation](../surfaces/linux-operation.md)
 
 ## Interfaces and constraints
 - Reuse the authenticated `/api/remote-ws` transport. A narrow media route may be added to the existing dispatcher to carry state and bounded actions; keep same session, Origin and CSRF rules. Use Firefox's MPRIS player via the TV-user D-Bus session; commands must never be constructed through a shell.
 - Player controls must not interfere with touchpad pointer motion or audio settings. Disable unsupported actions from reported MPRIS capabilities. Bound and escape the media title in the UI; do not log it or expose URLs.
 
 ## Acceptance and validation
-- Tests cover authenticated media control, Firefox-only selection, unavailable player/capability/seek, state refresh and responsive layout. Verify CI tests and a live Beelink page. Check playback against at least one real service when available; report any physical-site limit explicitly.
+- Tests cover authenticated media control, Firefox-only selection, unavailable player/capability/seek, state refresh and responsive layout. Verify CI tests and a live reference TV page. Check playback against at least one real service when available; report any physical-site limit explicitly.

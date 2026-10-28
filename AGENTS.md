@@ -13,7 +13,7 @@
 
 ## Project-specific commands and conventions
 - Stack / product: implemented Kubuntu media center `ad-linux-tv`; Firefox-based. Target/release verification remains pending.
-- Contract paths: `docs/contracts/features/media-center-mvp.md`; current durable surfaces: `docs/contracts/surfaces/tv-launcher.md`, `phone-remote.md`, `configuration.md`, and `kubuntu-operation.md`.
+- Contract paths: `docs/contracts/features/media-center-mvp.md`; current durable surfaces: `docs/contracts/surfaces/tv-launcher.md`, `phone-remote.md`, `configuration.md`, and `linux-operation.md`.
 - Python 3.12 package in `src/ad_linux_tv/`; install dev dependencies with `python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'`.
 - Tests: `.venv/bin/pytest -q` and `node --test tests/*.test.js`; lint/format: `.venv/bin/ruff check . && .venv/bin/ruff format --check .`; extension: `python3 -m json.tool extension/manifest.json`; shell validation: `bash -n install.sh uninstall.sh run.sh extension/package.sh`.
 - Static launcher/remote are vanilla HTML/CSS/JS; Firefox MV3 bridge lives in `extension/`.

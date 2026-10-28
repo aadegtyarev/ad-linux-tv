@@ -22,7 +22,7 @@ Shared form names/order/defaults/save/reset/error feedback are identical on phon
 No PWA/native app installation, copied site sessionStorage, arbitrary last-page/OAuth URL persistence, hidden live tabs, site-specific automatic clicks, DRM bypass or signed-extension changes. Other queued features remain separate.
 
 ## Affected surfaces
-[configuration](../surfaces/configuration.md), [phone remote](../surfaces/phone-remote.md), [TV launcher](../surfaces/tv-launcher.md), [Kubuntu operation](../surfaces/kubuntu-operation.md).
+[configuration](../surfaces/configuration.md), [phone remote](../surfaces/phone-remote.md), [TV launcher](../surfaces/tv-launcher.md), [Kubuntu operation](../surfaces/linux-operation.md).
 
 ## Acceptance and validation
 Test default/reset125, inherited/effective values, override/save/reset, target/other-config preservation, malformed IDs/DTOs, existing auth/CSRF boundaries, stale scope callbacks/dirty fields and identical shared markup. Backend and frontend owners are sequential exclusive seams with explicit handoff; full Python/Node/Ruff/docs/shell/diff gates and fresh integrated review. Build immutable reviewed release payload before next slice integration. Parent deploys only S01 after gates under its granted GO, preserves signed0.4.1/config/auth/profiles, warns before necessary own-kiosk restart, and verifies actual saved/close/reopen behavior without playback/power/CEC testing. Update durable surfaces after verification, then retire this temporary contract.

@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_FILES = {"README.md", "LICENSE", "pyproject.toml", "install.sh", "uninstall.sh", "run.sh"}
-SOURCE_DIRS = ("src/ad_linux_tv/", "extension/", "ops/beelink/", "scripts/")
+SOURCE_DIRS = ("src/ad_linux_tv/", "extension/", "ops/kiosk/", "scripts/")
 SIGNATURE_FILES = {"META-INF/mozilla.sf", "META-INF/mozilla.rsa"}
 
 

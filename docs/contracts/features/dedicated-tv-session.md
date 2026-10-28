@@ -1,12 +1,12 @@
-# Feature contract: Beelink TV session
+# Feature contract: dedicated TV session
 
 - Status: Approved for implementation; physical display verification pending
 - Date: 2026-10-24
-- Approval: User designated Beelink as the target, requested TV at boot, preserved KDE access, a discreet confirmed exit, and authorized application changes.
+- Approval: User designated reference TV as the target, requested TV at boot, preserved KDE access, a discreet confirmed exit, and authorized application changes.
 
 ## Goal and user-visible behavior
 
-Beelink starts a fullscreen Firefox TV session by default when a physical display is present. The TV session uses a dedicated Linux user and Firefox profile, leaving the existing `adegtyarev` KDE session and its SDDM configuration intact. The launcher shows the phone QR/address on its home page before the phone connects. A System tile contains a confirmed switch to KDE. A user can also switch to a text console and run `gui kde` with confirmation, or `gui tv` to return to TV mode. No direct exit control appears on the launcher home page.
+reference TV starts a fullscreen Firefox TV session by default when a physical display is present. The TV session uses a dedicated Linux user and Firefox profile, leaving the existing `adegtyarev` KDE session and its SDDM configuration intact. The launcher shows the phone QR/address on its home page before the phone connects. A System tile contains a confirmed switch to KDE. A user can also switch to a text console and run `gui kde` with confirmation, or `gui tv` to return to TV mode. No direct exit control appears on the launcher home page.
 
 ## Scenarios and edge cases
 
@@ -26,7 +26,7 @@ Beelink starts a fullscreen Firefox TV session by default when a physical displa
 
 ## Affected surfaces
 
-- [Kubuntu operation](../surfaces/kubuntu-operation.md): installation, paths, graphical startup, mode switching and fallback.
+- [Kubuntu operation](../surfaces/linux-operation.md): installation, paths, graphical startup, mode switching and fallback.
 - [Configuration](../surfaces/configuration.md): dedicated user owns the existing single configuration file; schema remains unchanged.
 - [TV launcher](../surfaces/tv-launcher.md): fullscreen presentation, visible phone pairing QR, System navigation and confirmed KDE switch.
 

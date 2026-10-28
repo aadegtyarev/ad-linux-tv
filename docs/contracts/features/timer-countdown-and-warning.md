@@ -1,6 +1,6 @@
 # Feature contract: visible timer countdown and two-minute warning
 
-- Status: Installed on Beelink; Python/Node checks and live TV badge passed. Phone badge and the two-minute fullscreen warning remain live checks, 2026-10-25.
+- Status: Installed on the reference TV; Python/Node checks and live TV badge passed. Phone badge and the two-minute fullscreen warning remain live checks, 2026-10-25.
 - Approval: User confirmed the proposed phone/TV countdown and TV warning actions in the session.
 
 ## Goal and scenarios
@@ -14,7 +14,7 @@
 ## Affected surfaces
 - [Phone remote](../surfaces/phone-remote.md)
 - [TV launcher](../surfaces/tv-launcher.md)
-- [Kubuntu operation](../surfaces/kubuntu-operation.md)
+- [Kubuntu operation](../surfaces/linux-operation.md)
 
 ## Interfaces and constraints
 - Reuse `/api/display-timer` and the existing phone WebSocket. Expose a nonsecret timer generation identifier to distinguish a new countdown from a dismissed warning.

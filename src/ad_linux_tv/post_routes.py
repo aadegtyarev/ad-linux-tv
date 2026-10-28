@@ -11,7 +11,7 @@ from .control import QueueFullError
 from .host_power import PowerError
 from .http_errors import BodyTimeout
 from .security import loopback_source
-from .settings import SettingsError
+from .settings import SettingsError, kde_available
 
 
 def handle_post(handler, config, queue, sessions, failures, display_timer, settings=None):
@@ -41,6 +41,8 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
             or os.environ.get("AD_LINUX_TV_KIOSK") != "1"
         ):
             return handler.send(403, "{}")
+        if not kde_available():
+            return handler.send(409, "{}")
         try:
             if handler.read_payload() != {}:
                 return handler.send(400, "{}")

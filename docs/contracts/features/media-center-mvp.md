@@ -9,7 +9,7 @@ Provide `ad-linux-tv`, a Kubuntu media center launched in Firefox, with an adapt
 
 The local PWA management page is reachable from a phone on the LAN, with TV-displayed address and QR code. On the launcher grid, phone arrows and OK are guaranteed; on third-party services those controls are not guaranteed. Home, Back, Refresh, and direct service selection are guaranteed through browser/tab control. System volume control is conditional on safe availability and is not a required acceptance item. Protect remote control with a PIN/token.
 
-Deliver a public GitHub repository at `aadegtyarev/ad-linux-tv` with understandable installation, configuration, update, and troubleshooting documentation; `install.sh` and `uninstall.sh`; dependency setup; generated user configuration; graphical autostart; and Firefox components. Beelink is now the designated target under the [Beelink TV session](beelink-tv-session.md) contract; hardware smoke tests remain pending.
+Deliver a public GitHub repository at `aadegtyarev/ad-linux-tv` with understandable installation, configuration, update, and troubleshooting documentation; `install.sh` and `uninstall.sh`; dependency setup; generated user configuration; graphical autostart; and Firefox components. reference TV is now the designated target under the [dedicated TV session](dedicated-tv-session.md) contract; hardware smoke tests remain pending.
 
 ## Scenarios and edge cases
 
@@ -29,7 +29,7 @@ Deliver a public GitHub repository at `aadegtyarev/ad-linux-tv` with understanda
 
 ## Non-goals
 
-Local mpv/files, physical remote control, and circumventing DRM/ads/subscriptions/geo-restrictions. Beelink deployment is governed by the separate [TV session feature](beelink-tv-session.md). Future extensibility for a physical remote is a constraint, not an implementation commitment.
+Local mpv/files, physical remote control, and circumventing DRM/ads/subscriptions/geo-restrictions. reference TV deployment is governed by the separate [TV session feature](dedicated-tv-session.md). Future extensibility for a physical remote is a constraint, not an implementation commitment.
 
 ## Affected surfaces
 
@@ -37,7 +37,7 @@ Affected durable surface contracts:
 - [TV launcher](../surfaces/tv-launcher.md)
 - [Phone remote](../surfaces/phone-remote.md)
 - [Configuration](../surfaces/configuration.md)
-- [Kubuntu operation](../surfaces/kubuntu-operation.md)
+- [Kubuntu operation](../surfaces/linux-operation.md)
 
 Implementation and independent source review are approved; target/release gates remain pending. This feature contract is intentionally retained and is not Complete.
 
@@ -59,12 +59,12 @@ Implementation and independent source review are approved; target/release gates 
 - Packaging provides the documented install/update/troubleshooting flow, safe/idempotent user-scoped install/uninstall as far as practical, dependency setup, generated user configuration, graphical Plasma autostart, and Firefox components; uninstall preserves user configuration. Default paths are `~/.local/share/ad-linux-tv`, `~/.config/ad-linux-tv/config.yaml`, and `~/.config/autostart/`.
 - Default installation requires no sudo. Any unavoidable optional privileged integration/dependency is separately previewed with exact changes and requires separate user consent; no silent sudo.
 - Firefox extension installation never weakens security: default installation verifies a signed XPI and requires explicit interactive Firefox confirmation without unattended profile registration or internal profile mutation. AMO unlisted signing credentials are held only in GitHub secrets; signed XPI and SHA256 are release assets. Unavailable signing credentials and untested Firefox Snap behavior remain explicit release gates, not reasons to use an insecure workaround. Enterprise policy is optional and separately gated.
-- Autostart is scoped to an active graphical user session. Beelink deployment requires separate operator execution and physical verification under the [TV session feature](beelink-tv-session.md).
+- Autostart is scoped to an active graphical user session. reference TV deployment requires separate operator execution and physical verification under the [TV session feature](dedicated-tv-session.md).
 - Public GitHub publication and project PR/merge workflow are completed before release.
 
 ## Validation
 
 - Run automated unit/integration tests for configuration, adaptive layout logic, authentication, and commands, plus available lint/static checks in the development environment.
-- Validate installer/uninstaller safety and documented filesystem previews before Beelink deployment. Validate the Firefox extension manifest and installation/security approach; verify signed XPI downloads against SHA256 and require interactive Firefox confirmation; never claim unattended registration or mutate profile internals or disable signature/security checks.
-- Maintain a Beelink target checklist for LAN phone control, Firefox Snap policy/install/extension persistence, X11/Wayland behavior as applicable, DRM/service playback, and graphical autostart. Run these checks after an operator deploys with HDMI connected; do not claim them verified from development checks. Until AMO signing credentials and target testing exist, release is gated; source/dev checks may continue.
+- Validate installer/uninstaller safety and documented filesystem previews before reference TV deployment. Validate the Firefox extension manifest and installation/security approach; verify signed XPI downloads against SHA256 and require interactive Firefox confirmation; never claim unattended registration or mutate profile internals or disable signature/security checks.
+- Maintain a reference TV target checklist for LAN phone control, Firefox Snap policy/install/extension persistence, X11/Wayland behavior as applicable, DRM/service playback, and graphical autostart. Run these checks after an operator deploys with HDMI connected; do not claim them verified from development checks. Until AMO signing credentials and target testing exist, release is gated; source/dev checks may continue.
 - Pi package inventory could not be checked because parent tooling was incompatible with `/usr/bin/node` 20; this is unverified. Do not install or update Pi packages. No legacy extension conflicts were found during reconnaissance.

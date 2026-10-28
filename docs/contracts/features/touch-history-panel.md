@@ -1,6 +1,6 @@
 # Feature contract: Movable touch panel and browser history
 
-- Status: Implemented on Beelink; awaiting physical touch feedback
+- Status: Implemented on the reference TV; awaiting physical touch feedback
 - Date: 2026-10-24
 - Approval: User asked for Back/Forward on the TV touch panel and phone remote, and for the touch panel to be draggable on the touchscreen.
 
@@ -22,7 +22,7 @@ The small TV touch panel has distinct Back and Forward actions plus a drag handl
 
 - [TV launcher](../surfaces/tv-launcher.md): touch panel and browser history.
 - [Phone remote](../surfaces/phone-remote.md): matching history actions with authenticated input.
-- [Kubuntu operation](../surfaces/kubuntu-operation.md): dedicated TV-user panel position.
+- [Kubuntu operation](../surfaces/linux-operation.md): dedicated TV-user panel position.
 
 ## Interfaces and constraints
 
@@ -37,4 +37,4 @@ The small TV touch panel has distinct Back and Forward actions plus a drag handl
 
 ## Validation
 
-- Run Python/Node, Ruff, shell and dry-run checks. Inspect panel dimensions and stored position on Beelink; ask for physical touch/phone confirmation. Keep the feature contract until target verification is complete.
+- Run Python/Node, Ruff, shell and dry-run checks. Inspect panel dimensions and stored position on the reference TV; ask for physical touch/phone confirmation. Keep the feature contract until target verification is complete.

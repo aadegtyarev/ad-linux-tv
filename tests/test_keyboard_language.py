@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "ops/beelink/cycle-keyboard-language.sh"
+SCRIPT = ROOT / "ops/kiosk/cycle-keyboard-language.sh"
 
 
 def test_tv_language_button_rotates_sources_and_preserves_extra_state(tmp_path):

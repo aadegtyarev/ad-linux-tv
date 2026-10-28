@@ -69,7 +69,7 @@ def test_runtime_template_keeps_bindings_and_never_exports_auth_or_mutates_confi
     data = make_data()
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(data))
-    template = Path(__file__).resolve().parents[1] / "ops/beelink/labwc/rc.xml"
+    template = Path(__file__).resolve().parents[1] / "ops/kiosk/labwc/rc.xml"
     destination = tmp_path / "runtime"
     before = path.read_bytes()
     assert render_labwc(path, template, destination) == 2.5

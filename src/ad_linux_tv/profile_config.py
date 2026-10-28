@@ -1,8 +1,9 @@
-"""Derived view-only preferences in the dedicated TV Firefox profile, not personal profiles."""
+"""Derived view and language preferences in the dedicated TV Firefox profile only."""
 
 import sys
 from pathlib import Path
 
+from .browser_locale import browser_locale, locale_profile_text, replace_block
 from .config import load_config
 from .settings import atomic_write
 from .view_config import view_fingerprint
@@ -18,28 +19,18 @@ def prepare_view_profile(config, path):
     wanted = bool(config["services"])
     if not wanted and BEGIN not in old:
         return  # Legacy/default profile remains byte-for-byte untouched.
-    kept = []
-    inside = False
-    for line in old.splitlines(keepends=True):
-        if line.strip() == BEGIN:
-            if inside:
-                raise ValueError("invalid managed view preference block")
-            inside = True
-        elif line.strip() == END:
-            if not inside:
-                raise ValueError("invalid managed view preference block")
-            inside = False
-        elif not inside:
-            kept.append(line)
-    if inside:
-        raise ValueError("unterminated managed view preference block")
-    text = "".join(kept)
-    if wanted:
-        if text and not text.endswith("\n"):
-            text += "\n"
-        # Firefox setZoomSettings only verifies current scope; it cannot change it.
-        # This dedicated-profile preference enables independent per-tab zoom.
-        text += f'{BEGIN}\nuser_pref("browser.zoom.siteSpecific", false);\n{END}\n'
+    # Firefox setZoomSettings only verifies current scope; it cannot change it.
+    # This dedicated-profile preference enables independent per-tab zoom.
+    body = 'user_pref("browser.zoom.siteSpecific", false);\n' if wanted else None
+    text = replace_block(old, BEGIN, END, body)
+    if text != old:
+        atomic_write(path, text)
+
+
+def prepare_locale_profile(config, path):
+    path = Path(path)
+    old = path.read_text() if path.exists() else ""
+    text = locale_profile_text(old, browser_locale(config))
     if text != old:
         atomic_write(path, text)
 
@@ -50,9 +41,10 @@ def main():
             raise ValueError("expected configuration and dedicated user.js path")
         config = load_config(sys.argv[1])
         prepare_view_profile(config, sys.argv[2])
+        prepare_locale_profile(config, sys.argv[2])
         print(view_fingerprint(config))
     except (OSError, ValueError):
-        print("Cannot prepare dedicated TV view preferences", file=sys.stderr)
+        print("Cannot prepare dedicated TV profile preferences", file=sys.stderr)
         raise SystemExit(1) from None
 
 
