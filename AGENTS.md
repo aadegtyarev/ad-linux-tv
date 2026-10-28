@@ -18,3 +18,7 @@
 - Tests: `.venv/bin/pytest -q` and `node --test tests/*.test.js`; lint/format: `.venv/bin/ruff check . && .venv/bin/ruff format --check .`; extension: `python3 -m json.tool extension/manifest.json`; shell validation: `bash -n install.sh uninstall.sh run.sh extension/package.sh`.
 - Static launcher/remote are vanilla HTML/CSS/JS; Firefox MV3 bridge lives in `extension/`.
 - Constraints: keep service settings in a single `config.yaml`; do not expose secrets in client configuration or logs; no DRM circumvention.
+
+## User-facing tone
+- Russian hints, instructions, dialogs and delivery messages address the user politely as «вы» (lowercase, including «ваш/вам»), briefly and plainly without flattery: «включите», «нажмите», «установите», never informal «включи/нажми/установи».
+- Use direct, concise instructions rather than impersonal infinitive instructions such as «включить телевизор». Keep implementation jargon out of ordinary phone controls; explain unavoidable hardware limitations plainly.

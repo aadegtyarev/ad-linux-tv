@@ -1,0 +1,11 @@
+[Unit]
+Description=Explicitly confirmed ad-linux-tv host power off
+Requisite=ad-linux-tv-kiosk.service
+After=ad-linux-tv-kiosk.service
+
+[Service]
+Type=oneshot
+# Let the authenticated request return acceptance before the host disappears.
+ExecStart=/usr/bin/sleep 2
+ExecStart=/usr/bin/systemctl --no-block poweroff
+TimeoutStartSec=10

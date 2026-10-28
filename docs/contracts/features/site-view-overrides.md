@@ -1,0 +1,28 @@
+# Common and individual site views
+
+Status: approved; operator explicitly resumed with «чини все что чинится и кати в прод». Finish reproducible defects inside this existing settings/version slice, including the matching-view-ACK restart-visibility/status P2, without a new permission question for each small correction. Keep each writer/reviewer exclusive and bounded; seek approval for changed surfaces, APIs, privileges, destructive operations or product semantics, not ordinary corrections within this contract. Fresh review and complete payload gates must pass before rollout. Backend readiness/hash semantics are not authorized to change.
+
+Delivery: the stale-response P1 and matching-ACK restart/status P2 are fixed, independently reviewed and deployed with S02 on2026-10-27. Complete47-runtime-file wheel `71029fad9df1547b15a1f96ea3a68f9c546d6cea1a891a65bb3bd439a5a95fa8`, build `03c898b93f8fee48`, is installed; own-kiosk stop/start succeeded through exact independently reviewed updater6cea. Actual HTTP metadata/assets, six inherited desktop125 views, prepared profile/no restart, fresh own listener, preservation and signed0.4.1 checks passed. Source232Python/171Node/Ruff65 and58 synthetic geometry states remain distinct from physical acceptance. [Deployment evidence](../../verification/settings-versions-2026-10-27.md); frozen receipt `.cache/releases/settings-versions-20261027/release.json`. No automatic restart/navigation/reload on save. Keep this contract for physical phone/TV save/reset/reopen acceptance; approved feature body unchanged.
+
+Operator explicitly authorized production rollout after both corrections pass. Source integration needs no further approval; warn before a necessary own-kiosk restart and preserve private configuration/auth/profiles/signed0.4.1 and unrelated work. QR application download is a separate later slice, not silently part of this payload. No Git commit/push/publication or destructive playback/sleep/poweroff/CEC verification.
+
+## Goal and user flow
+The common omission/reset default becomes **desktop125**, superseding mobile200. All current installed services now use an explicitly saved common desktop125; preserve this user setting and existing explicit service overrides. Phone and TV share one compact «Вид сайтов» form: choose «Все сайты» or one configured site, edit desktop/mobile and zoom, save explicitly. With no exception a site inherits common settings. Clear an individual exception with an explicit «Как для всех сайтов» reset; common reset restores desktop125. No app/bridge update or new button bank.
+
+## Interfaces and safety
+Existing root `setting=view` DTO remains compatible. Add strict authenticated/CSRF-protected `{"setting":"service_view","value":{"id":"kinopoisk","view":{"mode":"desktop","zoom":125}}}`; `view:null` removes only that service override. ID must exactly match a configured service; reject unknown/extra fields, bool/float/out-of-range zoom and all unrelated edits. No arbitrary URL/header/script input. Keep existing validated desktop/mobile zoom50–300 and legacy explicit-view parsing unless required otherwise; global omission/reset is specifically desktop125.
+
+Extend settings state additively with `service_views` in configured order, entries `{id,name,view,effective_view}`: `view` is explicit override or null, `effective_view` is complete resolved mode/zoom. Never include auth, private paths or URLs here. Save atomically to the same private YAML, changing only intended view, preserving auth/sessions/discovery/service IDs/URLs/audio/proxy/magnifier and other exceptions. Reads/default derivation never rewrite YAML.
+
+Saving does not navigate/reload the current site or restart TV. Explain reopening the service; retain truthful prepared-profile/bridge readiness and explicit restart flow if genuinely required. Do not claim the current video already changed. If existing readiness hash unnecessarily treats ordinary zoom updates as a profile change, identify it in handoff rather than hide uncertainty or add automatic restart.
+
+Shared form names/order/defaults/save/reset/error feedback are identical on phone/TV; preserve compact palette/layout and arrows/OK/Back/select/range accessibility. Changing scope does not save. Background refresh must not overwrite dirty input or apply a late response to the wrong scope. Inherit/reset and save need unambiguous feedback.
+
+## Non-goals
+No PWA/native app installation, copied site sessionStorage, arbitrary last-page/OAuth URL persistence, hidden live tabs, site-specific automatic clicks, DRM bypass or signed-extension changes. Other queued features remain separate.
+
+## Affected surfaces
+[configuration](../surfaces/configuration.md), [phone remote](../surfaces/phone-remote.md), [TV launcher](../surfaces/tv-launcher.md), [Kubuntu operation](../surfaces/kubuntu-operation.md).
+
+## Acceptance and validation
+Test default/reset125, inherited/effective values, override/save/reset, target/other-config preservation, malformed IDs/DTOs, existing auth/CSRF boundaries, stale scope callbacks/dirty fields and identical shared markup. Backend and frontend owners are sequential exclusive seams with explicit handoff; full Python/Node/Ruff/docs/shell/diff gates and fresh integrated review. Build immutable reviewed release payload before next slice integration. Parent deploys only S01 after gates under its granted GO, preserves signed0.4.1/config/auth/profiles, warns before necessary own-kiosk restart, and verifies actual saved/close/reopen behavior without playback/power/CEC testing. Update durable surfaces after verification, then retire this temporary contract.

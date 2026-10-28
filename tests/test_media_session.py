@@ -2,7 +2,7 @@
 
 import json
 import time
-from threading import Event
+from threading import Event, Lock
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +17,7 @@ class FakeBus:
         self.playback_status = None
         self.next = False
         self.firefox = True
+        self.title = "Long test video"
 
     def __call__(self, argv, **kwargs):
         self.calls.append(argv)
@@ -26,7 +27,7 @@ class FakeBus:
                 data.append({"name": "org.mpris.MediaPlayer2.firefox.instance1"})
         elif "GetAll" in argv:
             metadata = {
-                "xesam:title": {"type": "s", "data": "Long test video"},
+                "xesam:title": {"type": "s", "data": self.title},
                 "mpris:length": {"type": "x", "data": 120_000_000},
                 "mpris:trackid": {"type": "o", "data": "/org/test/track/1"},
             }
@@ -115,3 +116,83 @@ def test_media_poll_does_not_block_phone_status():
             break
         time.sleep(0.01)
     assert monitor.status()["title"] == "Test"
+
+
+def test_stale_media_identity_refuses_action_before_mpris_call():
+    bus = FakeBus()
+    media = MediaSession(bus)
+    identity = media.status()["media_id"]
+    assert len(identity) == 32
+    media.command("pause", media_id=identity)
+    count = sum("Pause" in call for call in bus.calls)
+    bus.title = "Different Firefox media"
+    with pytest.raises(ValueError, match="target changed"):
+        media.command("pause", media_id=identity)
+    assert sum("Pause" in call for call in bus.calls) == count
+    for bad in (True, "", "x" * 32, "a" * 33):
+        with pytest.raises(ValueError, match="identity"):
+            media.command("pause", media_id=bad)
+    # Older web clients are still compatible, but have no identity precondition.
+    media.command("pause")
+
+
+def test_command_acknowledgement_triggers_fast_background_reconciliation():
+    ready, confirmed = Event(), Event()
+
+    class DelayedReader:
+        def __init__(self):
+            self.commands = 0
+            self.observations = 0
+
+        def status(self):
+            ready.set()
+            if self.commands:
+                self.observations += 1
+            playing = self.observations < 2
+            if not playing:
+                confirmed.set()
+            return {"available": True, "playing": playing}
+
+        def command(self, action, position):
+            assert action == "pause" and position is None
+            self.commands += 1
+            return {"available": True, "playing": True}  # Accepted but not yet observed.
+
+    reader = DelayedReader()
+    monitor = MediaMonitor(reader)
+    assert ready.wait(timeout=1)
+    assert monitor.command("pause")["playing"] is True
+    assert confirmed.wait(timeout=2)
+    for _ in range(100):
+        if monitor.status().get("playing") is False:
+            break
+        time.sleep(0.001)
+    assert monitor.status()["playing"] is False
+    assert reader.commands == 1  # Poll again, never replay the command.
+
+
+def test_poll_publication_holds_operation_lock_until_cache_is_updated():
+    monitor = MediaMonitor.__new__(MediaMonitor)
+    monitor.operation_lock = Lock()
+    monitor.reader = SimpleNamespace(status=lambda: {"available": True, "playing": True})
+    monitor.fast_until = 0
+
+    class PublicationLock:
+        def __enter__(self):
+            assert monitor.operation_lock.locked()
+
+        def __exit__(self, *_args):
+            pass
+
+    class OneIteration:
+        def clear(self):
+            pass
+
+        def wait(self, _timeout):
+            raise StopIteration
+
+    monitor.lock = PublicationLock()
+    monitor.wakeup = OneIteration()
+    with pytest.raises(StopIteration):
+        monitor._poll()
+    assert monitor.state["playing"] is True

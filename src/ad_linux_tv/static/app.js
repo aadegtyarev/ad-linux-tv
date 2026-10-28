@@ -22,7 +22,8 @@ const tvSettingsPanel = tvSettingsRoot ? new SettingsControls(tvSettingsRoot,
     ...(action ? {body: JSON.stringify(action)} : {}),
   }), () => void loadPairingPin()) : null;
 const rangeActions = [audioVolume, ...advancedAudio.sliders(),
-  tvSettingsPanel?.field("pointer-acceleration")].filter(Boolean);
+  tvSettingsPanel?.field("pointer-acceleration"), tvSettingsPanel?.field("magnifier-scale"),
+  tvSettingsPanel?.field("view-zoom")].filter(Boolean);
 for (const slider of rangeActions) slider.addEventListener("click", () => slider.focus());
 const settingsActions = [document.querySelector("#settings-back"), audioOutput, audioVolume,
   audioMute, document.querySelector("#audio-refresh"),
@@ -237,7 +238,8 @@ document.addEventListener("keydown", event => {
   if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
   event.preventDefault();
   const actions = confirmation.hidden
-    ? settingsActions.filter(action => !action.disabled && !action.closest?.("[hidden]"))
+    ? settingsActions.filter(action => !action.disabled && !action.closest?.("[hidden]") &&
+        (action.tagName === "SUMMARY" || !action.closest?.("details:not([open])")))
     : confirmActions;
   const index = actions.indexOf(document.activeElement);
   if (confirmation.hidden && (event.key === "ArrowRight" || event.key === "ArrowLeft") &&
@@ -245,9 +247,10 @@ document.addEventListener("keydown", event => {
     const slider = document.activeElement;
     if (slider.disabled) return;
     const step = Number(slider.step) || 5;
-    slider.value = Math.min(100, Math.max(0, Number(slider.value) + (event.key === "ArrowRight" ? step : -step)));
+    slider.value = Math.min(Number(slider.max) || 100, Math.max(Number(slider.min) || 0,
+      Number(slider.value) + (event.key === "ArrowRight" ? step : -step)));
     slider.oninput?.();
-    slider.onchange();
+    slider.onchange?.();
   } else if (confirmation.hidden && (event.key === "ArrowLeft" || event.key === "ArrowRight") && document.activeElement === audioOutput && audioOutput.options.length) {
     const change = event.key === "ArrowRight" ? 1 : -1;
     audioOutput.selectedIndex = (audioOutput.selectedIndex + change + audioOutput.options.length) % audioOutput.options.length;

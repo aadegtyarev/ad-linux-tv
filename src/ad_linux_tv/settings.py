@@ -13,6 +13,10 @@ from threading import RLock, Timer
 
 import yaml
 
+from .build_info import server_info
+from .magnifier import validate_magnifier
+from .view_config import common_view, service_views, validate_view, view_fingerprint
+
 
 class SettingsError(ValueError):
     pass
@@ -109,7 +113,9 @@ def write_proxy_profile(path, proxy):
 
 
 class SettingsManager:
-    def __init__(self, config, config_path, sessions, pin_file=None, profile=None):
+    def __init__(
+        self, config, config_path, sessions, pin_file=None, profile=None, capabilities=None
+    ):
         self.config = config
         self.path = Path(config_path) if config_path else None
         self.sessions = sessions
@@ -118,6 +124,17 @@ class SettingsManager:
         self.lock = RLock()
         self.magnified = False
         self.proxy_restart_required = False
+        self.capabilities = capabilities or (lambda: [])
+        self.view_boot_known = "AD_LINUX_TV_VIEW_HASH" in os.environ
+        self.applied_view_hash = os.environ.get("AD_LINUX_TV_VIEW_HASH", view_fingerprint(config))
+        # A server-only restart must not mistake a saved pending scale for an
+        # applied one. The compositor launcher exports its boot-time scale.
+        try:
+            self.applied_magnifier_scale = validate_magnifier(
+                {"scale": float(os.environ.get("AD_LINUX_TV_MAGNIFIER_SCALE", "2.5"))}
+            )["scale"]
+        except ValueError:
+            self.applied_magnifier_scale = 2.5
 
     def proxy(self):
         if "proxy" in self.config:
@@ -137,9 +154,25 @@ class SettingsManager:
     def state(self):
         with self.lock:
             return {
+                "server": server_info(),
                 "require_pin": self.config["auth"].get("require_pin", True),
                 "magnifier": self.magnified,
-                "proxy": self.proxy(),
+                "magnifier_scale": self.config.get("magnifier", {}).get("scale", 2.5),
+                "magnifier_applied_scale": self.applied_magnifier_scale,
+                "restart_required": self.proxy_restart_required
+                or self.config.get("magnifier", {}).get("scale", 2.5)
+                != self.applied_magnifier_scale
+                or view_fingerprint(self.config) != self.applied_view_hash,
+                "view": common_view(self.config),
+                "service_views": service_views(self.config),
+                "view_exceptions_count": sum(
+                    "view" in service for service in self.config["services"]
+                ),
+                "view_profile_ready": self.view_boot_known
+                and view_fingerprint(self.config) == self.applied_view_hash,
+                "view_restart_required": view_fingerprint(self.config) != self.applied_view_hash,
+                "view_bridge_ready": "tab_view_v1" in self.capabilities(),
+                "proxy": dict(self.proxy()),
                 "proxy_restart_required": self.proxy_restart_required,
                 "pointer_acceleration": self.config.get("pointer", {}).get("acceleration", 50),
             }
@@ -251,11 +284,59 @@ class SettingsManager:
                             atomic_write(profile_path, old_prefs)
                         raise
                     self.proxy_restart_required = True
+            elif setting == "view":
+                if value is None:
+                    candidate = dict(self.config)
+                    candidate.pop("view", None)
+                else:
+                    try:
+                        view = validate_view(value)
+                    except ValueError as exc:
+                        raise SettingsError(str(exc)) from None
+                    candidate = dict(self.config, view=view)
+                if candidate != self.config:
+                    self._save_config(candidate)
+            elif setting == "service_view":
+                if (
+                    not isinstance(value, dict)
+                    or set(value) != {"id", "view"}
+                    or not isinstance(value["id"], str)
+                ):
+                    raise SettingsError("invalid service view action")
+                service = next(
+                    (item for item in self.config["services"] if item.get("id") == value["id"]),
+                    None,
+                )
+                if service is None:
+                    raise SettingsError("unknown service")
+                if value["view"] is None:
+                    override = None
+                else:
+                    try:
+                        override = validate_view(value["view"])
+                    except ValueError as exc:
+                        raise SettingsError(str(exc)) from None
+                services = [dict(item) for item in self.config["services"]]
+                target = next(item for item in services if item["id"] == value["id"])
+                if override is None:
+                    target.pop("view", None)
+                else:
+                    target["view"] = override
+                candidate = dict(self.config, services=services)
+                if candidate != self.config:
+                    self._save_config(candidate)
             elif setting == "pointer_acceleration":
                 if type(value) is not int or not 0 <= value <= 100:
                     raise SettingsError("invalid pointer acceleration")
                 if value != self.config.get("pointer", {}).get("acceleration", 50):
                     self._save_config(dict(self.config, pointer={"acceleration": value}))
+            elif setting == "magnifier_scale":
+                try:
+                    magnifier = validate_magnifier({"scale": value})
+                except ValueError as exc:
+                    raise SettingsError(str(exc)) from None
+                if magnifier["scale"] != self.config.get("magnifier", {}).get("scale", 2.5):
+                    self._save_config(dict(self.config, magnifier=magnifier))
             elif setting == "magnifier":
                 if type(value) is not bool:
                     raise SettingsError("invalid magnifier state")
@@ -267,7 +348,7 @@ class SettingsManager:
                         raise OSError("magnifier unavailable")
                     self.magnified = value
             elif setting == "restart":
-                if value is not True or not self.proxy_restart_required:
+                if value is not True or not self.state()["restart_required"]:
                     raise SettingsError("restart is not pending")
 
                 def restart_kiosk():

@@ -5,6 +5,8 @@ import time
 from collections import OrderedDict, deque
 from threading import Lock
 
+from .browser_media import BrowserMedia
+
 COMMANDS = {
     "open",
     "home",
@@ -37,6 +39,7 @@ class CommandQueue:
         self.lease_seconds = 15
         self.last_command_failure = None
         self.results = OrderedDict()
+        self.browser_media = BrowserMedia()
 
     def push(self, command, service_id=None, volume=None):
         if (
@@ -54,6 +57,40 @@ class CommandQueue:
             if command == "player_set":
                 item["volume"] = volume
             self.items.append(item)
+            return command_id
+
+    def push_media(self, action, media_id, position=None):
+        state = self.browser_media.status()
+        if (
+            state is None
+            or state["media_id"] != media_id
+            or action not in ("play", "pause", "seek")
+            or (
+                action == "seek"
+                and (
+                    type(position) is not int
+                    or not state["can_seek"]
+                    or not 0 <= position <= state["duration"]
+                )
+            )
+            or (action != "seek" and position is not None)
+        ):
+            raise ValueError("HTML media unavailable or changed")
+        with self.lock:
+            if len(self.items) == self.items.maxlen:
+                raise QueueFullError("browser command queue is full")
+            command_id = secrets.token_urlsafe(12)
+            self.items.append(
+                {
+                    "id": command_id,
+                    "command": "media",
+                    "service_id": None,
+                    "action": action,
+                    "media_id": media_id,
+                    "position": position,
+                    "deadline": int((time.time() + 5) * 1000),
+                }
+            )
             return command_id
 
     def poll(self, now=None):
@@ -115,7 +152,10 @@ class CommandQueue:
                 failure = None
             if failure:
                 failure = {key: failure[key] for key in ("outcome", "reason")}
+        capabilities = self.browser_media.capabilities()
         return {
+            "bridge_protocol": 1 if capabilities else None,
+            "bridge_capabilities": capabilities,
             "extension_online": online,
             "pending_commands": pending,
             "last_command_failure": failure,

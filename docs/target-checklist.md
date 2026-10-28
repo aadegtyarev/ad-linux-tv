@@ -1,6 +1,6 @@
 # Beelink target checklist
 
-Observed on Beelink SER10 Max with HDMI (2026-10-24):
+Earlier observations on Beelink SER10 Max with HDMI (2026-10-24). These do not qualify the later Android, large-phone-UI, compact timer or HTML/view changes:
 
 - [x] Dedicated `ad-tv` labwc session renders the launcher at 1920×1200 without replacing the KDE user's profile.
 - [x] Signed Firefox Snap bridge survives browser restart and reports connected.
@@ -39,7 +39,31 @@ Still to verify on the actual setup:
 - [ ] Test TV navigation with a remote or touch only, including all service tiles and third-party site controls. On each of the six services, start playback, switch service or return Home, and verify background playback stops.
 - [ ] Touch the sound icon and adjust the single output slider during playback; confirm the panel stays open while dragging. Check the same level in remote/System, mute, and output selection with a connected Bluetooth speaker or other output. Confirm Firefox stream and managed HTML media are normalized to 100% while the chosen output level stays unchanged. Confirm website playback audio, service logins/cookies across reboot, and DRM availability without bypasses; confirm behavior after Firefox updates.
 - [ ] Set, replace and cancel the display timer from the phone remote, touch overlay and TV System. During playing video, confirm it pauses before HDMI turns off; wake with touch and with a phone command, and confirm the video does not resume. Check that an unavailable bridge/player leaves HDMI lit with a useful message.
-- [ ] On each of the six services, confirm playback stops on Home and service switching with signed bridge 0.3.1 active.
+- [ ] On each of the six services, confirm playback stops on Home and service switching with the currently approved signed bridge active.
 - [ ] On a real phone, open Menu → Settings and verify PIN enable/change/disable and proxy mode/restart; toggle the magnifier beside volume on the main remote. Check the TV pairing display and phone relogin after PIN change. Test an actual proxy change and restoring the local Xray setting; confirm websites and LAN pult work afterward.
+
+## Power and compact-remote acceptance
+
+The [delivery/source verification](verification/remote-power-2026-10-26.md) records installation and offline checks, not the physical checks below. Full shutdown must not be exercised during development/deployment verification; schedule it separately with explicit operator approval because it stops every host task.
+
+- [ ] On a phone, tap ⏻ for display sleep/wake; verify pause/silence, active/unknown-audio refusal, no automatic resume and the manual-TV-remote hint when output-on does not wake the TV.
+- [ ] Hold1.2s and cancel the whole-host dialog; verify all-tasks/physical-button warning, expiry, no tap after hold and cancellation on blur/switch/auth loss. Do not confirm shutdown merely to test the dialog.
+- [ ] Separately authorized destructive acceptance only: confirm whole-host shutdown, no retry on uncertain result, then restart with the physical computer button. No WoL/CEC provisioning or universal TV-wake claim.
+- [ ] On a real phone, check inline Text above the footer,44px close, successful clear/IME close, no duplicate/uncertain replay; horizontal/vertical/diagonal two-finger scroll and no accidental click. Check all five pages, active/inactive timer, tall/short screens and media present/absent. Confirm reopening the app refreshes media without replaying commands.
+
+## Android and installed-bridge physical acceptance
+
+The automated/JVM/fake-NSD/DOM checks and synthetic offline renders are separate from these unchecked gates. Run playback/expiry/restart tests only when the operator authorizes interruption.
+
+- [ ] On a physical phone, install the APK; check WebView multi-profile support/fail-closed explanation, native picker/manual/QR, camera denial fallback, status/navigation/keyboard insets and large system fonts.
+- [ ] Select two distinct media centers, pair independently, switch with an in-flight gesture/action, and confirm no old callback/input reaches the replacement. Take the selected center offline: never select another. Rediscover the same ID at a new origin, explicitly confirm it, and require that origin's authorization. Check ambiguous duplicate IDs.
+- [ ] Verify the phone's installed version against the last delivered0.2.4 APK. Check compact header, dark picker/manual entry, TV icon on actual launcher masks and no doubled system/IME insets. The0.2.2 inset improvement was operator-confirmed, not exhaustive acceptance. Reloading web UI cannot update native chrome; update without clearing app data.
+- [ ] Check saved-last-center cold start, missing/forgotten/offline/wrong-ID failure, explicit-picker precedence across recreation and no other-center fallback.
+- [ ] Qualify explicit shade opt-in (default off), permission/channel denial/revocation, background/recreation, stale intents after switching and network loss against current-target guards/no retries. VK was operator-confirmed; KION cause remains unknown. No local playback/microphone/boot behavior should appear. S02 native0.2.5/code6 remains source-only, not installed.
+- [ ] Confirm actual `_ad-linux-tv._tcp` delivery on the target LAN after DHCP/interface changes; a server announcing state is not phone reception proof.
+- [ ] Check the new translucent upper-left timer from TV distance and over fullscreen video: hover/click size/readability, Change/Cancel before warning, same panel at two minutes, no conflict with the upper-right toolbar, no focus stealing. Check large-phone countdown/labels without overlap.
+- [ ] Save a different magnifier scale without interrupting playback, explicitly restart, then confirm applied scale/toggle and unchanged default 2.5×. Confirm server-only restart retains pending/applied distinction.
+- [ ] With installed signed bridge0.4.1, check an accessible managed HTML video with missing MPRIS timing: observed position/duration, seekable-range rejection, pause/play/seek, changed track/frame/tab, ambiguous players, timeout/no replay. Protected/live media may remain unavailable.
+- [ ] In the dedicated profile only, configure service mobile/zoom, restart Firefox, open from its tile, check initial header/layout/per-tab zoom and verify that no zoom setter targets unmanaged tabs. Check inherited common settings/reset still prepare per-tab preferences without changing original profile lines; current source defaults to desktop125. The live frozen receipt explicitly saved desktop125 for all six sites, not an installed-backend reset test. Per-site S01 UI remains held/unmerged. Check that mobile mode may require desktop for a service/DRM; do not bypass restrictions.
 
 Treat the built-in HTTP remote as trusted-LAN only; keep its port off the public internet.

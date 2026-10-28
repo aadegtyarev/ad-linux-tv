@@ -142,9 +142,12 @@ test("volume normalization injects only into the active launcher-owned tab", asy
   const managed = controller.getState().managed.one.tabId;
   await controller.normalizeMedia(managed);
   const scripts = mock.calls.filter(call => call[0] === "script");
-  assert.equal(scripts.length, 1);
+  assert.equal(scripts.length, 2);
   assert.deepEqual(scripts[0][1].target, {tabId:managed, allFrames:true});
+  assert.equal(scripts[0][1].func.name, "pinMediaVolume");
+  assert.deepEqual(scripts[1][1].target, {tabId:managed});
+  assert.equal(scripts[1][1].func.name, "pulseOwnedMedia");
   await mock.api.tabs.create({url:"https://unrelated.example/",active:true});
   await controller.normalizeMedia(managed);
-  assert.equal(mock.calls.filter(call => call[0] === "script").length, 1);
+  assert.equal(mock.calls.filter(call => call[0] === "script").length, 2);
 });

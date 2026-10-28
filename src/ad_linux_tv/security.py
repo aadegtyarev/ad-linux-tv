@@ -2,7 +2,7 @@
 
 import ipaddress
 import re
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 # This non-simple header blocks ordinary cross-site requests; it is not an authentication secret.
 BRIDGE_HEADER = "X-AD-Linux-TV-Bridge"
@@ -76,6 +76,24 @@ def remote_url(host_header, port):
         return f"http://{authority}:{port}/remote"
     except ValueError:
         return None
+
+
+def matches_device(path, headers, config):
+    """Optional client identity precondition, never a substitute for cookie/Origin/CSRF.
+
+    An already-open app page must not bootstrap PIN-free auth on a different TV
+    after its old IP is reassigned. Legacy clients without a binding stay compatible.
+    """
+    query = parse_qs(urlsplit(path).query, keep_blank_values=True)
+    values = query.get("device", [])
+    header = headers.get("X-AD-Linux-TV-Device")
+    if not values and header is None:
+        return True
+    if len(values) > 1 or (header is not None and values and values[0] != header):
+        return False
+    expected = header if header is not None else values[0]
+    identity = config.get("discovery")
+    return bool(identity and isinstance(expected, str) and expected == identity["id"])
 
 
 def direct_host(host_header, local_address, port):

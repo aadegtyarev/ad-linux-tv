@@ -282,6 +282,8 @@ def test_phone_touchpad_is_authenticated_bounded_and_targets_firefox(endpoint, m
         ({"dx": 60, "dy": -15}, ["/usr/bin/wlrctl", "pointer", "move", "60", "-15"]),
         ({"click": True}, ["/usr/bin/wlrctl", "pointer", "click"]),
         ({"scroll": 64}, ["/usr/bin/wlrctl", "pointer", "scroll", "64", "0"]),
+        ({"scroll": 0, "scroll_x": 12}, ["/usr/bin/wlrctl", "pointer", "scroll", "0", "12"]),
+        ({"scroll": 64, "scroll_x": -64}, ["/usr/bin/wlrctl", "pointer", "scroll", "64", "-64"]),
     ):
         response, _ = request(connection, "POST", "/api/pointer", json.dumps(payload), headers)
         assert response.status == 200
@@ -291,11 +293,16 @@ def test_phone_touchpad_is_authenticated_bounded_and_targets_firefox(endpoint, m
         {"click": "yes"},
         {"scroll": 0},
         {"scroll": 65},
+        {"scroll": 0, "scroll_x": 0},
+        {"scroll": 1, "scroll_x": 65},
+        {"scroll": 1, "scroll_x": True},
+        {"scroll_x": 1},
+        {"scroll": 1, "scroll_x": 1, "extra": 0},
         {"dx": True, "dy": 1},
     ):
         response, _ = request(connection, "POST", "/api/pointer", json.dumps(payload), headers)
         assert response.status == 400
-    assert len(calls) == 6
+    assert len(calls) == 10
 
     def no_firefox(command, **_kwargs):
         calls.append(command)

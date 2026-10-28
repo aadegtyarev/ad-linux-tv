@@ -21,6 +21,7 @@ preview() {
   printf 'Touch keyboard layouts: %s\n' /home/ad-tv/.local/share/squeekboard/keyboards
   printf 'System units: %s\n' /etc/systemd/system/ad-linux-tv-kiosk.service /etc/systemd/system/ad-linux-tv-boot.service
   printf 'KDE switch unit: %s\n' /etc/systemd/system/ad-linux-tv-switch-kde.service
+  printf 'Confirmed host power unit (not started): %s\n' /etc/systemd/system/ad-linux-tv-poweroff.service
   printf 'PAM: %s\n' /etc/pam.d/ad-linux-tv-kiosk
   printf 'Control scripts: %s\n' /usr/local/libexec/ad-linux-tv /home/adegtyarev/.local/bin/gui
   printf 'Sudoers: %s\n' /etc/sudoers.d/98-ad-linux-tv-gui
@@ -69,14 +70,16 @@ else
   echo 'Local Xray proxy unavailable; run configure-firefox.sh --configure when it is ready.'
 fi
 install -d -m 755 /usr/local/libexec/ad-linux-tv
-install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" "$ROOT/tv-session.sh" "$ROOT/touch-controls.sh" "$ROOT/select-audio.sh" "$ROOT/touch-overlay.py" "$ROOT/timer-overlay.py" "$ROOT/cycle-keyboard-language.sh" "$ROOT/wake-display.sh" /usr/local/libexec/ad-linux-tv/
+install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" "$ROOT/start-compositor.sh" "$ROOT/tv-session.sh" "$ROOT/touch-controls.sh" "$ROOT/select-audio.sh" "$ROOT/touch-overlay.py" "$ROOT/timer-overlay.py" "$ROOT/cycle-keyboard-language.sh" "$ROOT/wake-display.sh" /usr/local/libexec/ad-linux-tv/
 install -m 644 "$ROOT/timer_notice.py" /usr/local/libexec/ad-linux-tv/
 install -d -m 755 /etc/ad-linux-tv/labwc
 install -m 644 "$ROOT/labwc/rc.xml" /etc/ad-linux-tv/labwc/rc.xml
-install -m 644 "$ROOT/ad-linux-tv-kiosk.service" "$ROOT/ad-linux-tv-boot.service" "$ROOT/ad-linux-tv-switch-kde.service" /etc/systemd/system/
+install -m 644 "$ROOT/ad-linux-tv-kiosk.service" "$ROOT/ad-linux-tv-boot.service" "$ROOT/ad-linux-tv-switch-kde.service" "$ROOT/ad-linux-tv-poweroff.service" /etc/systemd/system/
 install -m 644 "$ROOT/ad-linux-tv-kiosk.pam" /etc/pam.d/ad-linux-tv-kiosk
 visudo -cf "$ROOT/98-ad-linux-tv-gui.sudoers" >/dev/null
 install -m 440 "$ROOT/98-ad-linux-tv-gui.sudoers" /etc/sudoers.d/98-ad-linux-tv-gui
+visudo -cf "$ROOT/99-ad-linux-tv-poweroff.sudoers" >/dev/null
+install -m 440 "$ROOT/99-ad-linux-tv-poweroff.sudoers" /etc/sudoers.d/99-ad-linux-tv-poweroff
 
 gui=/home/adegtyarev/.local/bin/gui
 if [[ -e "$gui" ]] && ! cmp -s "$ROOT/gui" "$gui"; then

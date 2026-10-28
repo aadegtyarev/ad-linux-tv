@@ -4,6 +4,7 @@ const bridge = createBridgeController(tabs);
 
 browser.runtime.onMessage.addListener((message, sender) => {
   if (message?.type === "launcher-pulse" && sender.url === LAUNCHER) return bridge.wake();
+  if (message?.type === "managed-media-pulse" && tabs.isOwned(sender.tab)) return bridge.wake();
 });
 browser.tabs.onRemoved.addListener(tabId => { void tabs.onRemoved(tabId); });
 browser.tabs.onUpdated.addListener((tabId, change) => {

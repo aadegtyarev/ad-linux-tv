@@ -28,8 +28,25 @@ def make_config():
     }
 
 
+@pytest.fixture(autouse=True)
+def forbid_real_host_shutdown(monkeypatch):
+    def forbidden():
+        raise AssertionError("Tests must inject/mock host shutdown; never power off this host")
+
+    monkeypatch.setattr("ad_linux_tv.host_power.dispatch_shutdown", forbidden)
+    monkeypatch.setattr("ad_linux_tv.cec.wake", lambda: "unavailable")
+
+
 @pytest.fixture
-def endpoint():
+def endpoint(monkeypatch):
+    # WebSocket construction eagerly obtains a media monitor. Endpoint tests must
+    # never start its real ambient session-bus poller, even when not testing media.
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "ad_linux_tv.remote_rpc.get_media_monitor",
+        lambda: SimpleNamespace(status=lambda: {"available": False}),
+    )
     server = make_server("127.0.0.1", 0, make_handler(make_config()))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     connection = HTTPConnection("127.0.0.1", server.server_port)

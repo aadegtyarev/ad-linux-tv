@@ -15,6 +15,9 @@ else
   echo 'Port 8765 is still in use; retrying the TV session later.' >&2
   exit 1
 fi
+# Derived per-tab view preferences apply only to this dedicated profile on startup.
+export AD_LINUX_TV_VIEW_HASH
+AD_LINUX_TV_VIEW_HASH=$("$DATA/venv/bin/python" -m ad_linux_tv.profile_config "$CONFIG" "$PROFILE/user.js")
 "$DATA/venv/bin/ad-linux-tv" --config "$CONFIG" &
 SERVER=$!
 cleanup() {

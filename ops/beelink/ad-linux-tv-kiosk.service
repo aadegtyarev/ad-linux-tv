@@ -23,7 +23,7 @@ Environment=XCURSOR_SIZE=72
 Environment=MOZ_ENABLE_WAYLAND=1
 Environment=AD_LINUX_TV_WINDOWED=1
 ExecStartPre=+/usr/bin/chvt 1
-ExecStart=/usr/bin/labwc -C /etc/ad-linux-tv/labwc -S /usr/local/libexec/ad-linux-tv/tv-session.sh
+ExecStart=/usr/local/libexec/ad-linux-tv/start-compositor.sh
 ExecStopPost=+/usr/bin/chvt 2
 StandardInput=tty-fail
 TTYPath=/dev/tty1

@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from . import audio
 from .config import verify_pin
 from .control import QueueFullError
+from .host_power import PowerError
 from .http_errors import BodyTimeout
 from .security import loopback_source
 from .settings import SettingsError
@@ -17,6 +18,18 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
     path = urlparse(handler.path).path
     if path == "/extension/ack":
         return handle_ack(handler, queue)
+    if path == "/extension/media":
+        if not handler.valid_bridge():
+            return handler.send(403, "{}")
+        try:
+            queue.browser_media.report(handler.read_payload())
+        except OverflowError:
+            return handler.send(413, "{}")
+        except BodyTimeout:
+            return handler.send(408, "{}", headers=(("Connection", "close"),))
+        except (ValueError, TypeError):
+            return handler.send(400, "{}")
+        return handler.send(200, "{}")
     local_ui = loopback_source(handler.client_address[0])
     if not handler.valid_origin(local_ui):
         return handler.send(403, "{}")
@@ -78,6 +91,36 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
     token = handler.authorized()
     if not handler.private() or (not local_ui and not token):
         return handler.send(403, "{}")
+    if path == "/api/power":
+        if (
+            os.environ.get("AD_LINUX_TV_KIOSK") != "1"
+            or not token
+            or not sessions.csrf_valid(token, handler.headers.get("X-CSRF-Token"))
+        ):
+            return handler.send(403, "{}")
+        power_control = getattr(handler, "host_power", None)
+        if power_control is None:
+            return handler.send(503, "{}")
+        try:
+            action = handler.read_payload()
+            if action == {"action": "prepare"}:
+                return handler.send(200, json.dumps(power_control.prepare(token)))
+            if (
+                isinstance(action, dict)
+                and set(action) == {"action", "challenge"}
+                and action["action"] == "shutdown"
+            ):
+                status, result = power_control.confirm(token, action["challenge"])
+                return handler.send(status, json.dumps(result))
+            return handler.send(400, "{}")
+        except OverflowError:
+            return handler.send(413, "{}")
+        except BodyTimeout:
+            return handler.send(408, "{}", headers=(("Connection", "close"),))
+        except PowerError as error:
+            return handler.send(error.status, "{}")
+        except (TypeError, ValueError):
+            return handler.send(400, "{}")
     if path == "/api/settings":
         exact_local = (
             local_ui and handler.headers.get("Host") == f"127.0.0.1:{handler.server.server_port}"
@@ -112,8 +155,19 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
             return handler.send(403, "{}")
         try:
             action = handler.read_payload()
-            if action == {"wake": True}:
-                okay = display_timer.wake()
+            if (
+                isinstance(action, dict)
+                and set(action) in ({"wake"}, {"wake", "cec"})
+                and action["wake"] is True
+                and type(action.get("cec", False)) is bool
+            ):
+                okay = display_timer.wake(force=True, use_cec=action.get("cec", False))
+            elif isinstance(action, dict) and set(action) == {"sleep"} and action["sleep"] is True:
+                result = display_timer.sleep_now()
+                return handler.send(
+                    202 if result["phase"] == "pausing" else 503 if result["error"] else 200,
+                    json.dumps(result),
+                )
             elif isinstance(action, dict) and set(action) == {"minutes"}:
                 result = display_timer.set(action["minutes"])
                 okay = result["error"] is None
@@ -279,11 +333,17 @@ def handle_pointer(handler):
             command = ["/usr/bin/wlrctl", "pointer", "move", str(dx), str(dy)]
         elif data == {"click": True}:
             command = ["/usr/bin/wlrctl", "pointer", "click"]
-        elif set(data) == {"scroll"}:
-            amount = data["scroll"]
-            if type(amount) is not int or not -64 <= amount <= 64 or amount == 0:
+        elif set(data) in ({"scroll"}, {"scroll", "scroll_x"}):
+            amount, horizontal = data["scroll"], data.get("scroll_x", 0)
+            if (
+                type(amount) is not int
+                or type(horizontal) is not int
+                or not -64 <= amount <= 64
+                or not -64 <= horizontal <= 64
+                or (amount == 0 and horizontal == 0)
+            ):
                 raise ValueError("invalid pointer scroll")
-            command = ["/usr/bin/wlrctl", "pointer", "scroll", str(amount), "0"]
+            command = ["/usr/bin/wlrctl", "pointer", "scroll", str(amount), str(horizontal)]
         else:
             raise ValueError("invalid pointer action")
         if not firefox_active():

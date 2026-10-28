@@ -4,6 +4,13 @@ class RemoteTransport {
   constructor(location) {
     const address = new URL("/api/remote-ws", location.href);
     address.protocol = address.protocol === "https:" ? "wss:" : "ws:";
+    const parameters = new URLSearchParams(new URL(location.href).hash.slice(1));
+    this.expectedDevice = parameters.get("device");
+    if (this.expectedDevice !== null) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(this.expectedDevice))
+        throw new Error("invalid device binding");
+      address.searchParams.set("device", this.expectedDevice);
+    }
     this.address = address.href;
     this.socket = null;
     this.connecting = null;

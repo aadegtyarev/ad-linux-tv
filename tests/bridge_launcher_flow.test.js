@@ -43,6 +43,7 @@ async function orderedOKHome(lostFocus) {
   let offset = 0;
   const wire = async (url, options = {}) => {
     if (url.endsWith("/poll")) return {ok:true, json:async () => [queue[offset]]};
+    if (url.endsWith("/media")) return {ok:true};
     offset++;
     return {ok:true};
   };

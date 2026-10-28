@@ -1,0 +1,2 @@
+# Only the fixed root-owned unit, never arbitrary systemctl or shell arguments.
+ad-tv ALL=(root) NOPASSWD: /usr/bin/systemctl --no-block start ad-linux-tv-poweroff.service

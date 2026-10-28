@@ -42,6 +42,7 @@ test("ACK loss redelivery acknowledges completed ID without repeating effect", a
   let ackAttempts = 0;
   const fetcher = async url => {
     if (url.endsWith("/poll")) return {ok:true, json:async () => [operation]};
+    if (url.endsWith("/media")) return {ok:true};
     ackAttempts++;
     return {ok:ackAttempts > 1};
   };
@@ -66,6 +67,7 @@ test("OK resolves selected service inline before following Home", async () => {
   let offset = 0;
   const wire = async (url, options = {}) => {
     if (url.endsWith("/poll")) return {ok:true, json:async () => queue[offset] ? [queue[offset]] : []};
+    if (url.endsWith("/media")) return {ok:true};
     const ack = JSON.parse(options.body);
     assert.equal(ack.outcome, "completed");
     offset++;
@@ -91,6 +93,7 @@ test("player volume ACK keeps its measured value after delivery retry", async ()
   const acknowledgements = [];
   const fetcher = async (url, options = {}) => {
     if (url.endsWith("/poll")) return {ok:true, json:async () => [operation]};
+    if (url.endsWith("/media")) return {ok:true};
     acknowledgements.push(JSON.parse(options.body));
     return {ok:acknowledgements.length > 1};
   };
@@ -98,5 +101,5 @@ test("player volume ACK keeps its measured value after delivery retry", async ()
   await bridge.wake();
   await bridge.wake();
   assert.deepEqual(acknowledgements.map(ack => ack.volume), [75, 75]);
-  assert.equal(mock.calls.filter(call => call[0] === "script").length, 1);
+  assert.equal(mock.calls.filter(call => call[0] === "script" && call[1].func.name === "playerMediaVolume").length, 1);
 });

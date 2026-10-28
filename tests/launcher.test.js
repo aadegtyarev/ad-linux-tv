@@ -171,7 +171,8 @@ test("System shows all three sound levels without changing them on refresh", asy
   ui.elements["#system-button"].click();
   await ready();
   const html = fs.readFileSync("src/ad_linux_tv/static/index.html", "utf8");
-  assert.equal((html.match(/type="range"/g) || []).length, 4);
+  assert.equal((html.match(/type="range"/g) || []).length, 6);
+  assert.match(html, /id="tv-magnifier-scale"/);
   assert.equal(ui.elements["#audio-volume"].value, 100);
   assert.equal(ui.elements["#tv-browser-volume"].value, 100);
   assert.equal(ui.elements["#tv-browser-mute"].disabled, false);

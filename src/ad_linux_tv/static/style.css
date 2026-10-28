@@ -29,7 +29,7 @@ button:focus-visible{outline:4px solid #65d0ff;outline-offset:3px}
 .audio-card #audio-mute{width:100%;margin-top:14px}.audio-card input[type=range]{appearance:none;-webkit-appearance:none;height:48px;cursor:pointer}.audio-card input[type=range]::-webkit-slider-runnable-track{height:9px;border-radius:99px;background:#567692}.audio-card input[type=range]::-moz-range-track{height:9px;border-radius:99px;background:#567692}.audio-card input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;margin-top:-10px;border:3px solid #fff;border-radius:50%;background:#36b8f0;box-shadow:0 2px 7px #0008}.audio-card input[type=range]::-moz-range-thumb{width:24px;height:24px;border:3px solid #fff;border-radius:50%;background:#36b8f0;box-shadow:0 2px 7px #0008}
 
 .pin-entry{display:flex;align-items:stretch;gap:9px}.pin-entry input{flex:1}.pin-entry #pin-visibility{flex:none;width:58px;padding:8px;font-size:1em}.pin-entry #pin-visibility[aria-pressed="true"]{background:#176991;border-color:#65d0ff}
-/* Phone remote: primary actions stay on one screen; secondary actions live in Menu. */
+/* Phone remote: primary actions are direct, secondary actions live in Menu; short screens scroll. */
 .remote-main{width:100%;max-width:520px;min-height:100dvh;padding:max(10px,env(safe-area-inset-top)) 14px max(12px,env(safe-area-inset-bottom));display:flex;flex-direction:column;font-size:16px}
 .remote-main [hidden]{display:none!important}
 .remote-header{display:flex;align-items:center;gap:9px;min-height:42px;margin:0 0 6px}.remote-brand{font-size:12px;font-weight:800;letter-spacing:.12em;color:#7ed8ff}.remote-title{font-size:13px;color:#dbe8f4}.remote-connection{margin-left:auto;width:9px;height:9px;border-radius:50%;background:#61dba8;box-shadow:0 0 0 3px #61dba829}.remote-connection[data-online="false"]{background:#ffb278;box-shadow:0 0 0 3px #ffb27828}
@@ -92,16 +92,95 @@ button:focus-visible{outline:4px solid #65d0ff;outline-offset:3px}
 #settings .system-audio,#settings .system-timer{max-width:none;margin:0;padding:13px 17px;border-radius:14px}#settings .system-audio h2,#settings .system-timer h2,#settings .settings-control h2{font-size:18px;margin:0 0 5px}#settings .system-audio label{margin:6px 0 3px;font-size:13px}#settings .system-audio button{padding:6px 10px;font-size:13px;min-height:38px}#settings .system-audio select{padding:5px 8px;font-size:13px;min-height:38px}#settings .system-audio input[type=range]{min-height:35px}#settings .system-audio #audio-test{margin-top:7px}#settings .system-timer p{margin:2px 0 6px;font-size:13px}#settings .timer-presets{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}#settings .timer-presets button{min-height:37px;font-size:13px}
 #settings .settings-actions{margin-top:12px}#settings .settings-actions button{padding:8px 14px;font-size:14px}#settings #system-status{margin-top:4px;font-size:13px}
 .settings-control-panel{display:flex;flex-direction:column;gap:9px}.settings-control{min-width:0;padding:11px 14px;border:1px solid #526b83;border-radius:14px;background:#1d2a3c}.settings-control h3{font-size:16px;margin:0 0 8px}.settings-inline{display:flex;align-items:end;gap:7px;flex-wrap:wrap}.settings-inline label{display:flex;flex-direction:column;gap:3px;min-width:0;font-size:12px;color:#d8e6f1}.settings-inline input,.settings-inline select{min-width:0;width:100%;height:37px;border:1px solid #6883a1;border-radius:9px;background:#101d2e;color:white;padding:5px 8px;font:inherit;font-size:14px}.settings-inline label:has([data-role="pin-mode"]),.settings-inline label:has([data-role="proxy-mode"]){flex:1 1 110px}.settings-inline label:has([data-role="pin"]),.settings-inline label:has([data-role="pin-confirm"]){flex:1 1 90px}.settings-inline label:has([data-role="proxy-protocol"]){flex:1 1 85px}.settings-inline label:has([data-role="proxy-host"]){flex:2 1 105px}.settings-inline label:has([data-role="proxy-port"]){flex:1 1 60px}.settings-control button{min-height:37px;border:1px solid #6883a1;border-radius:9px;background:#245575;color:white;padding:5px 10px;font-size:13px}.settings-control [hidden],.settings-control-panel [hidden]{display:none!important}.settings-control [data-role="proxy-restart"],.settings-control-panel [data-role="settings-status"]{font-size:12px;color:#9bdff9;margin:5px 0 0}.settings-control-panel [data-role="settings-status"][data-error="true"]{color:#ffb5a8}
+.settings-control[data-role="about"]{overflow-wrap:anywhere}
 #phone-settings-controls{display:block}#phone-settings-controls .settings-control{margin-top:10px}#phone-settings-controls .settings-inline{align-items:stretch}#phone-settings-controls .settings-inline label{flex:1 1 100%}#phone-settings-controls .settings-inline button{width:100%;min-height:46px}
 @media(max-width:800px){.settings-grid{grid-template-columns:1fr}#settings{max-width:680px}}
 /* Lens shortcut sits beside the volume slider, directly below the touchpad. */
 .remote-bottom{gap:6px}.remote-bottom .remote-volume{gap:5px;padding:6px 8px}.remote-bottom .remote-volume>button{width:46px;min-width:46px}.remote-bottom #show-keyboard{width:72px;flex:none}.remote-magnifier-button{width:62px;flex:none;background:#294963}.remote-magnifier-button[aria-pressed="true"]{border-color:#8adfff;background:#176991;box-shadow:0 0 0 2px #65d0ff66}.remote-magnifier-button span:first-child{font-size:26px}
-@media(max-width:360px){.remote-bottom #show-keyboard{width:66px}.remote-magnifier-button{width:57px}.remote-bottom .remote-volume{padding:5px 6px}.remote-bottom .remote-volume>button{width:42px;min-width:42px}}
+@media(max-width:360px){.remote-bottom #show-keyboard{width:66px}.remote-magnifier-button{width:57px}.remote-bottom .remote-volume{padding:5px 6px}.remote-bottom .remote-volume>button{width:44px;min-width:44px}}
 .advanced-audio{display:grid;grid-template-columns:1fr 1fr;column-gap:14px;margin-top:5px}.advanced-audio label{grid-row:1}.advanced-audio input{grid-row:2;width:100%}.advanced-audio small{grid-row:3;font-size:11px;color:#a9c5d5}.browser-audio-row{grid-column:1;grid-row:2;display:flex;align-items:center;gap:6px;min-width:0}.browser-audio-row input{flex:1;min-width:0}.browser-audio-row button{min-width:88px}.advanced-audio #tv-player-volume{grid-column:2;grid-row:2}.advanced-audio #tv-browser-hint{grid-column:1}.advanced-audio #tv-player-hint{grid-column:2}.browser-audio-row button:disabled,.phone-browser-audio-row button:disabled{opacity:.55}
 #phone-audio-levels{display:grid;gap:5px}#phone-audio-levels label{font-size:14px}#phone-audio-levels input{width:100%;accent-color:#65d0ff;min-height:36px}#phone-audio-levels small{color:#a9c5d5}.phone-audio-row,.phone-browser-audio-row{display:flex;align-items:center;gap:8px;min-width:0}.phone-audio-row input,.phone-browser-audio-row input{flex:1;min-width:0}.phone-audio-row button,.phone-browser-audio-row button{min-width:86px}
 .topbar{align-items:flex-start}.topbar-right{align-items:flex-end}.system-head{align-items:flex-start}#system-button,#settings-back{width:190px;height:46px;flex:none;border:1px solid #64809a;border-radius:12px;background:#24354a;padding:9px 16px;color:#f5f7fb;font-size:16px;line-height:1.2;text-align:center}
 #tv-pointer-acceleration,#phone-pointer-acceleration{width:100%;accent-color:#65d0ff;min-height:35px}#phone-pointer-acceleration{min-height:42px}
-#show-timer{position:relative}.remote-timer-badge{position:absolute;bottom:3px;right:8px;color:#9fe4ff;font-size:11px;font-weight:750;line-height:1}
+#show-timer{position:relative;padding:4px 2px 16px}#show-timer .remote-icon{font-size:20px}.remote-timer-badge{position:absolute;bottom:3px;left:2px;right:2px;color:#9fe4ff;font-size:11px;font-weight:750;line-height:1;white-space:nowrap;text-align:center}
 
 .remote-volume>button[data-muted="true"]{background:#913d43;color:#fff}.remote-volume>button:disabled{background:#526071;color:#e4e8ec}.remote-audio-levels{display:grid;gap:5px;margin-top:12px}.remote-audio-levels label{font-size:14px}.remote-audio-levels input{width:100%;accent-color:#65d0ff;min-height:36px}.remote-audio-levels small{color:#a9c5d5}
-.remote-media-panel{flex:none;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 9px;align-items:center;padding:7px 10px;border:1px solid #4f6b85;border-radius:15px;background:#1d2f45}.remote-media-title{min-width:0;overflow-x:auto;white-space:nowrap;scrollbar-width:thin;font-size:13px;font-weight:700;color:#eaf6ff}.remote-media-actions{display:flex;gap:5px}.remote-media-actions button{width:38px;height:34px;padding:0;border:1px solid #64809a;border-radius:10px;background:#245575;font-size:19px}.remote-media-actions button:disabled{opacity:.4}.remote-media-progress{grid-column:1/-1;display:flex;align-items:center;gap:7px;font-size:11px;color:#bdd9e8}.remote-media-progress input{flex:1;min-width:0;height:24px;margin:0;accent-color:#65d0ff}.remote-media-progress input:disabled{opacity:.4}.remote-face.has-media .remote-pad-wrap .remote-touchpad{max-height:min(43dvh,340px);min-height:155px}@media(max-height:620px){.remote-face.has-media .remote-pad-wrap .remote-touchpad{max-height:36dvh;min-height:130px}}
+.remote-media-panel{flex:none;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 9px;align-items:center;padding:7px 10px;border:1px solid #4f6b85;border-radius:15px;background:#1d2f45}.remote-media-title{min-width:0;overflow-x:auto;white-space:nowrap;scrollbar-width:thin;font-size:13px;font-weight:700;color:#eaf6ff}.remote-media-actions{display:flex;gap:5px}.remote-media-actions button{width:38px;height:34px;padding:0;border:1px solid #64809a;border-radius:10px;background:#245575;font-size:19px}.remote-media-actions button{color:#eaf6ff}.remote-media-actions svg{width:22px;height:22px;fill:currentColor;vertical-align:middle}.remote-media-actions button{transition:transform .12s ease,border-color .15s ease}.remote-media-actions button:active:not(:disabled){transform:scale(.92)}#media-play[data-pending="true"]{animation:media-confirm-pulse 1s ease-in-out infinite;opacity:.8}@keyframes media-confirm-pulse{0%,100%{border-color:#64809a;box-shadow:0 0 0 0 #65d0ff00}50%{border-color:#9bdff9;box-shadow:0 0 0 3px #65d0ff40}}@media(prefers-reduced-motion:reduce){.remote-media-actions button{transition:none}#media-play[data-pending="true"]{animation:none;border-color:#9bdff9}}.remote-media-actions button:disabled{opacity:.4}.remote-media-feedback{grid-column:1/-1;min-height:1em;font-size:11px;color:#bdd9e8}.remote-media-panel[aria-busy="true"] .remote-media-feedback{color:#9bdff9}.remote-media-progress{grid-column:1/-1;display:flex;align-items:center;gap:7px;font-size:11px;color:#bdd9e8}.remote-media-progress input{flex:1;min-width:0;height:24px;margin:0;accent-color:#65d0ff}.remote-media-progress input:disabled{opacity:.4}.remote-face.has-media .remote-pad-wrap .remote-touchpad{max-height:min(43dvh,340px);min-height:155px}@media(max-height:620px){.remote-face.has-media .remote-pad-wrap .remote-touchpad{max-height:36dvh;min-height:130px}}
+
+/* Familiar phone composition: compact bars, one-row volume, large pad.
+   Feedback never enters layout flow or moves a target under the user's finger. */
+.remote-main button.remote-pressed{transform:none}
+.remote-main .remote-message[data-error="true"],.remote-main .remote-message[data-notice="true"]{position:fixed!important;left:12px;right:12px;top:max(54px,env(safe-area-inset-top));width:auto!important;height:auto!important;max-width:496px;padding:10px 14px!important;margin:auto!important;overflow:visible!important;clip-path:none;border:1px solid #ef9a83!important}
+.remote-main .remote-message[data-notice="true"]{background:#1d2f45;border-color:#64809a!important;color:#eaf6ff;pointer-events:none}
+.remote-media-feedback{position:fixed;z-index:40;left:12px;right:12px;top:max(54px,env(safe-area-inset-top));max-width:496px;height:auto;min-height:0;margin:0 auto;padding:10px 14px;border:1px solid #64809a;border-radius:12px;background:#1d2f45;color:#eaf6ff;font-size:13px;line-height:1.4;white-space:normal;pointer-events:none;box-shadow:0 8px 24px #0006}
+.remote-media-feedback:empty{display:none}
+.remote-media-title{font-size:14px}
+.remote-media-actions button{width:44px;height:44px}
+.remote-media-progress input{height:30px}
+.remote-main .remote-media-actions button:active{transform:none}
+.remote-main .remote-pad-wrap{min-height:198px}
+.remote-main .remote-pad-wrap .remote-touchpad,.remote-main .remote-face.has-media .remote-pad-wrap .remote-touchpad{flex:1 1 0;min-height:190px;max-height:none}
+[data-role="magnifier-scale"]{width:100%;min-height:42px;accent-color:#65d0ff}
+[data-role="magnifier-hint"]{font-size:14px;line-height:1.4;color:#c0d0de}
+/* Power fits the existing top row; legacy and powered toolbars keep matching page anchors. */
+.remote-main:has(#remote-power) .remote-top-actions{grid-template-columns:minmax(0,1fr) 70px 54px 62px}
+.remote-power-control{padding:4px 2px;gap:3px;user-select:none;-webkit-user-select:none}
+.power-icon{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.power-hold-hint{font-size:9px;line-height:1.15;white-space:nowrap}
+.remote-power-control[data-asleep="true"]{border-color:#65d0ff;background:#176991}
+.remote-power-control.power-holding{border-color:#9bdff9;box-shadow:inset 0 0 0 2px #65d0ff55}
+.remote-power-dialog{position:fixed;width:min(420px,calc(100% - 32px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid #64809a;border-radius:18px;background:#1d2f45;color:#eaf6ff;padding:20px;font:16px/1.4 system-ui,sans-serif}
+.remote-power-dialog:not([open]){display:none}
+.remote-power-dialog::backdrop{background:#080e19b8}
+.remote-power-dialog h2{font-size:20px;line-height:1.3;margin:0 0 12px}
+.remote-power-dialog p{margin:0 0 14px;font-size:14px}
+.remote-power-dialog #power-note:empty{display:none}
+.power-dialog-actions{display:flex;gap:10px}
+.power-dialog-actions button{flex:1;min-height:46px;border:1px solid #64809a;border-radius:12px;background:#2b425e;padding:8px;color:#f2f9ff;font:inherit;font-size:14px}
+.power-dialog-actions #power-confirm{background:#793c42;border-color:#b66f75}
+.power-dialog-actions button:disabled{opacity:.45}
+@media(max-width:360px){.remote-main:has(#remote-power) .remote-top-actions{grid-template-columns:minmax(0,1fr) 58px 48px 56px}}
+/* One flexible pad absorbs height; no capped pad floating inside a larger wrapper. */
+.remote-main .remote-pad-wrap{padding:0;align-items:stretch;justify-content:stretch}
+.remote-main .remote-pad-wrap .remote-touchpad,.remote-main .remote-face.has-media .remote-pad-wrap .remote-touchpad{flex:1 1 0;min-height:190px;max-height:none}
+.remote-main .remote-top-actions .remote-pill{min-height:48px}
+.remote-main .remote-top-actions .remote-compact-button .remote-icon{font-size:22px;line-height:1}
+.remote-main #show-timer{padding:4px 2px}
+.remote-main #show-timer:has(.remote-timer-badge:not([hidden])){padding-bottom:14px}
+.remote-main #show-timer:has(.remote-timer-badge:not([hidden])) .remote-icon{font-size:14px;line-height:14px}
+/* The same toolbar grid and anchor on every phone screen. */
+html:has(.remote-main){scrollbar-gutter:stable}
+.remote-main{--remote-side-controls:139px;--remote-toolbar-gap:7px}
+.remote-main:has(#remote-power){--remote-side-controls:200px}
+.remote-main #controls{width:100%;min-width:0}
+.remote-main .remote-page{width:100%;align-self:stretch;padding-top:0}
+.remote-main .remote-page-head{display:grid;grid-template-columns:minmax(0,1fr) var(--remote-side-controls);align-items:center;gap:var(--remote-toolbar-gap);height:48px;margin:0 0 12px}
+.remote-main .remote-page-head>button{width:100%;height:48px;min-height:48px;margin:0;padding:4px 8px;display:flex;align-items:center;justify-content:center;border-radius:18px;background:#243a53;border-color:#4f6b85;color:#edf7ff;font-size:15px;font-weight:650}
+.remote-main .remote-page-head h1{height:100%;margin:0;min-width:0;display:flex;align-items:center;font-size:14px;line-height:1.1;overflow-wrap:anywhere}
+@media(max-width:360px){.remote-main{--remote-side-controls:119px;--remote-toolbar-gap:5px}.remote-main:has(#remote-power){--remote-side-controls:172px}}
+/* Inline text stays on the remote; no separate keyboard page. */
+.remote-inline-text{flex:none;padding:8px 10px;border:1px solid #4f6b85;border-radius:14px;background:#1d2f45}
+.remote-inline-text label{display:block;font-size:12px;margin-bottom:5px;color:#bdd3e5}
+.remote-inline-text .remote-form-row{display:flex;flex-direction:row;gap:7px}
+.remote-inline-text input{flex:1;min-width:0;width:100%;border:1px solid #64809a;border-radius:10px;background:#101d2e;color:#eaf6ff;padding:8px;font:16px system-ui,sans-serif}
+.remote-inline-text button{min-height:44px;border:1px solid #64809a;border-radius:10px;background:#245575;color:#eaf6ff;padding:6px 9px;font-size:13px}
+.remote-inline-text .remote-keyboard-actions{display:flex;gap:6px;margin:6px 0 0}
+.remote-inline-text .remote-keyboard-actions button{flex:1;min-width:0;padding:5px;font-size:11px}
+.remote-inline-text #close-text{flex:0 0 44px;width:44px;padding:0;font-size:24px}
+/* Common site-view settings. */
+.site-view-settings summary{cursor:pointer;font-weight:700;min-height:44px;display:list-item;align-content:center}
+.site-view-settings label{display:block;margin:10px 0 5px}
+.site-view-settings p{font-size:14px;line-height:1.4;color:#c0d0de}
+[data-role="view-zoom"]{width:100%;min-height:42px;accent-color:#65d0ff}
+/* A single ordinary-browser link uses 28px + the existing 8px face gap.
+   Bound/native main composition has no additional row or height change. */
+.remote-apk-main{flex:none;min-height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1.4;color:#8edfff;overflow-wrap:anywhere;text-align:center}
+.remote-face:has(.remote-apk-main:not([hidden])){min-height:456px}
+@media(max-height:620px){.remote-face:has(.remote-apk-main:not([hidden])){min-height:396px}}
+@media(orientation:landscape) and (max-height:500px){.remote-face:has(.remote-apk-main:not([hidden])){min-height:346px}}
+.remote-login .remote-apk-entry{margin:12px 0;font-size:13px}
+.remote-apk-entry a,.remote-apk-help a{color:#8edfff}
+.remote-apk-help{font-size:13px;line-height:1.4;color:#c0d0de;overflow-wrap:anywhere}
+.remote-apk-help:has(>p:not([hidden])){margin-bottom:12px}
+.remote-main a:focus-visible{outline:3px solid #65d0ff;outline-offset:2px;border-radius:4px}
+@media(prefers-reduced-motion:reduce){.remote-main button{transition:none!important}}

@@ -8,6 +8,7 @@ const PermanentError = typeof module !== "undefined"
 const PREPARE_LIMIT = typeof module !== "undefined"
   ? require("./command_ledger.js").MAX_PREPARE_ATTEMPTS : MAX_PREPARE_ATTEMPTS;
 
+class ExecutionUncertain extends Error {}
 function createTabController(api, fetcher = fetch) {
   const owned = ownedFactory(api, fetcher);
   const ledger = ledgerFactory(api.storage.session, api.storage.local);
@@ -31,10 +32,21 @@ function createTabController(api, fetcher = fetch) {
     }
     try {
       await ledger.claim(item.id);
-      const result = await owned.execute(item, prepared);
+      let timer;
+      let result;
+      try {
+        const execution = owned.execute(item, prepared);
+        result = item.command === "media" ? await Promise.race([execution,
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new ExecutionUncertain()),
+            Math.max(0, Math.min(5000, item.deadline - Date.now()))); })]) : await execution;
+      } finally { clearTimeout(timer); }
       if (result?.service_id) await owned.openService(result.service_id);
       return await ledger.complete(item.id, result?.volume);
     } catch (error) {
+      // Keep the durable claim: a timed-out browser operation may still finish.
+      // Redelivery must report uncertain, never execute or complete it again.
+      if (error instanceof ExecutionUncertain || error?.uncertain === true)
+        return {outcome:"uncertain", reason:"interrupted"};
       return failed(item.id, error instanceof PermanentError && error.message === "no_media" ?
         "no_media" : "operation");
     }
@@ -51,6 +63,9 @@ function createTabController(api, fetcher = fetch) {
     onRemoved:owned.onRemoved,
     normalizeMedia:owned.normalizeMedia,
     normalizeActiveMedia:owned.normalizeActiveMedia,
+    mediaSnapshot:owned.mediaSnapshot,
+    isOwned:owned.isOwned,
+    capabilities:owned.capabilities,
     getState:() => ({...owned.getState(), commands:ledger.getState(), maxPrepareAttempts:PREPARE_LIMIT}),
   };
 }

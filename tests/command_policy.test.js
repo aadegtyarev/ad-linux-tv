@@ -37,6 +37,7 @@ test("preparation failures dead-letter after three attempts and release FIFO", a
   let offset = 0;
   const acknowledgements = [];
   const wire = async (url, options = {}) => {
+    if (url.endsWith("/media")) return {ok:true};
     if (url.endsWith("/poll")) return {ok:true, json:async () => [queue[offset]]};
     acknowledgements.push(JSON.parse(options.body));
     offset++;

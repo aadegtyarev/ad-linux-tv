@@ -14,6 +14,8 @@ class TimerNotice:
         self.generation = None
         self.dismissed = None
         self.editing = False
+        self.expanded = False
+        self.hovered = False
 
     def update(self, state):
         if state is None:
@@ -23,17 +25,33 @@ class TimerNotice:
         if generation != self.generation:
             self.generation = generation
             self.editing = False
+            self.expanded = False
+            self.hovered = False
         self.state = state
         return self.view()
 
     def dismiss(self):
         self.dismissed = self.generation
         self.editing = False
+        self.expanded = False
+        self.hovered = False
+        return self.view()
+
+    def toggle(self):
+        self.expanded = not self.view()["expanded"]
+        self.hovered = False
+        if not self.expanded:
+            self.editing = False
+        return self.view()
+
+    def hover(self, active):
+        self.hovered = bool(active)
         return self.view()
 
     def edit(self):
-        if self.view()["warning"]:
+        if self.view()["visible"]:
             self.editing = True
+            self.expanded = True
         return self.view()
 
     def view(self):
@@ -44,6 +62,7 @@ class TimerNotice:
         return {
             "visible": visible,
             "warning": warning,
-            "editing": warning and self.editing,
+            "editing": visible and self.editing,
+            "expanded": visible and (warning or self.expanded or self.hovered or self.editing),
             "remaining": format_remaining(remaining) if visible else "",
         }

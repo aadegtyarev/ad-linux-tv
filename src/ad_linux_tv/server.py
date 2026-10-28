@@ -10,8 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import security
+from .apk_download import APK_ROUTE, ApkDownload
 from .auth_state import RateLimiter, Sessions
 from .control import CommandQueue
+from .discovery import device_identity
+from .host_power import HostPowerControl
 from .http_errors import BodyTimeout
 from .http_io import DeadlineReader
 from .pages import get_response
@@ -22,8 +25,10 @@ from .sleep_timer import DisplaySleepTimer
 
 
 def make_handler(config, config_path=None):
+    apk_download = ApkDownload()
     queue = CommandQueue()
     display_timer = DisplaySleepTimer(queue)
+    power_control = HostPowerControl()
     pin_file = (
         os.environ.get("AD_LINUX_TV_PIN_FILE")
         if os.environ.get("AD_LINUX_TV_KIOSK") == "1"
@@ -34,12 +39,19 @@ def make_handler(config, config_path=None):
     auth_material = verifier if config["auth"].get("require_pin", True) else f"{verifier}:no-pin"
     auth_tag = hashlib.sha256(auth_material.encode()).hexdigest()
     sessions = Sessions(storage_path=session_file, auth_tag=auth_tag)
-    settings = SettingsManager(config, config_path, sessions, pin_file=pin_file)
+    settings = SettingsManager(
+        config,
+        config_path,
+        sessions,
+        pin_file=pin_file,
+        capabilities=queue.browser_media.capabilities,
+    )
     failures = RateLimiter()
     static = Path(__file__).parent / "static"
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+        host_power = power_control
 
         def setup(self):
             super().setup()
@@ -122,10 +134,34 @@ def make_handler(config, config_path=None):
                 raise BodyTimeout from exc
 
         def do_GET(self):
+            if self.path == APK_ROUTE:
+                return apk_download.serve(self)
+            if urlparse(self.path).path == "/api/device":
+                if not self.private() or not security.direct_host(
+                    self.headers.get("Host", ""),
+                    self.connection.getsockname()[0],
+                    self.server.server_port,
+                ):
+                    return self.send(403, "{}")
+                identity = device_identity(config, self.server.server_port)
+                if identity is None:
+                    return self.send(503, json.dumps({"error": "discovery_not_configured"}))
+                announcer = getattr(self.server, "discovery", None)
+                identity["discovery"] = announcer.status() if announcer else "disabled"
+                return self.send(200, json.dumps(identity))
             if urlparse(self.path).path == "/api/remote-ws":
                 return serve_remote_socket(
                     self, config, queue, sessions, failures, display_timer, static, settings
                 )
+            if urlparse(self.path).path == "/api/power":
+                if (
+                    not self.private()
+                    or not self.authorized()
+                    or security.remote_url(self.headers.get("Host", ""), self.server.server_port)
+                    is None
+                ):
+                    return self.send(403, "{}")
+                return self.send(200, json.dumps(power_control.status()))
             if urlparse(self.path).path == "/api/settings":
                 local = (
                     security.loopback_source(self.client_address[0])
@@ -178,7 +214,8 @@ def make_handler(config, config_path=None):
                 return self.send(200, json.dumps(result)) if result else self.send(202, "{}")
             if urlparse(self.path).path == "/api/session":
                 if (
-                    not self.private()
+                    not security.matches_device(self.path, self.headers, config)
+                    or not self.private()
                     or security.remote_url(self.headers.get("Host", ""), self.server.server_port)
                     is None
                 ):
@@ -198,6 +235,8 @@ def make_handler(config, config_path=None):
             self.send(status, body, kind)
 
         def do_POST(self):
+            if not security.matches_device(self.path, self.headers, config):
+                return self.send(403, "{}")
             return handle_post(self, config, queue, sessions, failures, display_timer, settings)
 
     return Handler

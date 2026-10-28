@@ -9,8 +9,27 @@ const controls = document.querySelector("#controls");
 const status = document.querySelector("#status");
 const commandStatus = document.querySelector("#command-status");
 let csrf = "";
+let remoteSuspended = false;
 const transport = new RemoteTransport(window.location);
+// Binding is presentation context, not authentication or app-version detection.
+// Keep links hidden by default if the existing binding parser rejects the page.
+// Platform hints affect only the Android invitation, never binding or authority.
+const apkPlatform = typeof navigator === "undefined" ? {} : navigator;
+const apkUserAgent = typeof apkPlatform.userAgent === "string" ? apkPlatform.userAgent : "";
+const apkIsIos = /iPhone|iPad|iPod/i.test(apkUserAgent) ||
+  ((apkPlatform.platform === "MacIntel" || /Macintosh/i.test(apkUserAgent)) &&
+    typeof apkPlatform.maxTouchPoints === "number" && apkPlatform.maxTouchPoints > 1);
+document.querySelectorAll("[data-apk-browser]").forEach(element => {
+  element.hidden = apkIsIos || !!transport.expectedDevice;
+});
+document.querySelectorAll("[data-apk-bound]").forEach(element => {
+  element.hidden = apkIsIos || !transport.expectedDevice;
+});
+function bootstrapPath(path) {
+  return transport.expectedDevice ? `${path}?device=${encodeURIComponent(transport.expectedDevice)}` : path;
+}
 function remoteFetch(path, options = {}) {
+  if (remoteSuspended) return Promise.reject(new Error("remote suspended"));
   const method = options.method || "GET";
   const body = options.body === undefined ? null : JSON.parse(options.body);
   return transport.request(csrf, method, path, body);
@@ -32,7 +51,6 @@ if (phoneSettingsPanel) phoneSettingsPanel.bindMagnifierShortcut(document.queryS
 let statusTimer = null;
 let statusRequestId = 0;
 let redirecting = false;
-let browserService = null;
 let lastPointerSettingsRefresh = 0;
 const audioOutput = document.querySelector("#audio-output");
 const audioVolume = document.querySelector("#audio-volume");
@@ -40,6 +58,15 @@ const audioStatus = document.querySelector("#audio-status");
 let audioTimer = null;
 let displayTimerPoll = null;
 let displayAsleep = false;
+let displayTimerRevision = 0;
+let lastWakeHint = -Infinity;
+let wakeHintPending = false;
+const powerControls = new RemotePowerControls({
+  request: (method,path,body) => remoteFetch(path,{method,...(body ? {body:JSON.stringify(body)} : {})}),
+  auth: () => requireLogin(), say,
+  beforeTimer: () => ++displayTimerRevision,
+  timer: (state,revision) => { if (revision === displayTimerRevision) showPhoneTimer(state); },
+});
 let audioDragging = false;
 let audioRevision = 0;
 const advancedAudio = new AudioLevelsControls("phone", [
@@ -155,6 +182,7 @@ function compactTime(seconds) {
 }
 function showPhoneTimer(state) {
   displayAsleep = state.asleep;
+  powerControls.renderTimer(state);
   const counting = state.phase === "countdown" && state.remaining_seconds > 0;
   timerBadge.hidden = !counting;
   timerBadge.textContent = counting ? compactTime(state.remaining_seconds) : "";
@@ -175,18 +203,22 @@ function showPhoneTimer(state) {
 }
 
 async function refreshDisplayTimer() {
+  const revision = ++displayTimerRevision;
   try {
     const response = await remoteFetch("/api/display-timer");
     if (response.status === 401 || response.status === 403) return requireLogin();
     if (!response.ok) throw new Error("timer unavailable");
-    showPhoneTimer(await response.json());
+    const state = await response.json();
+    if (revision === displayTimerRevision) showPhoneTimer(state);
   } catch (_) {
+    if (revision !== displayTimerRevision) return;
     phoneTimerStatus.textContent = "Нет связи с таймером. Проверьте Wi-Fi.";
     timerBadge.hidden = true;
   }
 }
 
 async function changeDisplayTimer(action) {
+  const revision = ++displayTimerRevision;
   phoneTimerStatus.textContent = "Изменяем таймер…";
   try {
     const response = await remoteFetch("/api/display-timer", {
@@ -194,24 +226,32 @@ async function changeDisplayTimer(action) {
       body:JSON.stringify(action),
     });
     if (response.status === 401 || response.status === 403) return requireLogin();
-    showPhoneTimer(await response.json());
+    const state = await response.json();
+    if (revision === displayTimerRevision) showPhoneTimer(state);
   } catch (_) {
-    phoneTimerStatus.textContent = "Не удалось изменить таймер. Повторите.";
+    if (revision !== displayTimerRevision) return;
+    phoneTimerStatus.textContent = "Не удалось изменить таймер. Команда не повторялась.";
   }
 }
 
 for (const button of phoneTimerButtons)
   button.onclick = () => changeDisplayTimer({minutes:Number(button.dataset.phoneTimer)});
-document.addEventListener("pointerdown", () => {
-  if (displayAsleep && !controls.hidden) {
-    displayAsleep = false;
-    void changeDisplayTimer({wake:true});
+document.addEventListener("pointerdown", event => {
+  if (event.target.closest("[data-no-wake]") || controls.hidden || remoteSuspended) return;
+  // After idle/backgrounding the cached asleep flag may be stale. A fresh user
+  // action can explicitly restore output power, throttled, never by polling.
+  if (!wakeHintPending && (displayAsleep || Date.now()-lastWakeHint >= 5000)) {
+    lastWakeHint = Date.now();
+    wakeHintPending = true;
+    void changeDisplayTimer({wake:true}).finally(() => { wakeHintPending = false; });
   }
 }, true);
 
 let messageTimer = null;
-function say(text, error = false) {
+function say(text, error = false, notice = false) {
   message.textContent = text;
+  message.dataset.error = String(error);
+  message.dataset.notice = String(notice);
   message.hidden = !text;
   const loginError = document.querySelector("#login-error");
   loginError.textContent = error && !loginPanel.hidden ? text : "";
@@ -225,11 +265,15 @@ function say(text, error = false) {
     delete status.dataset.feedback;
     message.hidden = true;
     void refreshStatus();
-  }, error ? 5000 : 1300);
+  }, error || notice ? 6000 : 1300);
 }
 
 function requireLogin() {
+  if (remoteSuspended) return;
+  touchpadControls.reset();
   mediaControls.stop();
+  powerControls.stop();
+  displayTimerRevision += 1;
   csrf = "";
   transport.close();
   if (statusTimer !== null) clearInterval(statusTimer);
@@ -266,7 +310,7 @@ async function refreshStatus() {
     const value = await response.json();
     if (requestId !== statusRequestId) return;
     const nextAddress = privateRemoteUrl(value.preferred_remote_address);
-    if (!redirecting && nextAddress && window.location?.href &&
+    if (!transport.expectedDevice && !remoteSuspended && !redirecting && nextAddress && window.location?.href &&
         nextAddress !== new URL(window.location.href).href) {
       redirecting = true;
       window.location.replace(nextAddress);
@@ -285,6 +329,7 @@ async function refreshStatus() {
     const visible = [];
     if (value.pending_commands) visible.push("Команда выполняется…");
     if (value.last_command_failure) visible.push("Последняя команда не выполнена. Повторите действие.");
+    if (value.view_pending) visible.push("Для настроенного вида сайта требуется новая версия Firefox bridge. Применится при следующем открытии сервиса после обновления расширения.");
     commandStatus.textContent = visible.join(" ");
     commandStatus.hidden = visible.length === 0;
     if (phoneSettingsPanel && !remoteFace.hidden && touchpadControls.isIdle() &&
@@ -324,19 +369,8 @@ async function post(path, body, success) {
 }
 
 async function activateRemote(token, restored = false) {
+  if (remoteSuspended) return;
   csrf = token;
-  const responseServices = await remoteFetch("/api/services");
-  if (!responseServices.ok) throw new Error("service list unavailable");
-  const data = await responseServices.json();
-  browserService = data.services.find(service => service.id === "browser")?.id || null;
-  const select = document.querySelector("#services");
-  select.replaceChildren();
-  for (const service of data.services) {
-    const option = document.createElement("option");
-    option.value = service.id;
-    option.textContent = service.name;
-    select.append(option);
-  }
   connecting.hidden = true;
   loginPanel.hidden = true;
   controls.hidden = false;
@@ -344,18 +378,20 @@ async function activateRemote(token, restored = false) {
   if (!restored) say("Телефон подключён.");
   void refreshAudio();
   mediaControls.start();
+  powerControls.start();
   void refreshDisplayTimer();
   void refreshStatus();
   if (statusTimer !== null) clearInterval(statusTimer);
   if (audioTimer !== null) clearInterval(audioTimer);
   statusTimer = setInterval(refreshStatus, 1000);
   audioTimer = setInterval(() => { if (!audioDragging) void refreshAudio(); }, 5000);
-  displayTimerPoll = setInterval(refreshDisplayTimer, 5000);
+  displayTimerPoll = setInterval(() => { void refreshDisplayTimer(); void powerControls.refresh(); }, 5000);
 }
 async function restoreLogin(expired = false) {
+  if (remoteSuspended) return;
   let sessionAvailable = false;
   try {
-    const response = await fetch("/api/session", {cache:"no-store"});
+    const response = await fetch(bootstrapPath("/api/session"), {cache:"no-store"});
     if (response.ok) {
       const data = await response.json();
       if (typeof data.csrf === "string" && data.csrf) {
@@ -380,9 +416,10 @@ void restoreLogin();
 
 loginForm.onsubmit = async event => {
   event.preventDefault();
+  if (remoteSuspended) return;
   const pin = pinInput.value;
   try {
-    const response = await fetch("/api/login", {
+    const response = await fetch(bootstrapPath("/api/login"), {
       method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({pin}),
     });
     if (!response.ok) {
@@ -431,12 +468,6 @@ document.querySelector("#audio-mute").onclick = () =>
 
 document.querySelector("#history-back").onclick = () =>
   post("/api/input", {key:"browser-back"}, "Открываем предыдущую страницу…");
-document.querySelector("#history-forward").onclick = () =>
-  post("/api/input", {key:"browser-forward"}, "Открываем следующую страницу…");
-document.querySelector("#menu-tab").onclick = () =>
-  sendKey("tab");
-document.querySelector("#menu-shift-tab").onclick = () =>
-  sendKey("shift-tab");
 const remoteFace = document.querySelector("#remote-face");
 const keyboardPage = document.querySelector("#remote-keyboard-page");
 const timerPage = document.querySelector("#remote-timer-page");
@@ -444,17 +475,24 @@ const menuPage = document.querySelector("#remote-menu-page");
 const sharePage = document.querySelector("#remote-share-page");
 const settingsPage = document.querySelector("#remote-settings-page");
 function showPage(page) {
+  if (page !== "remote") powerControls.dismiss();
   remoteFace.hidden = page !== "remote";
-  keyboardPage.hidden = page !== "keyboard";
+  if (page !== "remote") setTextEditor(false);
   timerPage.hidden = page !== "timer";
   menuPage.hidden = page !== "menu";
   sharePage.hidden = page !== "share";
   settingsPage.hidden = page !== "settings";
   window.scrollTo(0, 0);
   if (page === "remote") void phoneSettingsPanel?.refresh();
-  if (page === "keyboard") document.querySelector("#remote-text").focus();
 }
-document.querySelector("#show-keyboard").onclick = () => showPage("keyboard");
+function setTextEditor(open) {
+  keyboardPage.hidden = !open;
+  document.querySelector("#show-keyboard").setAttribute("aria-expanded", String(open));
+  const input = document.querySelector("#remote-text");
+  if (open) input.focus(); else input.blur();
+}
+document.querySelector("#show-keyboard").onclick = () => setTextEditor(keyboardPage.hidden);
+if (document.querySelector("#close-text")) document.querySelector("#close-text").onclick = () => setTextEditor(false);
 document.querySelector("#show-timer").onclick = () => {
   showPage("timer");
   void refreshDisplayTimer();
@@ -505,13 +543,6 @@ async function waitForHome() {
   }
   return false;
 }
-document.querySelector("#show-system").onclick = async () => {
-  if (!await post("/api/command", {command: "home"}, "Открываем Систему…")) return;
-  if (!await waitForHome())
-    return say("Система не открылась. Проверьте подключение Firefox и повторите.", true);
-  await new Promise(resolve => setTimeout(resolve, 300));
-  if (await post("/api/input", {key: "system"}, "Система открыта на телевизоре.")) showPage("remote");
-};
 document.querySelectorAll(".return-remote").forEach(button => {
   button.onclick = () => showPage("remote");
 });
@@ -523,6 +554,27 @@ const touchpadControls = createPhoneTouchpad(
   message => say(message, true),
 );
 function sendKey(key) { return touchpadControls.sendKey(key); }
+
+// Public fixed lifecycle hook for the native shell, no general JS/native bridge.
+function reconcileMediaOnReturn() {
+  if (csrf && !remoteSuspended) mediaControls.reconcile();
+}
+window.addEventListener("focus", reconcileMediaOnReturn);
+window.addEventListener("pageshow", reconcileMediaOnReturn);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) reconcileMediaOnReturn(); });
+window.adLinuxTvRemoteLifecycle = Object.freeze({resume:reconcileMediaOnReturn, suspend() {
+  if (remoteSuspended) return;
+  remoteSuspended = true;
+  csrf = "";
+  touchpadControls.stop();
+  mediaControls.stop();
+  powerControls.stop();
+  displayTimerRevision += 1;
+  transport.close();
+  for (const timer of [statusTimer, audioTimer, displayTimerPoll])
+    if (timer !== null) clearInterval(timer);
+  statusTimer = audioTimer = displayTimerPoll = null;
+}});
 document.querySelectorAll("[data-c]").forEach(button => {
   button.onclick = () => post("/api/command", {command: button.dataset.c}, "");
 });
@@ -531,51 +583,23 @@ document.querySelector('[data-c="home"]').onclick = async () => {
   if (!await waitForHome()) return say("Плитки не открылись. Проверьте Firefox.", true);
   await post("/api/input", {key:"escape"}, "Плитки открыты.");
 };
-document.querySelector("#open").onclick = () =>
-  post("/api/command", {command: "open", service_id: document.querySelector("#services").value}, "Открываем сервис…");
+let textSending = false;
 document.querySelector("#text-form").onsubmit = async event => {
   event.preventDefault();
   const input = document.querySelector("#remote-text");
-  if (!input.value) return;
-  if (await post("/api/input", {text: input.value}, "Текст введён.")) input.value = "";
-};
-document.querySelector("#url-form").onsubmit = async event => {
-  event.preventDefault();
-  const input = document.querySelector("#remote-url");
-  const raw = input.value.trim();
-  if (!raw) return;
-  const address = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  if (!input.value || textSending) return;
+  const value = input.value;
+  textSending = true;
   try {
-    const parsed = new URL(address);
-    if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname || address.length > 512) throw new Error("invalid URL");
-  } catch (_) {
-    return say("Введите адрес сайта, например example.com.", true);
-  }
-  if (!browserService) return say("Плитка «Браузер» не настроена на медиацентре.", true);
-  if (!await post("/api/command", {command: "open", service_id: browserService}, "Открываем Браузер…")) return;
-  let ready = false;
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    await new Promise(resolve => setTimeout(resolve, 400));
-    try {
-      const response = await remoteFetch("/api/status");
-      if (!response.ok) throw new Error("status unavailable");
-      const state = await response.json();
-      if (state.extension_online && state.pending_commands === 0) { ready = true; break; }
-    } catch (_) { break; }
-  }
-  if (!ready) return say("Браузер не открылся. Проверьте соединение с Firefox и повторите.", true);
-  await new Promise(resolve => setTimeout(resolve, 500));
-  if (!await post("/api/input", {key: "address"}, "Адресная строка выбрана.")) return;
-  if (!await post("/api/input", {text: address}, "Адрес введён.")) return;
-  if (await post("/api/input", {key: "enter"}, "Открываем сайт…")) input.value = "";
+    if (await post("/api/input", {text:value}, "Текст введён.") && input.value === value) {
+      input.value = "";
+      setTextEditor(false);
+    }
+  } finally { textSending = false; }
 };
 document.querySelector("#key-backspace").onclick = () =>
   post("/api/input", {key: "backspace"}, "Символ удалён.");
 document.querySelector("#key-enter").onclick = () =>
   post("/api/input", {key: "enter"}, "Enter отправлен.");
-document.querySelector("#key-tab").onclick = () =>
-  sendKey("tab");
-document.querySelector("#key-shift-tab").onclick = () =>
-  sendKey("shift-tab");
 document.querySelector("#key-address").onclick = () =>
   post("/api/input", {key: "address"}, "Адресная строка выбрана.");

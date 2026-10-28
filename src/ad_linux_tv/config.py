@@ -9,8 +9,11 @@ from pathlib import Path
 import yaml
 
 from .config_errors import ConfigurationError
+from .discovery import validate_discovery
+from .magnifier import validate_magnifier
 from .service_url import validate_service_url
 from .settings import SettingsError, validate_proxy
+from .view_config import validate_view
 from .yaml_config import load_yaml
 
 
@@ -21,7 +24,19 @@ def load_config(path):
             not isinstance(data, dict)
             or not {"bind", "port", "page_size", "auth", "services"} <= set(data)
             or set(data)
-            - {"bind", "port", "page_size", "auth", "services", "proxy", "audio", "pointer"}
+            - {
+                "bind",
+                "port",
+                "page_size",
+                "auth",
+                "services",
+                "proxy",
+                "audio",
+                "pointer",
+                "discovery",
+                "magnifier",
+                "view",
+            }
         ):
             raise ConfigurationError("expected bind, port, page_size, auth and services")
         if not isinstance(data["bind"], str) or not data["bind"]:
@@ -70,6 +85,23 @@ def load_config(path):
             or not 0 <= pointer["acceleration"] <= 100
         ):
             raise ConfigurationError("pointer acceleration must be 0..100")
+        if "view" in data:
+            try:
+                data["view"] = validate_view(data["view"])
+            except ValueError as exc:
+                raise ConfigurationError(str(exc)) from None
+        if "magnifier" in data:
+            try:
+                data["magnifier"] = validate_magnifier(data["magnifier"])
+            except ValueError as exc:
+                raise ConfigurationError(str(exc)) from None
+        if "discovery" in data:
+            try:
+                if data["discovery"] is None:
+                    raise ValueError("null discovery")
+                data["discovery"] = validate_discovery(data["discovery"])
+            except (ValueError, TypeError, AttributeError):
+                raise ConfigurationError("invalid discovery enabled/id/name") from None
         for key in ("salt", "verifier"):
             base64.b64decode(auth[key], validate=True)
         if (
@@ -85,7 +117,7 @@ def load_config(path):
             if (
                 not isinstance(service, dict)
                 or not {"id", "name", "url"} <= set(service)
-                or set(service) - {"id", "name", "url", "color"}
+                or set(service) - {"id", "name", "url", "color", "view"}
             ):
                 raise ConfigurationError("each service needs id, name and url; color is optional")
             if (
@@ -97,6 +129,11 @@ def load_config(path):
             if not isinstance(service["name"], str) or not 1 <= len(service["name"]) <= 80:
                 raise ConfigurationError("invalid service name")
             validate_service_url(service["url"])
+            if "view" in service:
+                try:
+                    service["view"] = validate_view(service["view"])
+                except ValueError as exc:
+                    raise ConfigurationError(str(exc)) from None
             if "color" in service and (
                 not isinstance(service["color"], str)
                 or not re.fullmatch(r"#[0-9a-fA-F]{6}", service["color"])

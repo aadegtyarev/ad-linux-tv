@@ -7,11 +7,31 @@ import json
 import os
 import socket
 import struct
+import time
 
+from . import security
 from .remote_rpc import RemoteDispatcher
 
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_MESSAGE = 4096
+
+
+class FrameBudget:
+    """Per-connection burst allowance comfortably above normal pointer traffic."""
+
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
+        self.updated = clock()
+        self.tokens = 256.0
+
+    def allow(self):
+        now = self.clock()
+        self.tokens = min(256.0, self.tokens + max(0, now - self.updated) * 200)
+        self.updated = now
+        if self.tokens < 1:
+            return False
+        self.tokens -= 1
+        return True
 
 
 class RemoteSocket:
@@ -56,9 +76,13 @@ class RemoteSocket:
 
     def run(self):
         self.handler.rfile.timeout = 30.0
+        budget = FrameBudget()
         while True:
             try:
                 opcode, payload = self._frame()
+                if not budget.allow():
+                    self._send(8, struct.pack("!H", 1008))
+                    return
                 if opcode == 8:
                     self._send(8, b"")
                     return
@@ -104,6 +128,7 @@ def serve_remote_socket(
     if (
         os.environ.get("AD_LINUX_TV_KIOSK") != "1"
         or not handler.private()
+        or not security.matches_device(handler.path, handler.headers, config)
         or not handler.valid_origin()
         or not token
         or not sessions.csrf_valid(token, csrf)

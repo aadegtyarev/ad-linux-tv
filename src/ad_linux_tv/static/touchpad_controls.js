@@ -2,10 +2,14 @@
 
 function createPhoneTouchpad(post, request, getAcceleration, onAuth, onError) {
   let navigationSequence = Promise.resolve();
+  let stopped = false;
+  let generation = 0;
   function sendKey(key) {
     if (["up", "down", "left", "right", "tab", "shift-tab"].includes(key))
       setPadSelectionMode(true);
-    navigationSequence = navigationSequence.then(() => post("/api/input", {key}, ""));
+    if (stopped) return Promise.resolve();
+    const epoch = generation;
+    navigationSequence = navigationSequence.then(() => stopped || epoch !== generation ? undefined : post("/api/input", {key}, ""));
     return navigationSequence;
   }
   document.querySelector("#pad-tab").onclick = () => sendKey("tab");
@@ -25,29 +29,36 @@ function createPhoneTouchpad(post, request, getAcceleration, onAuth, onError) {
   let pendingX = 0;
   let pendingY = 0;
   let pendingScroll = 0;
+  let pendingScrollX = 0;
   let drainTimer = null;
   const pointerInflight = new Set();
   // Several ordered messages may be in flight on the same WebSocket.
   const maxPointerInflight = 3;
   let scrollFraction = 0;
+  let scrollFractionX = 0;
   let pointerErrorShown = false;
   async function sendPointer(action) {
+    if (stopped) return;
+    const epoch = generation;
     try {
       const response = await request(action);
+      if (stopped || epoch !== generation) return;
       if (response.status === 401 || response.status === 403) return onAuth();
       if (!response.ok) throw new Error("pointer unavailable");
       pointerErrorShown = false;
     } catch (_) {
+      if (stopped || epoch !== generation) return;
       pendingX = 0;
       pendingY = 0;
       pendingScroll = 0;
       scrollFraction = 0;
+      pendingScrollX = scrollFractionX = 0;
       if (!pointerErrorShown) onError("Курсор недоступен. Проверьте ТВ-режим и Wi-Fi.");
       pointerErrorShown = true;
     }
   }
   function hasPointerWork() {
-    return Math.abs(pendingX) >= 1 || Math.abs(pendingY) >= 1 || pendingScroll !== 0;
+    return Math.abs(pendingX) >= 1 || Math.abs(pendingY) >= 1 || pendingScroll !== 0 || pendingScrollX !== 0;
   }
   function dispatchPointer(action) {
     const request = sendPointer(action);
@@ -58,6 +69,7 @@ function createPhoneTouchpad(post, request, getAcceleration, onAuth, onError) {
     });
   }
   function pumpPointer() {
+    if (stopped) return;
     if (drainTimer !== null) clearTimeout(drainTimer);
     drainTimer = null;
     while (pointerInflight.size < maxPointerInflight &&
@@ -69,15 +81,18 @@ function createPhoneTouchpad(post, request, getAcceleration, onAuth, onError) {
       if (dx || dy) dispatchPointer({dx, dy});
     }
     // One request at a time keeps compositor actions in gesture order.
-    if (pointerInflight.size === 0 && pendingScroll) {
+    if (pointerInflight.size === 0 && (pendingScroll || pendingScrollX)) {
       const scroll = Math.max(-24, Math.min(24, pendingScroll));
+      const scrollX = Math.max(-24, Math.min(24, pendingScrollX));
       pendingScroll -= scroll;
-      dispatchPointer({scroll});
+      pendingScrollX -= scrollX;
+      dispatchPointer(scrollX ? {scroll, scroll_x:scrollX} : {scroll});
     }
   }
   async function drainPointer() {
+    const epoch = generation;
     pumpPointer();
-    while (hasPointerWork() || pointerInflight.size) {
+    while (epoch === generation && !stopped && (hasPointerWork() || pointerInflight.size)) {
       if (pointerInflight.size) await Promise.race(pointerInflight);
       else pumpPointer();
     }
@@ -93,12 +108,15 @@ function createPhoneTouchpad(post, request, getAcceleration, onAuth, onError) {
     pendingY = Math.max(-4800, Math.min(4800, pendingY + moved.dy));
     schedulePointerDrain();
   }
-  function schedulePointerScroll(dy) {
+  function schedulePointerScroll(dx,dy) {
     setPadSelectionMode(false);
     scrollFraction -= dy * 2;
-    const steps = Math.trunc(scrollFraction);
+    scrollFractionX -= dx * 2;
+    const steps = Math.trunc(scrollFraction), stepsX = Math.trunc(scrollFractionX);
     scrollFraction -= steps;
+    scrollFractionX -= stepsX;
     pendingScroll = Math.max(-96, Math.min(96, pendingScroll + steps));
+    pendingScrollX = Math.max(-96, Math.min(96, pendingScrollX + stepsX));
     schedulePointerDrain();
   }
   function showTouches() {
@@ -113,6 +131,7 @@ function createPhoneTouchpad(post, request, getAcceleration, onAuth, onError) {
     });
   }
   touchpad.addEventListener("pointerdown", event => {
+    if (stopped) return;
     event.preventDefault();
     touchpad.setPointerCapture(event.pointerId);
     const arrow = event.target.closest("[data-arrow]")?.dataset.arrow || null;
@@ -135,7 +154,7 @@ function createPhoneTouchpad(post, request, getAcceleration, onAuth, onError) {
     finger.x = event.clientX;
     finger.y = event.clientY;
     if (fingers.size > 1) {
-      schedulePointerScroll(dy / fingers.size);
+      schedulePointerScroll(dx / fingers.size,dy / fingers.size);
     } else if (!finger.multi) {
       // Keep a painted key press despite normal finger jitter; a deliberate drag still moves the cursor.
       const dragDistance = finger.arrow ? 32 : 9;
@@ -175,6 +194,7 @@ function createPhoneTouchpad(post, request, getAcceleration, onAuth, onError) {
       pendingY = 0;
       pendingScroll = 0;
       scrollFraction = 0;
+      pendingScrollX = scrollFractionX = 0;
       return;
     }
     if (finger.multi) return;
@@ -182,7 +202,10 @@ function createPhoneTouchpad(post, request, getAcceleration, onAuth, onError) {
     if (!finger.arrow && Date.now() - finger.time > 650) return;
     if (finger.arrow) void sendKey(finger.arrow);
     else if (padSelectionMode) void sendKey("enter");
-    else void drainPointer().then(() => sendPointer({click: true}));
+    else {
+      const epoch = generation;
+      void drainPointer().then(() => { if (!stopped && epoch === generation) return sendPointer({click: true}); });
+    }
   }
   touchpad.addEventListener("pointerup", event => finishTouch(event));
   touchpad.addEventListener("pointercancel", event => finishTouch(event, true));
@@ -194,5 +217,19 @@ function createPhoneTouchpad(post, request, getAcceleration, onAuth, onError) {
       void sendKey("enter");
     }
   });
-  return {sendKey, isIdle: () => pointerInflight.size === 0};
+  function reset() {
+    generation += 1;
+    navigationSequence = Promise.resolve();
+    pointerInflight.clear();
+    if (drainTimer !== null) clearTimeout(drainTimer);
+    drainTimer = null;
+    pendingX = pendingY = pendingScroll = scrollFraction = pendingScrollX = scrollFractionX = 0;
+    fingers.clear();
+    touchpad.classList.remove("touch-active");
+    touchIndicators.forEach(indicator => { indicator.hidden = true; });
+  }
+  function stop() { reset(); stopped = true; }
+  return {sendKey, reset, stop, isIdle: () => pointerInflight.size === 0};
 }
+
+if (typeof module !== "undefined") module.exports = {createPhoneTouchpad};

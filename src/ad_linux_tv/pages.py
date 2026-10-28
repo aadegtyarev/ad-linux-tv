@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from . import audio
 from .security import loopback_source, private_source, remote_url
+from .view_config import service_catalogue
 
 
 def _advertised_url(address, port):
@@ -121,6 +122,7 @@ def get_response(handler, config, queue, static):
     if path == "/api/status":
         status = queue.status()
         status["preferred_remote_address"] = preferred_remote_address(config)
+        status["view_pending"] = "tab_view_v1" not in status.get("bridge_capabilities", [])
         return 200, json.dumps(status), "application/json"
     if path == "/api/qr":
         import qrcode
@@ -136,7 +138,7 @@ def get_response(handler, config, queue, static):
         return 200, output.getvalue(), "image/png"
     if path == "/api/services":
         body = {
-            "services": config["services"],
+            "services": service_catalogue(config),
             "page_size": config["page_size"],
             "remote_address": remote_address(handler, config),
         }
@@ -148,6 +150,7 @@ def get_response(handler, config, queue, static):
         "/layout.js": ("layout.js", "text/javascript"),
         "/launcher_ui.js": ("launcher_ui.js", "text/javascript"),
         "/remote.js": ("remote.js", "text/javascript"),
+        "/power_controls.js": ("power_controls.js", "text/javascript"),
         "/remote_transport.js": ("remote_transport.js", "text/javascript"),
         "/settings_controls.js": ("settings_controls.js", "text/javascript"),
         "/audio_levels.js": ("audio_levels.js", "text/javascript"),

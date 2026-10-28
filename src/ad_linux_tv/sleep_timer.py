@@ -5,7 +5,7 @@ import subprocess
 import time
 from threading import Lock, Timer
 
-from . import audio
+from . import audio, cec
 from .control import QueueFullError
 
 PRESETS = (0, 15, 30, 60, 90, 120)
@@ -67,6 +67,7 @@ class DisplaySleepTimer:
         other_audio=_other_audio_active,
         clock=time.monotonic,
         schedule=Timer,
+        cec_wake=None,
     ):
         self.queue = queue
         self.power = power
@@ -74,6 +75,8 @@ class DisplaySleepTimer:
         self.other_audio = other_audio
         self.clock = clock
         self.schedule = schedule
+        self.cec_wake = cec_wake or cec.wake
+        self.cec_result = "unavailable"
         self.lock = Lock()
         self.deadline = None
         self.minutes = 0
@@ -95,6 +98,7 @@ class DisplaySleepTimer:
             "generation": self.generation,
             "asleep": self.asleep,
             "error": self.error,
+            "cec_wake": self.cec_result,
             "phase": (
                 "countdown"
                 if self.deadline
@@ -130,9 +134,36 @@ class DisplaySleepTimer:
                 self.job.start()
             return self._status()
 
-    def wake(self):
+    def sleep_now(self):
+        """Start the existing pause/silence pipeline without blocking a phone socket."""
         with self.lock:
+            if self.asleep or self.expiring:
+                return self._status()
+            self.generation += 1
+            if self.job is not None:
+                self.job.cancel()
+            self.deadline = None
+            self.minutes = 0
+            self.error = None
+            self.expiring = True
+            self.job = self.schedule(0, self._expire, args=(self.generation,))
+            self.job.daemon = True
+            self.job.start()
+            return self._status()
+
+    def wake(self, *, force=False, use_cec=False):
+        with self.lock:
+            request_cec = self.asleep or use_cec
             if not self.asleep and not self.expiring:
+                # Explicit wake must assert real output power even if our cached
+                # flag was lost/stale. It does not cancel an active countdown.
+                if force and not self.power(True):
+                    self.error = "display_unavailable"
+                    return False
+                if force:
+                    self.error = None
+                if request_cec:
+                    self._wake_cec()
                 return True
             self.generation += 1
             if self.job is not None:
@@ -141,27 +172,44 @@ class DisplaySleepTimer:
             self.deadline = None
             self.minutes = 0
             self.expiring = False
-            if self.asleep and not self.power(True):
+            if (self.asleep or force) and not self.power(True):
                 self.error = "display_unavailable"
                 return False
             self.asleep = False
             self.error = None
+            if request_cec:
+                self._wake_cec()
             return True
 
-    def _player_result(self, command):
+    def _wake_cec(self):
         try:
-            command_id = self.queue.push(command)
+            result = self.cec_wake()
+            self.cec_result = (
+                result if result in ("requested", "unavailable", "uncertain") else "uncertain"
+            )
+        except Exception:
+            self.cec_result = "uncertain"
+
+    def _player_result(self, command, generation=None):
+        try:
+            with self.lock:
+                if generation is not None and generation != self.generation:
+                    return None
+                command_id = self.queue.push(command)
         except QueueFullError:
             return None
         for _ in range(40):
+            with self.lock:
+                if generation is not None and generation != self.generation:
+                    return None
             result = self.queue.result(command_id)
             if result:
                 return result
             time.sleep(0.2)
         return None
 
-    def _pause_playback(self):
-        result = self._player_result("player_pause")
+    def _pause_playback(self, generation=None):
+        result = self._player_result("player_pause", generation)
         if result is None:
             return "pause_unavailable"
         if result["outcome"] == "completed":
@@ -170,7 +218,7 @@ class DisplaySleepTimer:
             return "audio_active" if self.browser_audio() or self.other_audio() else None
         # Firefox's audible flag can lag behind a successful HTMLMediaElement.pause().
         # Confirm the element is no longer playing before accepting that case.
-        probe = self._player_result("player_get")
+        probe = self._player_result("player_get", generation)
         if probe and probe["reason"] == "no_media":
             time.sleep(0.4)
             return "audio_active" if self.browser_audio() or self.other_audio() else None
@@ -183,7 +231,7 @@ class DisplaySleepTimer:
             self.deadline = None
             self.job = None
             self.expiring = True
-        pause_error = self._pause_playback()
+        pause_error = self._pause_playback(generation)
         if pause_error is not None:
             with self.lock:
                 if generation == self.generation:

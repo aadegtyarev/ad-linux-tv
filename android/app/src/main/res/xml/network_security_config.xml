@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Legacy TV is LAN HTTP. Code restricts every origin to one validated private-IP
+         endpoint; no public browsing, arbitrary redirects or certificate bypass. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors><certificates src="system"/></trust-anchors>
+    </base-config>
+</network-security-config>

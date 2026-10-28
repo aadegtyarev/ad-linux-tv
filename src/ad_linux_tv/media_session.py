@@ -1,10 +1,11 @@
 """Control the TV user's Firefox media session through MPRIS on D-Bus."""
 
+import hashlib
 import json
 import os
 import subprocess
 import time
-from threading import Lock, Thread
+from threading import Event, Lock, Thread
 
 PLAYER_INTERFACE = "org.mpris.MediaPlayer2.Player"
 PLAYER_PATH = "/org/mpris/MediaPlayer2"
@@ -109,6 +110,10 @@ class MediaSession:
             )
             state = {
                 "available": True,
+                # Correlation only, not an authentication or physical-settlement receipt.
+                "media_id": hashlib.sha256(f"{player}\0{track_id}\0{title}".encode()).hexdigest()[
+                    :32
+                ],
                 "title": title or "Воспроизведение",
                 "playing": status == "Playing",
                 "position": position,
@@ -126,7 +131,13 @@ class MediaSession:
     def status(self):
         return self._snapshot()[0]
 
-    def command(self, action, position=None):
+    def command(self, action, position=None, media_id=None):
+        if media_id is not None and (
+            not isinstance(media_id, str)
+            or len(media_id) != 32
+            or any(char not in "0123456789abcdef" for char in media_id)
+        ):
+            raise ValueError("invalid media identity")
         if action not in ("play", "pause", "next", "previous", "seek"):
             raise ValueError("invalid media action")
         if action == "seek":
@@ -137,6 +148,8 @@ class MediaSession:
         state, player, track_id = self._snapshot()
         if not state["available"]:
             raise MediaUnavailable("no Firefox media session")
+        if media_id is not None and state["media_id"] != media_id:
+            raise ValueError("media target changed")
         capability = {
             "play": "can_play",
             "pause": "can_pause",
@@ -163,30 +176,43 @@ class MediaMonitor:
         self.operation_lock = Lock()
         self.state = {"available": False}
         self.updated = 0.0
+        self.wakeup = Event()
+        self.fast_until = 0.0
         Thread(target=self._poll, daemon=True).start()
 
     def _poll(self):
         while True:
-            try:
-                with self.operation_lock:
+            self.wakeup.clear()
+            with self.operation_lock:
+                try:
                     state = self.reader.status()
-            except MediaUnavailable:
-                state = {"available": False}
-            with self.lock:
-                self.state = state
-                self.updated = time.monotonic()
-            time.sleep(2)
+                except MediaUnavailable:
+                    state = {"available": False}
+                # Publish before releasing the operation lock: a pre-command poll must
+                # never overwrite the newer command snapshot after another thread runs.
+                with self.lock:
+                    self.state = state
+                    self.updated = time.monotonic()
+            self.wakeup.wait(0.2 if time.monotonic() < self.fast_until else 2)
 
     def status(self):
         with self.lock:
             return dict(self.state) if time.monotonic() - self.updated < 6 else {"available": False}
 
-    def command(self, action, position=None):
+    def command(self, action, position=None, media_id=None):
         with self.operation_lock:
-            state = self.reader.command(action, position)
-        with self.lock:
-            self.state = state
-            self.updated = time.monotonic()
+            state = (
+                self.reader.command(action, position)
+                if media_id is None
+                else self.reader.command(action, position, media_id)
+            )
+            with self.lock:
+                self.state = state
+                self.updated = time.monotonic()
+                self.fast_until = self.updated + 3
+        # MPRIS can acknowledge before PlaybackStatus/Position changes. Reconcile in
+        # the background, without sleeping in the ordered pointer-command socket.
+        self.wakeup.set()
         return state
 
 

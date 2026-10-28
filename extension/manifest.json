@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ad-linux-tv bridge",
-  "version": "0.3.2",
+  "version": "0.4.1",
   "browser_specific_settings": {
     "gecko": {
       "id": "ad-linux-tv@aadegtyarev.github.io",
@@ -17,7 +17,9 @@
     "tabs",
     "storage",
     "alarms",
-    "scripting"
+    "scripting",
+    "webRequest",
+    "webRequestBlocking"
   ],
   "host_permissions": [
     "http://127.0.0.1/*",
@@ -28,6 +30,8 @@
     "scripts": [
       "tab_storage.js",
       "player_volume.js",
+      "player_media.js",
+      "view_policy.js",
       "owned_tabs.js",
       "command_ledger.js",
       "tabs.js",
