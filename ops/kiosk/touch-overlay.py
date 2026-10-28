@@ -588,13 +588,13 @@ def main():
     regular_buttons = []
     compact_buttons = []
     for icon, tooltip, callback in (
-        ("fullscreen", "Видео на весь экран или обратно", on_fullscreen),
         ("home", "К плиткам", on_home),
         ("back", "Назад", on_back),
         ("forward", "Вперёд", on_forward),
         ("keyboard", "Клавиатура", on_keyboard),
-        ("volume", "Громкость", on_volume),
         ("timer", "Таймер экрана", on_timer),
+        ("volume", "Громкость", on_volume),
+        ("fullscreen", "Видео на весь экран или обратно", on_fullscreen),
     ):
         button = icon_button(icon)
         button.set_tooltip_text(tooltip)
