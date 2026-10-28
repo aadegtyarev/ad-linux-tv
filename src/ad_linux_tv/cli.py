@@ -25,23 +25,29 @@ def main():
     parser.add_argument(
         "init_config",
         nargs="?",
-        choices=["init-config", "enable-discovery", "disable-discovery"],
+        choices=["init-config", "enable-discovery", "disable-discovery", "ensure-discovery"],
         metavar="command",
     )
-    parser.add_argument("--discovery-name", default=None)
+    parser.add_argument(
+        "--discovery-name", default=None, help="empty name: follow the computer name"
+    )
     args = parser.parse_args()
     path = Path(args.config).expanduser()
-    if args.init_config in ("enable-discovery", "disable-discovery"):
+    if args.init_config in ("enable-discovery", "disable-discovery", "ensure-discovery"):
         from .settings import atomic_write
 
         data = load_config(path)
         current = data.get("discovery")
+        if current is not None and args.init_config == "ensure-discovery":
+            return  # An existing choice, including a disabled one, is kept on upgrade.
         if current is None and args.init_config == "disable-discovery":
             return
-        value = dict(current) if current else new_discovery(args.discovery_name or "Linux TV")
-        if args.discovery_name is not None:
+        value = dict(current) if current else new_discovery()
+        if args.discovery_name == "":
+            value.pop("name", None)
+        elif args.discovery_name is not None:
             value["name"] = args.discovery_name
-        value["enabled"] = args.init_config == "enable-discovery"
+        value["enabled"] = args.init_config != "disable-discovery"
         from .discovery import validate_discovery
 
         data["discovery"] = validate_discovery(value)
@@ -62,7 +68,7 @@ def main():
             "proxy": {"mode": "system"},
             "audio": {"browser": 100, "player": 100, "browser_muted": False},
             "pointer": {"acceleration": 50},
-            "discovery": new_discovery(args.discovery_name or "Linux TV"),
+            "discovery": new_discovery(args.discovery_name or None),
             "services": default_services(),
         }
         create_config(path, data)

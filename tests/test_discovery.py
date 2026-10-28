@@ -9,6 +9,7 @@ import pytest
 from ad_linux_tv.discovery import (
     DiscoveryAnnouncer,
     advertisement_address,
+    default_name,
     device_identity,
     new_discovery,
     validate_discovery,
@@ -51,6 +52,23 @@ def test_discovery_schema_is_strict(field, value):
     data[field] = value
     with pytest.raises((ValueError, TypeError, AttributeError)):
         validate_discovery(data)
+
+
+@pytest.mark.parametrize(
+    "hostname,expected",
+    [
+        ("ad-server", "ad-server TV"),
+        ("beelink.local", "beelink TV"),
+        ("", "Linux TV"),
+        ("x" * 100, "x" * 60 + " TV"),
+    ],
+)
+def test_unnamed_discovery_follows_computer_name(monkeypatch, hostname, expected):
+    assert default_name(hostname) == expected
+    monkeypatch.setattr("socket.gethostname", lambda: hostname)
+    data = {"port": 8765, "discovery": new_discovery()}
+    assert "name" not in data["discovery"]
+    assert device_identity(data)["name"] == expected
 
 
 def test_legacy_disabled_and_constructor_do_not_touch_network():
