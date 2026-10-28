@@ -108,6 +108,23 @@ def test_rate_limit_locks_out_bad_pin(endpoint):
     assert response.status == 429
 
 
+def test_fullscreen_command_requires_bridge_capability(endpoint, monkeypatch):
+    import ad_linux_tv.post_routes as post_routes
+    from ad_linux_tv.browser_media import BrowserMedia
+
+    monkeypatch.setattr(post_routes, "loopback_source", lambda _address: False)
+    connection, port = endpoint
+    _, auth, cookie = login(connection, port)
+    headers = command_headers(port, cookie, auth["csrf"])
+    body = '{"command":"fullscreen"}'
+    monkeypatch.setattr(BrowserMedia, "capabilities", lambda _self: ["html_media_v1"])
+    response, _ = request(connection, "POST", "/api/command", body, headers)
+    assert response.status == 409
+    monkeypatch.setattr(BrowserMedia, "capabilities", lambda _self: ["video_fullscreen_v1"])
+    response, reply = request(connection, "POST", "/api/command", body, headers)
+    assert response.status == 202 and json.loads(reply)["id"]
+
+
 def test_rejects_dns_rebinding_local_origin(endpoint):
     connection, _ = endpoint
     headers = {"Host": "attacker.example", "Origin": "http://attacker.example"}

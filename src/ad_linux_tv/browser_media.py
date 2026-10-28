@@ -75,7 +75,11 @@ class BrowserMedia:
             self.sent_at = data["sent_at"]
             self.media = media
             # Additive unknown capabilities are ignored, never executable operations.
-            self._capabilities = frozenset(data["capabilities"]) & {"html_media_v1", "tab_view_v1"}
+            self._capabilities = frozenset(data["capabilities"]) & {
+                "html_media_v1",
+                "tab_view_v1",
+                "video_fullscreen_v1",
+            }
 
     def fresh(self):
         return (

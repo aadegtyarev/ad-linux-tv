@@ -184,3 +184,4 @@ html:has(.remote-main){scrollbar-gutter:stable}
 .remote-apk-help:has(>p:not([hidden])){margin-bottom:12px}
 .remote-main a:focus-visible{outline:3px solid #65d0ff;outline-offset:2px;border-radius:4px}
 @media(prefers-reduced-motion:reduce){.remote-main button{transition:none!important}}
+.remote-bottom .remote-fullscreen-button{width:62px;flex:none;background:#294963}.remote-fullscreen-button span:first-child{font-size:24px}@media(max-width:360px){.remote-bottom .remote-fullscreen-button{width:54px}}

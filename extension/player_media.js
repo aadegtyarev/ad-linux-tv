@@ -54,6 +54,45 @@ async function playerMedia(action = "status", expected = null, position = null, 
     duration:Math.max(1, Math.round(element.duration)), can_seek:canSeek};
 }
 
+// Serialized into each frame of the owned service tab on an explicit fullscreen button press.
+// "probe" reports this frame's fullscreen state and best video score; "enter" fullscreens the
+// player around that video; "exit" leaves fullscreen. Requires the dedicated profile preference
+// full-screen-api.allow-trusted-requests-only=false because a bridge call is not a user gesture.
+async function videoFullscreen(action = "probe") {
+  if (!["probe", "enter", "exit"].includes(action)) return null;
+  if (action === "exit") {
+    if (!document.fullscreenElement) return false;
+    await document.exitFullscreen();
+    return true;
+  }
+  const videos = [...document.querySelectorAll("video")];
+  if (videos.length > 64) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const video of videos) {
+    const box = video.getBoundingClientRect();
+    const area = Math.max(0, box.width) * Math.max(0, box.height);
+    if (area < 1 || getComputedStyle(video).visibility === "hidden") continue;
+    // A playing video wins over a larger paused preview.
+    const score = area * (video.paused || video.ended ? 1 : 4);
+    if (score > bestScore) { best = video; bestScore = score; }
+  }
+  if (action === "probe") return {fullscreen:!!document.fullscreenElement, score:bestScore};
+  if (!best) return false;
+  // Fullscreen the site's player box (same size as the video) so its controls and subtitles stay.
+  const box = best.getBoundingClientRect();
+  const same = element => {
+    const other = element.getBoundingClientRect();
+    return Math.abs(other.left - box.left) <= 2 && Math.abs(other.top - box.top) <= 2 &&
+      Math.abs(other.width - box.width) <= 2 && Math.abs(other.height - box.height) <= 2;
+  };
+  let target = best;
+  for (let parent = best.parentElement; parent && parent !== document.body &&
+       parent !== document.documentElement && same(parent); parent = parent.parentElement) target = parent;
+  await target.requestFullscreen();
+  return true;
+}
+
 // Injected only into the currently owned tab. Visible service-page timers keep
 // Firefox's event background responsive without scanning unmanaged tabs.
 function pulseOwnedMedia() {
@@ -65,4 +104,4 @@ function pulseOwnedMedia() {
   pulse(); setInterval(pulse, 1000);
 }
 
-if (typeof module !== "undefined") module.exports = {playerMedia, pulseOwnedMedia};
+if (typeof module !== "undefined") module.exports = {playerMedia, pulseOwnedMedia, videoFullscreen};

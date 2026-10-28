@@ -30,6 +30,9 @@ managed = {
     # Enable the signed bridge and language packs placed in this profile without a prompt.
     # Firefox still enforces the add-on signature.
     "extensions.autoDisableScopes": "0",
+    # The fullscreen button reaches the page through the bridge, not a user gesture.
+    "full-screen-api.allow-trusted-requests-only": "false",
+    "full-screen-api.warning.timeout": "0",
 }
 existing = user_js.read_text() if user_js.exists() else ""
 kept = [line for line in existing.splitlines()

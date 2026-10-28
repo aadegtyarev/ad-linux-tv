@@ -12,6 +12,8 @@ const viewFactory = typeof module !== "undefined"
   ? require("./view_policy.js").createViewPolicy : createViewPolicy;
 const mediaPulse = typeof module !== "undefined"
   ? require("./player_media.js").pulseOwnedMedia : pulseOwnedMedia;
+const fullscreenVideo = typeof module !== "undefined"
+  ? require("./player_media.js").videoFullscreen : videoFullscreen;
 class PermanentCommandError extends Error {}
 function createOwnedTabs(api, fetcher = fetch) {
   const state = storageFactory(api);
@@ -73,6 +75,12 @@ function createOwnedTabs(api, fetcher = fetch) {
     }
     if (["up", "down", "left", "right", "ok"].includes(item.command)) {
       return {launcher: await findLauncher()};
+    }
+    if (item.command === "fullscreen") {
+      const active = await state.activeTab();
+      if (!state.owns(active) || !/^https?:\/\//i.test(active?.url || ""))
+        throw new PermanentCommandError("no_media");
+      return {active};
     }
     throw new PermanentCommandError("unsupported command");
   };
@@ -152,6 +160,7 @@ function createOwnedTabs(api, fetcher = fetch) {
         throw new PermanentCommandError("no_media");
       return;
     }
+    if (command === "fullscreen") return toggleFullscreen(prepared.active);
     if (["player_get", "player_set", "player_pause"].includes(command)) {
       const active = await state.activeTab();
       if (!active || active.id !== prepared.active.id || !state.owns(active) ||
@@ -177,6 +186,30 @@ function createOwnedTabs(api, fetcher = fetch) {
     await state.focus(launcher);
     const result = await api.tabs.sendMessage(launcher.id, {command});
     if (command === "ok" && result?.service_id) return {service_id: result.service_id};
+  }
+
+  // One button toggles: leave fullscreen if any frame is fullscreen, otherwise
+  // fullscreen the best video in whichever frame holds it.
+  async function toggleFullscreen(prepared) {
+    const active = await state.activeTab();
+    if (!state.owns(active) || active?.id !== prepared.id || active.url !== prepared.url)
+      throw new PermanentCommandError("no_media");
+    const frames = await api.scripting.executeScript({
+      target:{tabId:active.id, allFrames:true}, func:fullscreenVideo, args:["probe"],
+    });
+    if (frames.some(frame => frame.result?.fullscreen === true)) {
+      await api.scripting.executeScript({
+        target:{tabId:active.id, frameIds:[0]}, func:fullscreenVideo, args:["exit"],
+      });
+      return;
+    }
+    const best = frames.filter(frame => Number.isInteger(frame.frameId) && frame.result?.score > 0)
+      .sort((a, b) => b.result.score - a.result.score)[0];
+    if (!best) throw new PermanentCommandError("no_media");
+    const [entered] = await api.scripting.executeScript({
+      target:{tabId:active.id, frameIds:[best.frameId]}, func:fullscreenVideo, args:["enter"],
+    });
+    if (entered?.result !== true) throw new PermanentCommandError("no_media");
   }
 
   async function normalizeMedia(tabId) {
@@ -237,7 +270,8 @@ function createOwnedTabs(api, fetcher = fetch) {
   }
   return {restore, ensureLauncher:state.ensureLauncher, prepare, execute, openService,
     onRemoved, normalizeMedia, normalizeActiveMedia, mediaSnapshot, isOwned:state.owns,
-    capabilities:() => ["html_media_v1", ...(viewReady && viewPolicy.supported() ? ["tab_view_v1"] : [])],
+    capabilities:() => ["html_media_v1", "video_fullscreen_v1",
+      ...(viewReady && viewPolicy.supported() ? ["tab_view_v1"] : [])],
     getState:state.getState};
 }
 

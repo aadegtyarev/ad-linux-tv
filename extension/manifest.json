@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ad-linux-tv bridge",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "browser_specific_settings": {
     "gecko": {
       "id": "ad-linux-tv@aadegtyarev.github.io",

@@ -10,7 +10,7 @@ ROOT=$(cd "$(dirname "$0")" && pwd)
 SOURCE=$(cd "$ROOT/../.." && pwd)
 # The administrator gets the `gui` helper and may switch sessions from a console.
 ADMIN=${AD_LINUX_TV_ADMIN:-${SUDO_USER:-}}
-PACKAGES='labwc squeekboard wtype wlrctl oxygen-cursor-theme wlopm swayidle python3-gi gir1.2-gtklayershell-0.1 pulseaudio-utils pipewire pipewire-pulse wireplumber python3-venv fonts-noto-core fonts-noto-color-emoji curl'
+PACKAGES='labwc squeekboard wtype wlrctl oxygen-cursor-theme wlopm swayidle python3-gi python3-gi-cairo gir1.2-gtklayershell-0.1 pulseaudio-utils pipewire pipewire-pulse wireplumber python3-venv fonts-noto-core fonts-noto-color-emoji curl'
 
 preview() {
   printf 'TV user: %s\n' ad-tv

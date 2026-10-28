@@ -358,6 +358,7 @@ async function post(path, body, success) {
     if (response.status === 401 || response.status === 403) return requireLogin();
     if (response.status === 503 && (body.key?.startsWith("browser-") || ["up", "down", "left", "right", "ok", "system", "video-fullscreen"].includes(body.key))) return say("Firefox на телевизоре сейчас не активен. Откройте ТВ-режим и повторите.", true);
     if (response.status === 503) return say("Управление сейчас недоступно. Подождите несколько секунд и повторите.", true);
+    if (response.status === 409 && body.command === "fullscreen") return say("Кнопка заработает после обновления плагина на телевизоре.", true);
     if (!response.ok) return say(`Не удалось выполнить действие (${response.status}). Повторите попытку.`, true);
     say(success);
     void refreshStatus();

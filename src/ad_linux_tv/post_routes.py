@@ -290,6 +290,12 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
         service_ids = {entry["id"] for entry in config["services"]}
         if command == "open" and service not in service_ids:
             raise ValueError("unknown service id")
+        if (
+            command == "fullscreen"
+            and "video_fullscreen_v1" not in queue.browser_media.capabilities()
+        ):
+            # Older bridges would reject the command; tell the user to update instead.
+            return handler.send(409, "{}")
         command_id = queue.push(command, service, data.get("volume"))
     except OverflowError:
         return handler.send(413, "{}")

@@ -45,7 +45,74 @@ window { background: transparent; }
 
 AUDIO_URL = "http://127.0.0.1:8765/api/audio"
 TIMER_URL = "http://127.0.0.1:8765/api/display-timer"
+COMMAND_URL = "http://127.0.0.1:8765/api/command"
+ICON_SIZE = 24
 POSITION_FILE = Path.home() / ".config/ad-linux-tv/touch-panel-position.json"
+
+
+def draw_icon(name, cr, width, height):
+    """Line icons on one 24-unit grid, so every button centers its icon the same way."""
+    scale = min(width, height, ICON_SIZE) / 24
+    cr.translate((width - 24 * scale) / 2, (height - 24 * scale) / 2)
+    cr.scale(scale, scale)
+    cr.set_source_rgb(1, 1, 1)
+    cr.set_line_width(2)
+    cr.set_line_cap(1)  # round
+    cr.set_line_join(1)  # round
+
+    def path(*points):
+        cr.move_to(*points[0])
+        for point in points[1:]:
+            cr.line_to(*point)
+
+    if name == "fullscreen":
+        for x, y, dx, dy in ((3, 3, 1, 1), (21, 3, -1, 1), (3, 21, 1, -1), (21, 21, -1, -1)):
+            path((x, y + 6 * dy), (x, y), (x + 6 * dx, y))
+    elif name == "home":
+        path((3, 11.5), (12, 3.5), (21, 11.5))
+        path((6, 9.5), (6, 20.5), (18, 20.5), (18, 9.5))
+    elif name in ("back", "forward"):
+        if name == "forward":
+            cr.translate(24, 0)
+            cr.scale(-1, 1)
+        path((20, 12), (4, 12))
+        path((10, 6), (4, 12), (10, 18))
+    elif name == "keyboard":
+        cr.rectangle(2, 5.5, 20, 13)
+        path((8, 15), (16, 15))
+        cr.stroke()
+        for row in (8.6, 11.4):
+            for x in (5.3, 8.6, 11.9, 15.2, 18.5):
+                cr.arc(x, row, 0.95, 0, 6.2832)
+                cr.fill()
+        return
+    elif name == "volume":
+        path((3, 9), (7, 9), (12, 4.5), (12, 19.5), (7, 15), (3, 15))
+        cr.close_path()
+        cr.stroke()
+        for radius in (4, 8):
+            cr.arc(13, 12, radius, -0.8, 0.8)
+            cr.stroke()
+        return
+    elif name == "timer":
+        cr.arc(12, 12, 9, 0, 6.2832)
+        cr.stroke()
+        path((12, 6.5), (12, 12), (16, 14.5))
+    cr.stroke()
+
+
+def icon_button(name):
+    area = Gtk.DrawingArea()
+    area.set_size_request(30, 30)
+    area.connect(
+        "draw",
+        lambda widget, cr: draw_icon(
+            name, cr, widget.get_allocated_width(), widget.get_allocated_height()
+        ),
+    )
+    button = Gtk.Button()
+    button.add(area)
+    return button
 
 
 def clamp_position(top, right, panel_width, panel_height, screen_width, screen_height):
@@ -103,6 +170,19 @@ def timer_request(minutes=None):
     response = request.Request(TIMER_URL, data=payload, headers=headers)
     with request.urlopen(response, timeout=1) as reply:
         return json.load(reply)
+
+
+def toggle_fullscreen():
+    """The bridge fullscreens the page's video or leaves fullscreen; failures stay silent here."""
+    payload = json.dumps({"command": "fullscreen"}).encode()
+    headers = {"Origin": "http://127.0.0.1:8765", "Content-Type": "application/json"}
+    try:
+        with request.urlopen(
+            request.Request(COMMAND_URL, data=payload, headers=headers), timeout=1
+        ):
+            pass
+    except OSError:
+        pass
 
 
 def history(direction):
@@ -497,32 +577,47 @@ def main():
         GLib.timeout_add(360, clear_flash)
         callback(button)
 
-    for label, tooltip, callback in (
-        ("⌂", "К плиткам", on_home),
-        ("←", "Назад", on_back),
-        ("→", "Вперёд", on_forward),
-        ("⌨", "Клавиатура", on_keyboard),
-        ("🔊\ufe0e", "Громкость", on_volume),
-        ("◷", "Таймер экрана", on_timer),
+    def on_fullscreen(_button):
+        toggle_fullscreen()
+        # Switch between the full and the compact panel without waiting for the next poll.
+        GLib.timeout_add(700, update_visibility_once)
+
+    regular_buttons = []
+    compact_buttons = []
+    for icon, tooltip, callback in (
+        ("fullscreen", "Видео на весь экран или обратно", on_fullscreen),
+        ("home", "К плиткам", on_home),
+        ("back", "Назад", on_back),
+        ("forward", "Вперёд", on_forward),
+        ("keyboard", "Клавиатура", on_keyboard),
+        ("volume", "Громкость", on_volume),
+        ("timer", "Таймер экрана", on_timer),
     ):
-        button = Gtk.Button.new_with_label(label)
+        button = icon_button(icon)
         button.set_tooltip_text(tooltip)
         button.get_style_context().add_class("touch-button")
         button.connect("clicked", lambda widget, action=callback: on_touch_click(widget, action))
         buttons.pack_start(button, True, True, 0)
+        if callback in (on_fullscreen, on_volume):
+            compact_buttons.append(button)
+        else:
+            regular_buttons.append(button)
     window.add(panel)
     window.connect("destroy", Gtk.main_quit)
     visible = False
 
     def update_visibility():
         nonlocal visible, pinned
-        should_show = touch_available() and not fullscreen_active()
-        if not should_show and pinned:
+        should_show = touch_available()
+        # Over fullscreen video only the fullscreen and volume buttons stay, so touch users
+        # can leave fullscreen and adjust the sound.
+        compact = fullscreen_active()
+        if (not should_show or compact) and pinned:
             pinned = False
             set_keyboard_visible(False)
         if not should_show and volume_panel.get_visible():
             close_volume()
-        if not should_show and timer_panel.get_visible():
+        if (not should_show or compact) and timer_panel.get_visible():
             close_timer()
         if should_show and visible and not dragging:
             apply_position(position["top"], position["right"])
@@ -533,7 +628,17 @@ def main():
             else:
                 window.hide()
             visible = should_show
+        if visible:
+            handle.set_visible(not compact)
+            for button in regular_buttons:
+                button.set_visible(not compact)
+            for button in compact_buttons:
+                button.set_visible(True)
         return True
+
+    def update_visibility_once():
+        update_visibility()
+        return False
 
     def keep_keyboard_open():
         if pinned and keyboard_visible() is False:
