@@ -4,7 +4,16 @@
 // No page URLs, titles, credentials, arbitrary selectors or script text leave this function.
 async function playerMedia(action = "status", expected = null, position = null, deadline = null) {
   if (!["status", "play", "pause", "seek"].includes(action)) return null;
-  const elements = [...document.querySelectorAll("audio,video")];
+  // Players such as VK Video keep their media inside shadow roots.
+  const elements = [];
+  const collect = root => {
+    for (const element of root.querySelectorAll("*")) {
+      if (element.tagName === "AUDIO" || element.tagName === "VIDEO") elements.push(element);
+      const shadow = element.openOrClosedShadowRoot || element.shadowRoot;
+      if (shadow) collect(shadow);
+    }
+  };
+  collect(document);
   if (elements.length > 64) return null;
   const registry = document.__adLinuxTvTiming ||= {items:new WeakMap(), last:null};
   const candidates = elements.filter(element => !element.ended &&
@@ -65,7 +74,16 @@ async function videoFullscreen(action = "probe") {
     await document.exitFullscreen();
     return true;
   }
-  const videos = [...document.querySelectorAll("video")];
+  // Players such as VK Video keep their video inside shadow roots.
+  const videos = [];
+  const collect = root => {
+    for (const element of root.querySelectorAll("*")) {
+      if (element.tagName === "VIDEO") videos.push(element);
+      const shadow = element.openOrClosedShadowRoot || element.shadowRoot;
+      if (shadow) collect(shadow);
+    }
+  };
+  collect(document);
   if (videos.length > 64) return null;
   let best = null;
   let bestScore = 0;
@@ -86,9 +104,11 @@ async function videoFullscreen(action = "probe") {
     return Math.abs(other.left - box.left) <= 2 && Math.abs(other.top - box.top) <= 2 &&
       Math.abs(other.width - box.width) <= 2 && Math.abs(other.height - box.height) <= 2;
   };
+  // Climbing also leaves a shadow root through its host element.
+  const up = element => element.parentElement || element.getRootNode().host || null;
   let target = best;
-  for (let parent = best.parentElement; parent && parent !== document.body &&
-       parent !== document.documentElement && same(parent); parent = parent.parentElement) target = parent;
+  for (let parent = up(best); parent && parent !== document.body &&
+       parent !== document.documentElement && same(parent); parent = up(parent)) target = parent;
   await target.requestFullscreen();
   return true;
 }

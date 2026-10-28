@@ -11,7 +11,7 @@ function setup(t, elements = []) {
   return elements;
 }
 function media(patch = {}) {
-  return {currentSrc:"https://example.invalid/synthetic", duration:900, currentTime:12,
+  return {tagName:"VIDEO", currentSrc:"https://example.invalid/synthetic", duration:900, currentTime:12,
     paused:false, ended:false, seekable:{length:1,start:() => 5,end:() => 890},
     play:async function() { this.paused = false; }, pause() { this.paused = true; }, ...patch};
 }
