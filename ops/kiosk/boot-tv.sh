@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Slow GPUs register their outputs after this unit starts; wait briefly for a display.
+for _ in {1..30}; do
+  /usr/local/libexec/ad-linux-tv/has-monitor.sh && break
+  sleep 1
+done
 /usr/local/libexec/ad-linux-tv/has-monitor.sh || exit 0
 test -x /home/ad-tv/.local/share/ad-linux-tv/run.sh || exit 0
 test -r /home/ad-tv/.config/ad-linux-tv/config.yaml || exit 0
