@@ -10,7 +10,7 @@ One button on the phone remote and on the TV touch panel toggles the video on th
 - Something is fullscreen: the same button exits fullscreen.
 - No owned service tab or no visible video: nothing changes; the phone shows «Видео не найдено».
 - Bridge without the capability (0.4.1 and older): the server answers 409 and the phone says the bridge needs updating.
-- Touch panel while fullscreen: the full panel stays hidden over video, but one compact exit button remains, so touch-only users can leave fullscreen.
+- Touch panel while fullscreen: the full panel stays hidden over video, but the exit button and the volume button remain, so touch-only users can leave fullscreen and adjust the sound.
 
 ## Non-goals
 Automatic fullscreen; site-specific scripts or selectors; fullscreen for unmanaged tabs; changing F11 browser-window fullscreen; DRM or player bypasses.
@@ -26,7 +26,7 @@ Automatic fullscreen; site-specific scripts or selectors; fullscreen for unmanag
 
 ## Acceptance criteria
 - Unit tests for the queue/route gate, bridge selection/toggle logic and phone/touch buttons; full CI green.
-- On a TV with signed 0.4.2: button enters and exits fullscreen on YouTube; the touch exit button is visible in fullscreen; no automatic fullscreen when opening a video.
+- On a TV with signed 0.4.2: button enters and exits fullscreen on YouTube; the touch exit and volume buttons are visible in fullscreen and the volume slider works there; no automatic fullscreen when opening a video.
 
 ## Validation
 `pytest -q`, `node --test tests/*.test.js`, ruff, `bash -n`; live check on the B20A and the Beelink after signing.

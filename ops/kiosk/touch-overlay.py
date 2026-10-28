@@ -517,7 +517,7 @@ def main():
         GLib.timeout_add(700, update_visibility_once)
 
     regular_buttons = []
-    fullscreen_button = None
+    compact_buttons = []
     for label, tooltip, callback in (
         ("⛶", "Видео на весь экран или обратно", on_fullscreen),
         ("⌂", "К плиткам", on_home),
@@ -532,8 +532,8 @@ def main():
         button.get_style_context().add_class("touch-button")
         button.connect("clicked", lambda widget, action=callback: on_touch_click(widget, action))
         buttons.pack_start(button, True, True, 0)
-        if callback is on_fullscreen:
-            fullscreen_button = button
+        if callback in (on_fullscreen, on_volume):
+            compact_buttons.append(button)
         else:
             regular_buttons.append(button)
     window.add(panel)
@@ -543,12 +543,13 @@ def main():
     def update_visibility():
         nonlocal visible, pinned
         should_show = touch_available()
-        # Over fullscreen video only the fullscreen button stays, so touch users can leave it.
+        # Over fullscreen video only the fullscreen and volume buttons stay, so touch users
+        # can leave fullscreen and adjust the sound.
         compact = fullscreen_active()
         if (not should_show or compact) and pinned:
             pinned = False
             set_keyboard_visible(False)
-        if (not should_show or compact) and volume_panel.get_visible():
+        if not should_show and volume_panel.get_visible():
             close_volume()
         if (not should_show or compact) and timer_panel.get_visible():
             close_timer()
@@ -565,7 +566,8 @@ def main():
             handle.set_visible(not compact)
             for button in regular_buttons:
                 button.set_visible(not compact)
-            fullscreen_button.set_visible(True)
+            for button in compact_buttons:
+                button.set_visible(True)
         return True
 
     def update_visibility_once():

@@ -22,7 +22,7 @@ Scan the TV QR code with a phone on the same home network. No PIN is needed by d
 
 ## Touch panel
 
-On a touchscreen, a small panel offers Home, Back/Forward, keyboard, volume, timer and **⛶** for video fullscreen. Over fullscreen video only the **⛶** button stays, to return.
+On a touchscreen, a small panel offers Home, Back/Forward, keyboard, volume, timer and **⛶** for video fullscreen. Over fullscreen video only **⛶** (to return) and the volume button stay.
 
 ## Timer
 
