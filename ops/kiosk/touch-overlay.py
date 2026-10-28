@@ -49,6 +49,71 @@ COMMAND_URL = "http://127.0.0.1:8765/api/command"
 POSITION_FILE = Path.home() / ".config/ad-linux-tv/touch-panel-position.json"
 
 
+def draw_icon(name, cr, width, height):
+    """Line icons on one 24-unit grid, so every button centers its icon the same way."""
+    scale = min(width, height) / 24
+    cr.translate((width - 24 * scale) / 2, (height - 24 * scale) / 2)
+    cr.scale(scale, scale)
+    cr.set_source_rgb(1, 1, 1)
+    cr.set_line_width(2.2)
+    cr.set_line_cap(1)  # round
+    cr.set_line_join(1)  # round
+
+    def path(*points):
+        cr.move_to(*points[0])
+        for point in points[1:]:
+            cr.line_to(*point)
+
+    if name == "fullscreen":
+        for x, y, dx, dy in ((3, 3, 1, 1), (21, 3, -1, 1), (3, 21, 1, -1), (21, 21, -1, -1)):
+            path((x, y + 6 * dy), (x, y), (x + 6 * dx, y))
+    elif name == "home":
+        path((3, 11.5), (12, 3.5), (21, 11.5))
+        path((6, 9.5), (6, 20.5), (18, 20.5), (18, 9.5))
+    elif name in ("back", "forward"):
+        if name == "forward":
+            cr.translate(24, 0)
+            cr.scale(-1, 1)
+        path((20, 12), (4, 12))
+        path((10, 6), (4, 12), (10, 18))
+    elif name == "keyboard":
+        cr.rectangle(2, 5.5, 20, 13)
+        path((8, 15), (16, 15))
+        cr.stroke()
+        for row in (8.6, 11.4):
+            for x in (5.3, 8.6, 11.9, 15.2, 18.5):
+                cr.arc(x, row, 0.95, 0, 6.2832)
+                cr.fill()
+        return
+    elif name == "volume":
+        path((3, 9), (7, 9), (12, 4.5), (12, 19.5), (7, 15), (3, 15))
+        cr.close_path()
+        cr.stroke()
+        for radius in (4, 8):
+            cr.arc(13, 12, radius, -0.8, 0.8)
+            cr.stroke()
+        return
+    elif name == "timer":
+        cr.arc(12, 12, 9, 0, 6.2832)
+        cr.stroke()
+        path((12, 6.5), (12, 12), (16, 14.5))
+    cr.stroke()
+
+
+def icon_button(name):
+    area = Gtk.DrawingArea()
+    area.set_size_request(30, 30)
+    area.connect(
+        "draw",
+        lambda widget, cr: draw_icon(
+            name, cr, widget.get_allocated_width(), widget.get_allocated_height()
+        ),
+    )
+    button = Gtk.Button()
+    button.add(area)
+    return button
+
+
 def clamp_position(top, right, panel_width, panel_height, screen_width, screen_height):
     return {
         "top": max(0, min(top, max(0, screen_height - panel_height - 8))),
@@ -518,16 +583,16 @@ def main():
 
     regular_buttons = []
     compact_buttons = []
-    for label, tooltip, callback in (
-        ("⛶", "Видео на весь экран или обратно", on_fullscreen),
-        ("⌂", "К плиткам", on_home),
-        ("←", "Назад", on_back),
-        ("→", "Вперёд", on_forward),
-        ("⌨", "Клавиатура", on_keyboard),
-        ("🔊\ufe0e", "Громкость", on_volume),
-        ("◷", "Таймер экрана", on_timer),
+    for icon, tooltip, callback in (
+        ("fullscreen", "Видео на весь экран или обратно", on_fullscreen),
+        ("home", "К плиткам", on_home),
+        ("back", "Назад", on_back),
+        ("forward", "Вперёд", on_forward),
+        ("keyboard", "Клавиатура", on_keyboard),
+        ("volume", "Громкость", on_volume),
+        ("timer", "Таймер экрана", on_timer),
     ):
-        button = Gtk.Button.new_with_label(label)
+        button = icon_button(icon)
         button.set_tooltip_text(tooltip)
         button.get_style_context().add_class("touch-button")
         button.connect("clicked", lambda widget, action=callback: on_touch_click(widget, action))
