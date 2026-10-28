@@ -149,10 +149,14 @@ def get_state():
     browser = _browser_inputs()
 
     def label(name, item):
-        port = _active_port(item)
-        if port and port.get("description"):
-            return port["description"]
         description = item.get("description")
+        if name.startswith("bluez_output.") and description:
+            return description  # The speaker's own name, e.g. "JBL Flip".
+        port = _active_port(item)
+        profile = (item.get("properties") or {}).get("device.profile.description")
+        for short in (port and port.get("description"), profile):
+            if short:
+                return short
         if description and description != "(null)":
             return description
         if "analog" in name:
