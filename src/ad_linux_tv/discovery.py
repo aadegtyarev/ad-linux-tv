@@ -12,27 +12,43 @@ PROTOCOL = 1
 LOG = logging.getLogger(__name__)
 
 
+def valid_name(name):
+    return (
+        isinstance(name, str)
+        and 1 <= len(name) <= 80
+        and len(name.encode("utf-8")) <= 160
+        and name == name.strip()
+        and name.isprintable()
+    )
+
+
 def validate_discovery(value):
     if value is None:
-        return None  # Legacy configurations never gain an implicit broadcast or ID.
+        return None  # Loading never adds a broadcast or ID; install.sh adds it explicitly.
     if (
         not isinstance(value, dict)
-        or set(value) != {"enabled", "id", "name"}
+        or not {"enabled", "id"} <= set(value) <= {"enabled", "id", "name"}
         or type(value["enabled"]) is not bool
         or not isinstance(value["id"], str)
         or str(uuid.UUID(value["id"])) != value["id"]
-        or not isinstance(value["name"], str)
-        or not 1 <= len(value["name"]) <= 80
-        or len(value["name"].encode("utf-8")) > 160
-        or value["name"] != value["name"].strip()
-        or not value["name"].isprintable()
+        or ("name" in value and not valid_name(value["name"]))
     ):
-        raise ValueError("discovery requires enabled, canonical UUID id and printable name")
+        raise ValueError("discovery requires enabled, canonical UUID id, optional printable name")
     return dict(value)
 
 
-def new_discovery(name="Linux TV"):
-    return validate_discovery({"enabled": True, "id": str(uuid.uuid4()), "name": name})
+def new_discovery(name=None):
+    """Without a name the advertised name follows the computer name."""
+    value = {"enabled": True, "id": str(uuid.uuid4())}
+    if name is not None:
+        value["name"] = name
+    return validate_discovery(value)
+
+
+def default_name(hostname=None):
+    host = (hostname if hostname is not None else socket.gethostname()).split(".")[0].strip()
+    name = f"{host[:60]} TV"
+    return name if host and valid_name(name) else "Linux TV"
 
 
 def device_identity(config, port=None):
@@ -43,7 +59,7 @@ def device_identity(config, port=None):
         "app": "ad-linux-tv",
         "protocol": PROTOCOL,
         "id": value["id"],
-        "name": value["name"],
+        "name": value.get("name") or default_name(),
         "port": config["port"] if port is None else port,
         "remote_path": "/remote",
     }
