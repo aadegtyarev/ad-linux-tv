@@ -20,7 +20,10 @@ const tvSettingsPanel = tvSettingsRoot ? new SettingsControls(tvSettingsRoot,
   (method, action) => fetch("/api/settings", {
     method, headers: {"Content-Type": "application/json"},
     ...(action ? {body: JSON.stringify(action)} : {}),
-  }), () => void loadPairingPin()) : null;
+  }), () => void loadPairingPin(), state => {
+    // The desktop switch exists only on computers with a KDE display manager.
+    document.querySelector("#kde-actions").hidden = state.kde_available === false;
+  }) : null;
 const rangeActions = [audioVolume, ...advancedAudio.sliders(),
   tvSettingsPanel?.field("pointer-acceleration"), tvSettingsPanel?.field("magnifier-scale"),
   tvSettingsPanel?.field("view-zoom")].filter(Boolean);

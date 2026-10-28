@@ -23,6 +23,10 @@ class SettingsControls {
     this.field("proxy-mode").onchange = () => this.renderFields();
     this.field("pin-form").onsubmit = event => { event.preventDefault(); void this.savePin(); };
     this.field("proxy-form").onsubmit = event => { event.preventDefault(); void this.saveProxy(); };
+    if (this.field("locale-form")) this.field("locale-form").onsubmit = event => {
+      event.preventDefault();
+      void this.change("browser_locale", this.field("browser-locale").value);
+    };
     if (this.field("magnifier")) this.field("magnifier").onclick = () =>
       void this.change("magnifier", !this.state?.magnifier);
     this.field("restart").onclick = () => void this.change("restart", true);
@@ -135,7 +139,7 @@ class SettingsControls {
       key === "effective_service_views" || key.startsWith("view_");
     for (const key of Object.keys(merged)) if (isView(key)) delete merged[key];
     for (const [key, value] of Object.entries(viewState)) if (isView(key)) merged[key] = value;
-    merged.restart_required = !!(merged.proxy_restart_required ||
+    merged.restart_required = !!(merged.proxy_restart_required || merged.browser_locale_restart_required ||
       (merged.magnifier_scale ?? 2.5) !== (merged.magnifier_applied_scale ?? 2.5) ||
       merged.view_restart_required);
     return merged;
@@ -196,6 +200,14 @@ class SettingsControls {
     this.field("proxy-protocol").value = state.proxy.protocol || "http";
     this.field("proxy-host").value = state.proxy.host || "";
     this.field("proxy-port").value = state.proxy.port || "";
+    if (this.field("browser-locale")) {
+      const locale = state.browser_locale || "ru";
+      const installed = state.browser_locales_installed || ["ru", "en"];
+      this.field("browser-locale").value = locale;
+      this.field("locale-hint").textContent = state.browser_locale_restart_required
+        ? "Язык применится после перезапуска ТВ-режима."
+        : installed.includes(locale) ? "" : "Языковой пакет не установлен: Firefox останется на английском.";
+    }
     this.renderRestart();
     this.field("pin").value = "";
     this.field("pin-confirm").value = "";
@@ -237,6 +249,7 @@ class SettingsControls {
       if (!response.ok) throw new Error("rejected");
       this.render(await response.json(), snapshot);
       this.notice(setting === "proxy" ? "Прокси сохранён. Перезапустите ТВ-режим для применения."
+        : setting === "browser_locale" ? "Язык сохранён. Перезапустите ТВ-режим для применения."
         : setting === "magnifier_scale" && this.state.restart_required ? "Масштаб сохранён. Для применения нужен перезапуск ТВ-режима."
         : setting === "restart" ? "Перезапускаем ТВ-режим…" : "Сохранено.");
       if (setting === "pin") this.onPinChange();

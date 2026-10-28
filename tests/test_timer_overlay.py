@@ -150,14 +150,14 @@ def overlay_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "gi", gi)
     monkeypatch.setitem(sys.modules, "gi.repository", repository)
     spec = importlib.util.spec_from_file_location(
-        "timer_notice", ROOT / "ops/beelink/timer_notice.py"
+        "timer_notice", ROOT / "ops/kiosk/timer_notice.py"
     )
     notice = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(notice)
     monkeypatch.setitem(sys.modules, "timer_notice", notice)
     monkeypatch.setattr("urllib.request.urlopen", forbidden)
     spec = importlib.util.spec_from_file_location(
-        "timer_overlay_under_test", ROOT / "ops/beelink/timer-overlay.py"
+        "timer_overlay_under_test", ROOT / "ops/kiosk/timer-overlay.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

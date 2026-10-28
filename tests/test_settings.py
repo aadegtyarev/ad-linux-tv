@@ -145,6 +145,44 @@ def test_proxy_modes_preserve_other_firefox_prefs_and_reject_bad_input(tmp_path)
             validate_proxy(value)
 
 
+def test_browser_locale_writes_managed_block_and_requires_restart(tmp_path):
+    settings, sessions, path, profile = manager(tmp_path)
+    token, _ = sessions.create()
+    state = settings.state()
+    assert state["browser_locale"] == "ru"
+    assert state["browser_locales_installed"] == ["en"]
+    assert state["browser_locale_restart_required"] is False
+    with pytest.raises(SettingsError):
+        settings.update({"setting": "browser_locale", "value": "de"})
+    assert "browser" not in load_config(path)
+    state = settings.update({"setting": "browser_locale", "value": "en"})
+    assert state["browser_locale"] == "en"
+    assert state["browser_locale_restart_required"] is True
+    assert state["restart_required"] is True
+    assert load_config(path)["browser"] == {"locale": "en"}
+    prefs = (profile / "user.js").read_text()
+    assert 'user_pref("intl.locale.requested", "en-US");' in prefs
+    assert 'user_pref("network.proxy.http_port", 1081);' in prefs
+    assert prefs.count("// BEGIN AD-LINUX-TV LOCALE") == 1
+    settings.update({"setting": "browser_locale", "value": "ru"})
+    prefs = (profile / "user.js").read_text()
+    assert 'user_pref("intl.locale.requested", "ru");' in prefs
+    assert prefs.count("// BEGIN AD-LINUX-TV LOCALE") == 1
+    assert sessions.valid(token)
+    (profile / "extensions").mkdir()
+    (profile / "extensions/langpack-ru@firefox.mozilla.org.xpi").write_bytes(b"pack")
+    assert settings.state()["browser_locales_installed"] == ["ru", "en"]
+
+
+def test_browser_locale_config_rejects_unknown_language(tmp_path):
+    path = tmp_path / "config.yaml"
+    data = make_data()
+    data["browser"] = {"locale": "fr"}
+    path.write_text(yaml.safe_dump(data))
+    with pytest.raises(ValueError, match="browser.locale"):
+        load_config(path)
+
+
 def test_magnifier_toggles_only_on_state_change(tmp_path, monkeypatch):
     settings, _sessions, _path, _profile = manager(tmp_path)
     calls = []

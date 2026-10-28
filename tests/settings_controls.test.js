@@ -10,7 +10,8 @@ function panel() {
     "proxy-restart", "restart", "settings-status", "pointer-acceleration",
     "pointer-acceleration-value", "magnifier-scale", "magnifier-scale-value", "magnifier-hint",
     "view-form", "view-scope", "view-inherited", "view-mode", "view-zoom", "view-zoom-value", "view-default", "view-hint",
-    "about", "server-version", "server-build", "app-info", "app-version", "app-build"];
+    "about", "server-version", "server-build", "app-info", "app-version", "app-build",
+    "locale-form", "browser-locale", "locale-hint"];
   const fields = Object.fromEntries(roles.map(role => [role, {value:"", hidden:false, disabled:false, dataset:{},
     textContent:"", setAttribute() {}}]));
   fields["view-scope"].options = [{value:"common", textContent:"Все сайты"}];
@@ -37,7 +38,8 @@ function panel() {
     view:{mode:"desktop",zoom:125}, service_views:[
       {id:"kinopoisk",name:"Кино <b>Поиск",view:null,effective_view:{mode:"desktop",zoom:125}},
       {id:"youtube",name:"YouTube",view:{mode:"mobile",zoom:180},effective_view:{mode:"mobile",zoom:180}},
-    ], view_profile_ready:true, view_bridge_ready:true, view_restart_required:false};
+    ], view_profile_ready:true, view_bridge_ready:true, view_restart_required:false,
+    browser_locale:"ru", browser_locales_installed:["ru", "en"], browser_locale_restart_required:false};
   const controls = new context.SettingsControls(root, async (method, action) => {
     calls.push({method, action});
     if (method === "POST" && action.setting === "view") {
@@ -54,6 +56,10 @@ function panel() {
       state.restart_required = action.value !== state.magnifier_applied_scale;
     }
     if (method === "POST" && action.setting === "magnifier") state.magnifier = action.value;
+    if (method === "POST" && action.setting === "browser_locale") {
+      state.browser_locale = action.value;
+      state.browser_locale_restart_required = state.restart_required = true;
+    }
     if (method === "POST" && action.setting === "pointer_acceleration")
       state.pointer_acceleration = action.value;
     return {ok:true, json:async () => state};
@@ -169,6 +175,24 @@ test("settings form keeps hidden fields out of default view and sends confirmed 
   assert.equal(ui.calls[1].action.setting, "pin");
   assert.equal(ui.calls[1].action.value.pin, "1234");
   assert.equal(ui.fields.pin.value, "");
+});
+
+test("browser language saves explicitly and asks for a TV-session restart", async () => {
+  const ui = panel();
+  await ui.controls.refresh();
+  assert.equal(ui.fields["browser-locale"].value, "ru");
+  assert.equal(ui.fields["locale-hint"].textContent, "");
+  ui.fields["browser-locale"].value = "en";
+  ui.fields["locale-form"].onsubmit({preventDefault() {}});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(JSON.stringify(ui.calls.at(-1).action), JSON.stringify({setting:"browser_locale", value:"en"}));
+  assert.equal(ui.fields["proxy-restart"].hidden, false);
+  assert.match(ui.fields["locale-hint"].textContent, /перезапуска/);
+  ui.state.browser_locale = "ru";
+  ui.state.browser_locale_restart_required = false;
+  ui.state.browser_locales_installed = ["en"];
+  await ui.controls.refresh();
+  assert.match(ui.fields["locale-hint"].textContent, /не установлен/);
 });
 
 test("common site view is explicit save/reset with desktop125 default", async () => {

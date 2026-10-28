@@ -1,6 +1,6 @@
 # Feature contract: TV and phone settings
 
-- Status: Installed on Beelink; automated checks and TV visual check passed. Real-phone settings and actual PIN/proxy changes remain acceptance checks, 2026-10-25.
+- Status: Installed on the reference TV; automated checks and TV visual check passed. Real-phone settings and actual PIN/proxy changes remain acceptance checks, 2026-10-25.
 - Approval: User approved the exact scope through the in-session contract question. Telegram was removed from scope; local-file playback is a later task.
 
 ## Goal and user-visible behavior
@@ -20,7 +20,7 @@ TV System exposes PIN, magnifier and TV-browser proxy settings. The phone Menu h
 - [Configuration](../surfaces/configuration.md)
 - [TV launcher](../surfaces/tv-launcher.md)
 - [Phone remote](../surfaces/phone-remote.md)
-- [Kubuntu operation](../surfaces/kubuntu-operation.md)
+- [Kubuntu operation](../surfaces/linux-operation.md)
 
 ## Interfaces and constraints
 - Keep one private `config.yaml` as the durable source; save atomically with mode 0600. No new standalone live phone transport: authenticated settings actions use the existing WebSocket with Origin, session and CSRF checks. Local TV settings calls require exact loopback Host/Origin and kiosk mode.
@@ -30,4 +30,4 @@ TV System exposes PIN, magnifier and TV-browser proxy settings. The phone Menu h
 
 ## Acceptance and validation
 - Config validation and CLI defaults; PIN enable/change/disable flows from both clients, session invalidation and forbidden LAN direct writes; proxy mode/input validation and profile output; magnifier toggle and state; TV/phone controls and focus; compact TV viewport screenshot/layout.
-- Run focused and full Python/Node tests, lint, shell checks and deployment dry-run; deploy to Beelink, verify no Firefox audio stream regresses, test signed bridge still active. Real phone and TV visual acceptance may remain user checks.
+- Run focused and full Python/Node tests, lint, shell checks and deployment dry-run; deploy to reference TV, verify no Firefox audio stream regresses, test signed bridge still active. Real phone and TV visual acceptance may remain user checks.

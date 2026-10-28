@@ -13,6 +13,12 @@ from threading import RLock, Timer
 
 import yaml
 
+from .browser_locale import (
+    browser_locale,
+    installed_locales,
+    locale_profile_text,
+    validate_browser,
+)
 from .build_info import server_info
 from .magnifier import validate_magnifier
 from .view_config import common_view, service_views, validate_view, view_fingerprint
@@ -112,6 +118,18 @@ def write_proxy_profile(path, proxy):
     atomic_write(path, "\n".join(kept) + "\n")
 
 
+SDDM_UNITS = (
+    "/etc/systemd/system/sddm.service",
+    "/usr/lib/systemd/system/sddm.service",
+    "/lib/systemd/system/sddm.service",
+)
+
+
+def kde_available():
+    """The optional desktop switch exists only where a KDE display manager is installed."""
+    return any(Path(unit).exists() for unit in SDDM_UNITS)
+
+
 class SettingsManager:
     def __init__(
         self, config, config_path, sessions, pin_file=None, profile=None, capabilities=None
@@ -124,6 +142,7 @@ class SettingsManager:
         self.lock = RLock()
         self.magnified = False
         self.proxy_restart_required = False
+        self.locale_restart_required = False
         self.capabilities = capabilities or (lambda: [])
         self.view_boot_known = "AD_LINUX_TV_VIEW_HASH" in os.environ
         self.applied_view_hash = os.environ.get("AD_LINUX_TV_VIEW_HASH", view_fingerprint(config))
@@ -139,7 +158,7 @@ class SettingsManager:
     def proxy(self):
         if "proxy" in self.config:
             return self.config["proxy"]
-        # Existing Beelink profile predates a config field and uses local Xray.
+        # Profiles configured before the proxy setting existed may use local Xray.
         try:
             prefs = (self.profile / "user.js").read_text()
             if (
@@ -160,6 +179,7 @@ class SettingsManager:
                 "magnifier_scale": self.config.get("magnifier", {}).get("scale", 2.5),
                 "magnifier_applied_scale": self.applied_magnifier_scale,
                 "restart_required": self.proxy_restart_required
+                or self.locale_restart_required
                 or self.config.get("magnifier", {}).get("scale", 2.5)
                 != self.applied_magnifier_scale
                 or view_fingerprint(self.config) != self.applied_view_hash,
@@ -175,6 +195,10 @@ class SettingsManager:
                 "proxy": dict(self.proxy()),
                 "proxy_restart_required": self.proxy_restart_required,
                 "pointer_acceleration": self.config.get("pointer", {}).get("acceleration", 50),
+                "browser_locale": browser_locale(self.config),
+                "browser_locales_installed": installed_locales(self.profile),
+                "browser_locale_restart_required": self.locale_restart_required,
+                "kde_available": kde_available(),
             }
 
     def audio_levels(self):
@@ -284,6 +308,26 @@ class SettingsManager:
                             atomic_write(profile_path, old_prefs)
                         raise
                     self.proxy_restart_required = True
+            elif setting == "browser_locale":
+                try:
+                    browser = validate_browser({"locale": value})
+                except ValueError as exc:
+                    raise SettingsError(str(exc)) from None
+                if browser["locale"] != browser_locale(self.config):
+                    candidate = dict(self.config, browser=browser)
+                    profile_path = self.profile / "user.js"
+                    old_prefs = profile_path.read_text() if profile_path.exists() else None
+                    prefs = locale_profile_text(old_prefs or "", browser["locale"])
+                    atomic_write(profile_path, prefs)
+                    try:
+                        self._save_config(candidate)
+                    except OSError:
+                        if old_prefs is None:
+                            profile_path.unlink(missing_ok=True)
+                        else:
+                            atomic_write(profile_path, old_prefs)
+                        raise
+                    self.locale_restart_required = True
             elif setting == "view":
                 if value is None:
                     candidate = dict(self.config)

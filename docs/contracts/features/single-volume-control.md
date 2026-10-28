@@ -22,7 +22,7 @@ Changing site mute semantics, controlling unrelated Firefox tabs, bypassing site
 
 - [TV launcher](../surfaces/tv-launcher.md): System sound controls and touch panel.
 - [Phone remote](../surfaces/phone-remote.md): main volume control and Menu sound controls.
-- [Kubuntu operation](../surfaces/kubuntu-operation.md): TV-user Firefox and PipeWire session.
+- [Kubuntu operation](../surfaces/linux-operation.md): TV-user Firefox and PipeWire session.
 
 ## Interfaces and constraints
 
@@ -32,7 +32,7 @@ Keep the authenticated audio API and existing volume commands compatible, but ex
 
 - Only one user-facing volume slider remains on each surface, and it changes the selected output.
 - Firefox stream and active managed HTML media are 100% during playback; the output stays at the level chosen by the user.
-- YouTube playback on Beelink is audible and responds to the single slider; output switching and mute still work.
+- YouTube playback on the reference TV is audible and responds to the single slider; output switching and mute still work.
 
 ## Validation
 

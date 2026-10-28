@@ -4,7 +4,7 @@ import importlib.util
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
-    "timer_notice", Path(__file__).resolve().parents[1] / "ops/beelink/timer_notice.py"
+    "timer_notice", Path(__file__).resolve().parents[1] / "ops/kiosk/timer_notice.py"
 )
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -52,7 +52,7 @@ def test_compact_panel_hover_click_and_edit_before_warning():
 
 
 def test_overlay_single_panel_position_opacity_and_readability():
-    source = (Path(__file__).resolve().parents[1] / "ops/beelink/timer-overlay.py").read_text()
+    source = (Path(__file__).resolve().parents[1] / "ops/kiosk/timer-overlay.py").read_text()
     assert "GtkLayerShell.Edge.TOP, True" in source
     assert "GtkLayerShell.Edge.LEFT, True" in source
     assert "GtkLayerShell.Edge.RIGHT" not in source

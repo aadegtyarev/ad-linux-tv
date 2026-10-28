@@ -161,7 +161,7 @@ def test_first_tv_audio_start_sets_hdmi_full_without_overriding_saved_volume(tmp
         "PACTL_LOG": str(log),
         "AD_LINUX_TV_AUDIO_FILE": str(preference),
     }
-    script = ROOT / "ops/beelink/select-audio.sh"
+    script = ROOT / "ops/kiosk/select-audio.sh"
     subprocess.run([BASH, str(script)], env=env, check=True, timeout=3)
     assert "set-sink-volume alsa_output.test.hdmi-stereo 100%" in log.read_text()
     preference.write_text("alsa_output.test.hdmi-stereo\n")

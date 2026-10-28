@@ -41,10 +41,6 @@ case "${1:-status}" in
   status) status ;;
   help|-h|--help) usage ;;
   tv|kde|on|off)
-    if active beelink-display.service; then
-      echo 'Сначала выключите автоматику HDMI: она управляет SDDM.' >&2
-      exit 1
-    fi
     case "$1" in
       tv)
         if [[ ! -x /usr/local/libexec/ad-linux-tv/has-monitor.sh ]]; then
@@ -56,6 +52,10 @@ case "${1:-status}" in
         /usr/bin/sudo -n /usr/bin/systemctl start ad-linux-tv-kiosk.service
         ;;
       kde|on)
+        if ! /usr/bin/systemctl cat sddm.service >/dev/null 2>&1; then
+          echo 'KDE не установлен на этом компьютере.' >&2
+          exit 1
+        fi
         if active ad-linux-tv-kiosk.service; then confirm 'Закрыть ТВ и войти в KDE?' || exit 1; fi
         /usr/bin/sudo -n /usr/bin/systemctl start sddm.service
         /usr/bin/sudo -n /usr/bin/chvt 1

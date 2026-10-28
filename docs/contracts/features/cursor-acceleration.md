@@ -1,6 +1,6 @@
 # Feature contract: phone cursor acceleration
 
-- Status: Installed on Beelink; Python/Node checks passed and the user confirmed real-phone acceleration. TV pointer-slider arrow check remains, 2026-10-25.
+- Status: Installed on the reference TV; Python/Node checks passed and the user confirmed real-phone acceleration. TV pointer-slider arrow check remains, 2026-10-25.
 - Approval: User approved speed-based acceleration and settings on TV and phone.
 
 ## Goal and scenarios

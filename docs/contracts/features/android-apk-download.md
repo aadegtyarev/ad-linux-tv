@@ -34,7 +34,7 @@ Keep the48px toolbar, familiar compact proportions, flexible pad, accessibility 
 
 - [Phone remote](../surfaces/phone-remote.md): public entry/download, unavailable/compatibility/UI/security behavior.
 - [Android remote](../surfaces/android-remote.md): normal camera versus native scanner and delivered-versus-installed state.
-- [Kubuntu operation](../surfaces/kubuntu-operation.md): immutable artifact placement/provenance/update and bounded own deployment.
+- [Kubuntu operation](../surfaces/linux-operation.md): immutable artifact placement/provenance/update and bounded own deployment.
 - [TV launcher](../surfaces/tv-launcher.md): unchanged QR also reaches the browser APK link.
 
 Configuration schema, timer/power/media/bridge behavior and unrelated services are non-goals. Stop for approval if a new configuration field, native bridge/permission, service/package/privilege provisioning, broad file server or wider reachability becomes necessary.

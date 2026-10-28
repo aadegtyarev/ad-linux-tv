@@ -2,7 +2,7 @@
 
 import pytest
 
-from ad_linux_tv.profile_config import prepare_view_profile
+from ad_linux_tv.profile_config import prepare_locale_profile, prepare_view_profile
 
 
 def test_omitted_view_uses_mobile_default_without_rewriting_unrelated_preferences(tmp_path):
@@ -53,3 +53,18 @@ def test_malformed_managed_block_does_not_truncate_unrelated_preferences(tmp_pat
     with pytest.raises(ValueError):
         prepare_view_profile({"services": [{}]}, path)
     assert path.read_text() == text
+
+
+def test_startup_locale_block_defaults_to_russian_and_follows_config(tmp_path):
+    path = tmp_path / "user.js"
+    path.write_text('user_pref("network.proxy.type", 5);\n')
+    prepare_locale_profile({"services": []}, path)
+    text = path.read_text()
+    assert text.startswith('user_pref("network.proxy.type", 5);\n')
+    assert 'user_pref("intl.locale.requested", "ru");' in text
+    prepare_locale_profile({"services": []}, path)
+    assert path.read_text() == text
+    prepare_locale_profile({"services": [], "browser": {"locale": "en"}}, path)
+    text = path.read_text()
+    assert 'user_pref("intl.locale.requested", "en-US");' in text
+    assert '"ru"' not in text

@@ -24,7 +24,7 @@ The TV System menu and paired phone remote show the currently selected TV audio 
 
 - [Phone remote](../surfaces/phone-remote.md): authenticated audio state, selection, volume and mute controls.
 - [TV launcher](../surfaces/tv-launcher.md): the same controls under System, available only to the local kiosk.
-- [Kubuntu operation](../surfaces/kubuntu-operation.md): TV-user audio preference and HDMI startup fallback.
+- [Kubuntu operation](../surfaces/linux-operation.md): TV-user audio preference and HDMI startup fallback.
 
 ## Interfaces and constraints
 
@@ -35,12 +35,12 @@ The TV System menu and paired phone remote show the currently selected TV audio 
 
 - The TV System menu and phone remote display available outputs and current volume/mute state, select an output, move active Firefox audio, and persist the choice across a TV session restart. The touch sound panel and both web UIs separately adjust output and active Firefox-stream volume.
 - Unauthenticated, cross-origin, malformed and out-of-range audio requests are denied without changing audio.
-- On Beelink, HDMI sink and Firefox stream are 100%, and manually opened Squeekboard remains visible across transient focus loss.
+- On the reference TV, HDMI sink and Firefox stream are 100%, and manually opened Squeekboard remains visible across transient focus loss.
 
 ## Validation
 
-- Run endpoint/security tests, Node UI tests, lint/shell checks and install dry-run. Check live Beelink HDMI state and audio API without exposing login secrets. Physical Bluetooth selection and the third-party numeric entry flow require user verification.
+- Run endpoint/security tests, Node UI tests, lint/shell checks and install dry-run. Check live reference TV HDMI state and audio API without exposing login secrets. Physical Bluetooth selection and the third-party numeric entry flow require user verification.
 
 ## Observed validation
 
-- 51 Python and 27 Node tests passed, plus Ruff and shell checks. On Beelink, paired LAN requests read audio state and successfully set 100% volume, unmute and reselect HDMI; the output preference file is private. HDMI remains at 100%. Bluetooth output and repeated-digit touch input still need physical testing.
+- 51 Python and 27 Node tests passed, plus Ruff and shell checks. On the reference TV, paired LAN requests read audio state and successfully set 100% volume, unmute and reselect HDMI; the output preference file is private. HDMI remains at 100%. Bluetooth output and repeated-digit touch input still need physical testing.

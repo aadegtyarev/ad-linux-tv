@@ -160,6 +160,7 @@ def test_kde_switch_requires_kiosk_loopback_and_exact_host(endpoint, monkeypatch
         return CompletedProcess(command, 0)
 
     monkeypatch.setattr(post_routes.subprocess, "run", run)
+    monkeypatch.setattr(post_routes, "kde_available", lambda: True)
     headers = {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"}
     response, _ = request(connection, "POST", "/api/system/kde", "{}", headers)
     assert response.status == 403
@@ -190,6 +191,20 @@ def test_kde_switch_requires_kiosk_loopback_and_exact_host(endpoint, monkeypatch
     response, _ = request(connection, "POST", "/api/system/kde", "{}", headers)
     assert response.status == 403
     assert len(calls) == 1
+
+
+def test_kde_switch_is_refused_without_a_kde_display_manager(endpoint, monkeypatch):
+    import ad_linux_tv.post_routes as post_routes
+
+    connection, port = endpoint
+    calls = []
+    monkeypatch.setattr(post_routes.subprocess, "run", lambda command, **_: calls.append(command))
+    monkeypatch.setattr(post_routes, "kde_available", lambda: False)
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    headers = {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"}
+    response, _ = request(connection, "POST", "/api/system/kde", "{}", headers)
+    assert response.status == 409
+    assert calls == []
 
 
 def test_phone_text_input_requires_auth_and_never_returns_text(endpoint, monkeypatch):

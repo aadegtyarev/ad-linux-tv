@@ -14,7 +14,7 @@ The authorized timer expired normally and the server reports asleep/no error. Do
 
 - Replace only the timer header's themed alarm image with a compact readable text/vector representation that needs no image/theme/pixbuf loader and no new dependency. Preserve the count label, compact proportions, accessibility and upper-left placement.
 - Add focused source/mock regression checks that execute actual constructor/render methods without real GTK/Wayland/network/actuators. No broad renderer/model refactor or new icon framework.
-- Affected surfaces: [TV launcher](../surfaces/tv-launcher.md) and [Kubuntu operation](../surfaces/kubuntu-operation.md). Shared [phone](../surfaces/phone-remote.md) and [configuration](../surfaces/configuration.md) boundaries remain unchanged.
+- Affected surfaces: [TV launcher](../surfaces/tv-launcher.md) and [Kubuntu operation](../surfaces/linux-operation.md). Shared [phone](../surfaces/phone-remote.md) and [configuration](../surfaces/configuration.md) boundaries remain unchanged.
 
 Do not change timer_notice, timer requests/DTO/auth, server/sleep_timer deadlines/generations, presets, warning timing/dismissal, Change/Cancel actions, focus policy, fullscreen behavior, global scale, media pause/silence/wake/CEC or other overlays. No packages, new services/privileges, system icon/theme caches, browser/native/signing changes, GTK security flags, glycin/bwrap bypass or unrelated files.
 

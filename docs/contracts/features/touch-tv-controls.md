@@ -28,7 +28,7 @@ The TV session supports text entry from the touchscreen in Firefox pages, includ
 
 - [TV launcher](../surfaces/tv-launcher.md): Browser and System placement/navigation.
 - [Configuration](../surfaces/configuration.md): default Browser service; existing schema unchanged.
-- [Kubuntu operation](../surfaces/kubuntu-operation.md): touch keyboard and kiosk startup reliability.
+- [Kubuntu operation](../surfaces/linux-operation.md): touch keyboard and kiosk startup reliability.
 - [Phone remote](../surfaces/phone-remote.md): authenticated text input, advertised LAN address and QR refresh.
 
 ## Interfaces and constraints
@@ -51,5 +51,5 @@ The TV session supports text entry from the touchscreen in Firefox pages, includ
 ## Validation
 
 - Run relevant Python/Node/shell checks and dry-run; visually inspect a rendered launcher.
-- Verify touch keyboard and browser text input on Beelink, plus phone text input, System navigation, session restart, and LAN address refresh.
-- Observed on Beelink: Yandex and YouTube expose their own touch keyboard controls, and the user opened Squeekboard with the persistent overlay button; authenticated API text reaches Firefox; the overlay Home script returned to the launcher; System switches to KDE and back; killing the server restarts the full session; Ethernet disconnect/reconnect changes the advertised address and QR between `.105` and `.111`. Physical Home/dismissal, a real phone, and a fresh DHCP lease remain to be checked.
+- Verify touch keyboard and browser text input on the reference TV, plus phone text input, System navigation, session restart, and LAN address refresh.
+- Observed on the reference TV: Yandex and YouTube expose their own touch keyboard controls, and the user opened Squeekboard with the persistent overlay button; authenticated API text reaches Firefox; the overlay Home script returned to the launcher; System switches to KDE and back; killing the server restarts the full session; Ethernet disconnect/reconnect changes the advertised address and QR between `.105` and `.111`. Physical Home/dismissal, a real phone, and a fresh DHCP lease remain to be checked.
