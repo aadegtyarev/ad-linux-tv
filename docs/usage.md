@@ -1,37 +1,35 @@
 # Use the TV and phone
 
-## Version information
+The launcher and remote interface are in Russian.
 
-Open **Settings → О программе** on the phone or TV to see media-center version/build. A supported Android shell shows its own version/build separately; a normal browser hides that row. Missing metadata shows «неизвестно», not an assumed version. Values are read-only, wrap completely and arrive with ordinary settings synchronization; opening About checks late native metadata locally. They are not proof of identity. Older counterparts may lack this support.
+## TV
 
-The current server/UI and Android0.2.5/code6 download are [installed and read-only verified](verification/android-apk-download-2026-10-27.md). Open the same TV QR with a normal camera: the browser offers the APK before PIN and on its main screen after PIN-free entry/session restoration. On iPhone/iPad/iPod the Android invitation is hidden and the web remote remains; this also covers desktop-style iPadOS hints. Installation on Android is optional and explicit; native scanner pairing stays unchanged. Reopen an already loaded remote to load the updated page. Phone installation and physical phone/TV acceptance remain separate.
+Pick a service tile with the arrows and Enter, or click it from the phone. **Плитки** (Home) returns to the tiles. **System** opens TV settings.
 
-## Common and individual site views
+## Connect a phone
 
-Open **Settings → Вид сайтов**, select **Все сайты** or one configured site, choose mode/zoom and save. A site without an exception inherits common values; **Как для всех сайтов** removes only its exception. Common **По умолчанию** restores desktop125.
+Scan the TV QR code with a phone on the same home network. No PIN is needed by default; if you enable one, the four-digit code is shown only on the TV. **Menu → QR** shows a code for a second phone. If the TV's address changes, the phone tries to follow it; otherwise rescan the QR. Android users can install the [Android app](android.md).
 
-Saving does not interrupt or reload viewing. If settings request a TV-session restart, do it explicitly when ready, then reopen the service; otherwise follow the next-open hint. See [configuration and compatibility limits](configuration.md).
+## Remote
 
-## Controls
+- **Touchpad:** drag to move the pointer, tap to click, two fingers to scroll. Edge arrows send arrow keys; after arrow/Tab navigation a tap sends Enter.
+- **Keys:** Shift+Tab, Tab, Enter and Back below the pad.
+- **Text:** opens a field and the phone keyboard for the focused Firefox field.
+- **Volume:** slider and mute for the selected output. **Menu → Sound** has output choice, a test chime and separate levels for output, Firefox stream and page player.
+- **Magnifier:** button next to the volume.
+- **Media panel:** appears when the site exposes playback (title, play/pause, position, previous/next where supported).
 
-The TV opens to service tiles. Select one with the remote arrows and Enter, or point and click from the phone. **Home / Плитки** returns to the tiles and closes the service tabs managed by the Firefox bridge. The small **System** control opens TV settings; it can be clicked with the pointer and is skipped by tile-arrow navigation. Signed bridge0.4.1 repaired a zoom-settings failure that prevented service tiles from opening. An actual Browser-tile click and operator confirmation passed; see [verification and remaining limits](verification/tile-open-zoom-2026-10-26.md). This is not a playback or DRM guarantee.
+## Timer
 
-Scan the QR on the TV with a phone on the same trusted home network. New installations require no PIN; if PIN is enabled, the four-digit code appears only on the TV. The phone keeps its session across page reloads. The phone **Menu → QR for second phone** shows the current address for another device. If the TV's IP changes, the phone tries to switch addresses while the old connection still works; otherwise rescan the TV QR.
+Choose Off, 15, 30, 60, 90 or 120 minutes. The TV shows a small clock in the upper-left corner and warns two minutes before the end. At expiry, playback pauses and the display turns off. A touch or phone command turns it back on; if the TV stays dark, use its own remote.
 
-Drag on the touchpad to move the TV pointer; tap to click. Edge arrows send navigation keys. After arrow or Tab navigation, a tap sends Enter to the focused item. Shift+Tab, Tab, Enter and Back sit below the pad. Two fingers scroll vertically, horizontally or diagonally. **Text** opens an inline field above the volume footer and the phone keyboard for the currently focused Firefox field. Successful submission clears and closes it; failed or uncertain input is not automatically repeated. Website keyboard navigation depends on the site's own focus behavior.
+## Power (⏻ next to Timer)
 
-The main volume slider controls the selected output. Its button reads **Вкл**, **Выкл** or **?** when state cannot be checked. **Menu → Sound** provides output selection, test chime, output and Firefox mute, and separate output, Firefox-stream and page-player levels. A Firefox stream appears only while it plays; its saved target and mute state apply to new streams. A site's own audio system can still behave differently. The TV System has the same audio settings.
+- **Tap:** display sleep or wake. Sleep pauses playback first and keeps the display on if it cannot confirm silence.
+- **Hold 1.2 s:** confirmation to shut down the whole computer. It can only be turned on again with its power button.
 
-When MPRIS or a fresh managed-HTML fallback exposes media, a large-control panel appears on the phone. Short screens and large fonts can scroll instead of shrinking controls. The panel shows the track or video title, play/pause, position and previous/next where the site supports them. Long titles stay on one horizontally scrollable line. A live stream may have no usable position; unsupported controls are disabled. The panel hides when neither source is available and never controls another application's player. The existing MPRIS path needs no bridge update. HTML timing/seek requires fresh bridge support, an accessible owned player and valid seekable ranges. Installed signed0.4.1 reported that support during tile-open acceptance; playback/seek on actual services was not accepted by that check. Pending feedback is provisional; a timeout does not repeat the action. See [bridge capabilities](bridge-protocol.md).
+## Settings
 
-The timer offers Off, 15, 30, 60, 90 and 120 minutes. The phone countdown stays inside the Timer button without adding a row. On TV, one semi-transparent upper-left clock/time panel enlarges on hover/click to reveal Change/Cancel, away from the bottom player controls and upper-right toolbar. The same panel becomes the actionable two-minute warning; presets stay in place. At expiry the TV pauses managed playback before darkening HDMI; if it cannot establish silence, it leaves the display on and reports why. Touch or a phone command restores the video output without resuming playback. This does not guarantee that the physical TV wakes; if the picture stays dark, use the TV's own remote. The [native-window repair record](verification/timer-window-icon-2026-10-28.md) verifies the installed text-clock panel and automatic warning without changing timer deadlines or weakening the GTK image-loader sandbox.
+TV **System** and phone **Menu → Settings** contain PIN, proxy, browser language, cursor acceleration, magnifier scale, site view and sound. **О программе** shows versions. Details: [Settings](configuration.md).
 
-## Power beside the timer
-
-Tap **⏻** to request display sleep or wake. Sleep first pauses managed media and verifies silence; unknown or active audio leaves HDMI on. Wake never resumes playback automatically. If the TV stays dark, «включите ТВ штатным пультом»: restoring the computer's output is not proof the TV woke. An optional directed CEC wake uses only already available hardware/tools; nothing is installed or reconfigured for it.
-
-Hold **⏻** for 1.2 seconds to open a separate whole-computer shutdown confirmation. Releasing after a hold does not also send a tap. Confirm only when you intend to stop **all tasks on this computer**. You cannot turn the fully stopped computer back on from this phone control; press the computer's physical power button. An expired confirmation must be opened again. An accepted or uncertain request is never automatically repeated. Switching away or cancelling closes the dialog.
-
-Power controls are installed on the Beelink, but real sleep/wake, hold and whole-host shutdown acceptance remain separate. See the [delivery evidence and limits](verification/remote-power-2026-10-26.md).
-
-TV System also contains PIN, cursor acceleration, cursor magnifier and Firefox proxy controls. The phone magnifier button is beside volume. Proxy and initial magnifier-scale changes take effect after an explicit TV-session restart; saving scale does not interrupt viewing. The default is2.5×, adjustable1.25–5× in quarter steps. The phone Menu contains sound/QR and a Settings page for PIN, proxy, cursor acceleration and magnifier scale. It omits service launching, website-address entry and duplicate browser-key banks. The [Android app](android.md) adds saved-center selection and separate authorization in a compact header; playback normally uses the same page's inline player.
+Site playback, login and DRM depend on Firefox and the site.
