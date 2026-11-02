@@ -2,6 +2,7 @@
 
 import json
 
+from .bluetooth_routes import handle_bluetooth
 from .browser_media import choose_media
 from .control import QueueFullError
 from .media_session import MediaUnavailable, get_media_monitor
@@ -9,10 +10,18 @@ from .pages import get_response
 from .post_routes import handle_post
 
 GET_PATHS = frozenset(
-    {"/api/services", "/api/status", "/api/audio", "/api/display-timer", "/api/power"}
+    {
+        "/api/services",
+        "/api/status",
+        "/api/audio",
+        "/api/display-timer",
+        "/api/power",
+        "/api/bluetooth",
+    }
 )
 POST_PATHS = frozenset(
     {
+        "/api/bluetooth",
         "/api/command",
         "/api/input",
         "/api/pointer",
@@ -27,12 +36,15 @@ POST_PATHS = frozenset(
 class RemoteRequest:
     """Adapt one socket message to the existing route boundary."""
 
-    def __init__(self, handler, path, body, csrf):
+    def __init__(self, handler, path, body, csrf, principal=None):
         self.handler = handler
         self.path = path
         self.body = body
         self.client_address = handler.client_address
         self.server = handler.server
+        self.connection = handler.connection
+        self.bluetooth_manager = getattr(handler, "bluetooth_manager", None)
+        self.bluetooth_principal = principal
         self.headers = dict(handler.headers)
         self.headers["X-CSRF-Token"] = csrf
         self.response = None
@@ -59,9 +71,21 @@ class RemoteDispatcher:
     """Keep one phone transport while reusing the established action handlers."""
 
     def __init__(
-        self, handler, config, queue, sessions, failures, display_timer, static, csrf, settings=None
+        self,
+        handler,
+        config,
+        queue,
+        sessions,
+        failures,
+        display_timer,
+        static,
+        csrf,
+        settings=None,
+        principal=None,
     ):
         self.handler = handler
+        self.bluetooth_manager = getattr(handler, "bluetooth_manager", None)
+        self.bluetooth_principal = principal
         self.config = config
         self.queue = queue
         self.sessions = sessions
@@ -85,6 +109,15 @@ class RemoteDispatcher:
     def dispatch(self, method, path, body):
         if not isinstance(method, str) or not isinstance(path, str):
             return 400, {}
+        if path == "/api/bluetooth":
+            if not (
+                (method == "GET" and body is None) or (method == "POST" and isinstance(body, dict))
+            ):
+                return 400, {}
+            request = RemoteRequest(self.handler, path, body, self.csrf, self.bluetooth_principal)
+            handle_bluetooth(request, self.sessions, method)
+            status, payload = request.response
+            return status, json.loads(payload)
         if path == "/api/media":
             if method == "GET" and body is None:
                 try:
@@ -150,7 +183,7 @@ class RemoteDispatcher:
         ):
             return 200, self.settings.state()
         if method == "POST" and path in POST_PATHS and isinstance(body, dict):
-            request = RemoteRequest(self.handler, path, body, self.csrf)
+            request = RemoteRequest(self.handler, path, body, self.csrf, self.bluetooth_principal)
             handle_post(
                 request,
                 self.config,

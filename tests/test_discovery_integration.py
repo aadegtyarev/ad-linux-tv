@@ -140,7 +140,12 @@ def test_listener_closes_owned_discovery_and_sockets_on_exit(monkeypatch):
             calls.append("advertise-close")
 
     monkeypatch.delenv("AD_LINUX_TV_KIOSK", raising=False)
-    monkeypatch.setattr(listener, "make_handler", lambda *_args: object())
+    from types import SimpleNamespace
+
+    manager = SimpleNamespace(start=lambda: None, close=lambda: None)
+    monkeypatch.setattr(
+        listener, "make_handler", lambda *_args: SimpleNamespace(bluetooth_manager=manager)
+    )
     monkeypatch.setattr(listener, "make_server", lambda *_args: Server())
     monkeypatch.setattr(listener, "DiscoveryAnnouncer", Announcer)
     with pytest.raises(KeyboardInterrupt):

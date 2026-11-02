@@ -826,3 +826,28 @@ test("BluetoothControls focus remains on rendered anchor until the full Response
   await ui.clock.tick(1); body.resolve({state: snapshot()}); await settle();
   assert.equal(ui.controls.pending, false); assert.equal(ui.document.activeElement, ui.find("action"));
 });
+
+for (const kind of ["pair", "connect", "disconnect", "forget"]) test(`finished ${kind} with pending proof stays exclusive and cancellable without reviving private controls`, async () => {
+  const ui = kind === "pair" ? await pairing("pin") : await panel().start();
+  const staleInput = ui.find("answer:challenge");
+  if (staleInput) staleInput.value = "synthetic-secret";
+  const pending = snapshot({operation: operation(kind, {phase:"finished",error:"uncertain",remaining_ms:9000})});
+  await ui.poll(pending, {challenge:{id:"challenge",kind:"pin",remaining_ms:5000},
+    observation:{id:"observation",key:"KEY_ENTER",action:"ok",complete:true,tested:false},confirmation_id:"confirmation"});
+  assert.equal(ui.find("cancel").disabled, false);
+  for (const key of ["discover", "disconnect", "forget_prepare", "learn", "reset"])
+    if (ui.find(key)) assert.equal(ui.find(key).disabled, true, key);
+  assert.equal(ui.find("answer:challenge"), undefined);
+  assert.equal(ui.find("forget-confirm"), undefined);
+  assert.equal(ui.controls.challenge, null);
+  assert.equal(ui.controls.observation, null);
+  assert.equal(ui.controls.confirmation, null);
+  assert.ok(ui.root.textContent.includes("ожидаем подтверждение состояния"));
+  if (staleInput) assert.equal(staleInput.value, "");
+  ui.reply(snapshot({operation:operation(kind,{phase:"finished",error:"uncertain",remaining_ms:0})}));
+  await ui.click("cancel");
+  assert.deepEqual(lastBody(ui), {op:"cancel",lease,operation_id:"operation"});
+  assert.equal(ui.find("cancel"), undefined);
+  assert.equal(ui.find("discover").disabled, false);
+  assert.equal(ui.controls.challenge, null);
+});

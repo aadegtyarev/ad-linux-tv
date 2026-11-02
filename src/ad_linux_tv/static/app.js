@@ -28,10 +28,27 @@ const rangeActions = [audioVolume, ...advancedAudio.sliders(),
   tvSettingsPanel?.field("pointer-acceleration"), tvSettingsPanel?.field("magnifier-scale"),
   tvSettingsPanel?.field("view-zoom")].filter(Boolean);
 for (const slider of rangeActions) slider.addEventListener("click", () => slider.focus());
-const settingsActions = [document.querySelector("#settings-back"), audioOutput, audioVolume,
-  audioMute, document.querySelector("#audio-refresh"),
-  document.querySelector("#audio-test"), ...advancedAudio.actions(), ...timerButtons,
-  ...(tvSettingsPanel?.actions() || []), document.querySelector("#open-kde")];
+const tvBluetoothDetails = document.querySelector("#tv-bluetooth-details");
+const tvBluetoothRoot = document.querySelector("#tv-bluetooth-controls");
+const tvBluetoothPanel = tvBluetoothRoot ? new BluetoothControls(tvBluetoothRoot,
+  (method, path, body) => fetch(path, {
+    method, headers: {"Content-Type": "application/json", "X-TV-Launcher": "1"},
+    ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+  })) : null;
+function syncTvBluetooth() {
+  if (!settings.hidden && !document.hidden && tvBluetoothDetails?.open)
+    void tvBluetoothPanel?.activate();
+  else tvBluetoothPanel?.deactivate();
+}
+tvBluetoothDetails?.addEventListener("toggle", syncTvBluetooth);
+document.addEventListener("visibilitychange", syncTvBluetooth);
+function settingsActions() {
+  return Array.from(settings.querySelectorAll("button,input,select,summary"))
+    .filter(action => action.isConnected !== false && !action.disabled &&
+      !action.closest?.("[hidden]") &&
+      (action.tagName === "SUMMARY" || !action.closest?.("details:not([open])")) &&
+      (!action.getClientRects || action.getClientRects().length > 0));
+}
 const confirmActions = [document.querySelector("#cancel-kde"), document.querySelector("#confirm-kde-yes")];
 let currentRemoteAddress = "";
 let pressedTvButton = null;
@@ -186,13 +203,15 @@ function openSettings() {
   settings.hidden = false;
   confirmation.hidden = true;
   systemStatus.textContent = "";
-  settingsActions[0].focus();
+  document.querySelector("#settings-back").focus();
   void refreshAudio();
   void refreshDisplayTimer();
   void tvSettingsPanel?.refresh();
+  syncTvBluetooth();
 }
 
 function closeSettings() {
+  tvBluetoothPanel?.deactivate();
   settings.hidden = true;
   home.hidden = false;
   confirmation.hidden = true;
@@ -201,14 +220,14 @@ function closeSettings() {
   selected?.focus();
 }
 
-settingsActions[0].onclick = closeSettings;
+document.querySelector("#settings-back").onclick = closeSettings;
 document.querySelector("#open-kde").onclick = () => {
   confirmation.hidden = false;
   confirmActions[0].focus();
 };
 confirmActions[0].onclick = () => {
   confirmation.hidden = true;
-  settingsActions[0].focus();
+  document.querySelector("#settings-back").focus();
 };
 confirmActions[1].onclick = async () => {
   confirmActions[1].disabled = true;
@@ -239,11 +258,13 @@ document.addEventListener("keydown", event => {
     return;
   }
   if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  const editingText = document.activeElement?.tagName === "TEXTAREA" ||
+    (document.activeElement?.tagName === "INPUT" &&
+      ["text", "password", "search", "email", "url", "tel", "number"].includes(document.activeElement.type));
+  if (editingText && ["ArrowLeft", "ArrowRight"].includes(event.key)) return;
   event.preventDefault();
-  const actions = confirmation.hidden
-    ? settingsActions.filter(action => !action.disabled && !action.closest?.("[hidden]") &&
-        (action.tagName === "SUMMARY" || !action.closest?.("details:not([open])")))
-    : confirmActions;
+  const actions = confirmation.hidden ? settingsActions() : confirmActions.filter(action => !action.disabled);
+  if (!actions.length) return;
   const index = actions.indexOf(document.activeElement);
   if (confirmation.hidden && (event.key === "ArrowRight" || event.key === "ArrowLeft") &&
       rangeActions.includes(document.activeElement)) {
@@ -258,15 +279,14 @@ document.addEventListener("keydown", event => {
     const change = event.key === "ArrowRight" ? 1 : -1;
     audioOutput.selectedIndex = (audioOutput.selectedIndex + change + audioOutput.options.length) % audioOutput.options.length;
     audioOutput.onchange();
-  } else if (confirmation.hidden && (event.key === "ArrowLeft" || event.key === "ArrowRight") && document.activeElement?.tagName === "SELECT") {
+  } else if (confirmation.hidden && (event.key === "ArrowLeft" || event.key === "ArrowRight") && document.activeElement?.tagName === "SELECT" && document.activeElement.options.length) {
     const select = document.activeElement;
     const change = event.key === "ArrowRight" ? 1 : -1;
     select.selectedIndex = (select.selectedIndex + change + select.options.length) % select.options.length;
     select.onchange?.();
   } else {
     const change = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
-    let target = (index + change + actions.length) % actions.length;
-    while (actions[target].disabled) target = (target + change + actions.length) % actions.length;
+    const target = (index + change + actions.length) % actions.length;
     actions[target].focus();
   }
 });
@@ -274,9 +294,9 @@ document.addEventListener("keydown", event => {
 const ui = createLauncherUI(send, openSettings);
 document.addEventListener("ad-linux-tv-select-for-bridge", () => {
   if (!settings.hidden) {
-    const actions = confirmation.hidden ? settingsActions : confirmActions;
+    const actions = confirmation.hidden ? settingsActions() : confirmActions.filter(action => !action.disabled);
     const focused = actions.includes(document.activeElement) ? document.activeElement : actions[0];
-    focused.click();
+    focused?.click();
     document.documentElement.dataset.bridgeServiceId = "";
   } else document.documentElement.dataset.bridgeServiceId = ui.selectForBridge() || "";
 });

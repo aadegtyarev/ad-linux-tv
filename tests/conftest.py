@@ -48,11 +48,14 @@ def endpoint(monkeypatch):
         lambda: SimpleNamespace(status=lambda: {"available": False}),
     )
     server = make_server("127.0.0.1", 0, make_handler(make_config()))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
     connection = HTTPConnection("127.0.0.1", server.server_port)
     yield connection, server.server_port
     connection.close()
     server.shutdown()
+    server.server_close()
+    thread.join(2)
 
 
 def request(connection, method, path, body=None, headers=None):

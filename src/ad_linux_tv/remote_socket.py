@@ -10,6 +10,7 @@ import struct
 import time
 
 from . import security
+from .bluetooth_routes import phone_principal
 from .remote_rpc import RemoteDispatcher
 
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -97,7 +98,11 @@ class RemoteSocket:
                 request_id = item["id"]
                 if type(request_id) is not int or not 0 <= request_id <= 2**53 - 1:
                     raise ValueError("invalid request id")
-                if not self.handler.authorized():
+                token = self.handler.authorized()
+                if (
+                    not token
+                    or phone_principal(token).owner != self.dispatcher.bluetooth_principal.owner
+                ):
                     self._send(8, struct.pack("!H", 1008))
                     return
                 status, body = self.dispatcher.dispatch(item["method"], item["path"], item["body"])
@@ -105,9 +110,16 @@ class RemoteSocket:
                 self._send(1, reply)
             except (ConnectionError, OSError, socket.timeout):
                 return
-            except (ValueError, TypeError, UnicodeError):
+            except (ValueError, TypeError, UnicodeError, RecursionError):
                 try:
                     self._send(8, struct.pack("!H", 1002))
+                except OSError:
+                    pass
+                return
+            except Exception:
+                # Fail closed without logging a dispatcher exception or private state.
+                try:
+                    self._send(8, struct.pack("!H", 1011))
                 except OSError:
                     pass
                 return
@@ -117,6 +129,17 @@ def serve_remote_socket(
     handler, config, queue, sessions, failures, display_timer, static, settings=None
 ):
     """Authenticate the upgrade using the same cookie, Origin and CSRF as POST."""
+    if (
+        os.environ.get("AD_LINUX_TV_KIOSK") != "1"
+        or not handler.private()
+        or not security.direct_host(
+            handler.headers.get("Host", ""),
+            handler.connection.getsockname()[0],
+            handler.server.server_port,
+        )
+    ):
+        handler.close_connection = True
+        return handler.send(403, "{}")
     protocol = handler.headers.get("Sec-WebSocket-Protocol", "")
     token = handler.authorized()
     csrf = protocol.removeprefix("csrf.") if protocol.startswith("csrf.") else ""
@@ -126,9 +149,7 @@ def serve_remote_socket(
     except (ValueError, binascii.Error):
         valid_key = False
     if (
-        os.environ.get("AD_LINUX_TV_KIOSK") != "1"
-        or not handler.private()
-        or not security.matches_device(handler.path, handler.headers, config)
+        not security.matches_device(handler.path, handler.headers, config)
         or not handler.valid_origin()
         or not token
         or not sessions.csrf_valid(token, csrf)
@@ -140,15 +161,32 @@ def serve_remote_socket(
     ):
         handler.close_connection = True
         return handler.send(403, "{}")
-    accept = base64.b64encode(hashlib.sha1((key + GUID).encode()).digest()).decode()
-    handler.send_response(101)
-    handler.send_header("Upgrade", "websocket")
-    handler.send_header("Connection", "Upgrade")
-    handler.send_header("Sec-WebSocket-Accept", accept)
-    handler.send_header("Sec-WebSocket-Protocol", protocol)
-    handler.end_headers()
-    handler.close_connection = True
-    dispatcher = RemoteDispatcher(
-        handler, config, queue, sessions, failures, display_timer, static, csrf, settings
-    )
-    RemoteSocket(handler, dispatcher).run()
+    principal = phone_principal(token, os.urandom(16).hex())
+    manager = handler.bluetooth_manager
+    try:
+        accept = base64.b64encode(hashlib.sha1((key + GUID).encode()).digest()).decode()
+        handler.send_response(101)
+        handler.send_header("Upgrade", "websocket")
+        handler.send_header("Connection", "Upgrade")
+        handler.send_header("Sec-WebSocket-Accept", accept)
+        handler.send_header("Sec-WebSocket-Protocol", protocol)
+        handler.end_headers()
+        handler.close_connection = True
+        dispatcher = RemoteDispatcher(
+            handler,
+            config,
+            queue,
+            sessions,
+            failures,
+            display_timer,
+            static,
+            csrf,
+            settings,
+            principal,
+        )
+        RemoteSocket(handler, dispatcher).run()
+    except Exception:
+        # Partial upgrade/setup failure closes this lifetime without exception text.
+        handler.close_connection = True
+    finally:
+        manager.retire(principal)

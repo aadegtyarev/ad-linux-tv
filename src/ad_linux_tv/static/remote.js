@@ -10,7 +10,8 @@ const status = document.querySelector("#status");
 const commandStatus = document.querySelector("#command-status");
 let csrf = "";
 let remoteSuspended = false;
-const transport = new RemoteTransport(window.location);
+let phoneBluetoothPanel = null;
+const transport = new RemoteTransport(window.location, {onClose: () => retirePhoneBluetooth()});
 // Binding is presentation context, not authentication or app-version detection.
 // Keep links hidden by default if the existing binding parser rejects the page.
 // Platform hints affect only the Android invitation, never binding or authority.
@@ -47,6 +48,26 @@ const phoneSettingsPanel = phoneSettingsRoot ? new SettingsControls(phoneSetting
   }), () => window.location.reload(), state => {
     pointerAccelerationLevel = state.pointer_acceleration ?? 50;
   }) : null;
+const phoneBluetoothDetails = document.querySelector("#phone-bluetooth-details");
+const phoneBluetoothRoot = document.querySelector("#phone-bluetooth-controls");
+phoneBluetoothPanel = phoneBluetoothRoot ? new BluetoothControls(phoneBluetoothRoot,
+  (method, path, body) => remoteFetch(path, {
+    method, ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+  }), {onAuthLost: () => requireLogin()}) : null;
+function retirePhoneBluetooth() {
+  phoneBluetoothPanel?.retire();
+  // A new connection/session needs an explicit reopening, never automatic replay.
+  const details = document.querySelector("#phone-bluetooth-details");
+  if (details) details.open = false;
+}
+function syncPhoneBluetooth() {
+  const page = document.querySelector("#remote-settings-page");
+  if (csrf && !remoteSuspended && !controls.hidden && !page.hidden &&
+      !document.hidden && phoneBluetoothDetails?.open)
+    void phoneBluetoothPanel?.activate();
+  else phoneBluetoothPanel?.deactivate();
+}
+phoneBluetoothDetails?.addEventListener("toggle", syncPhoneBluetooth);
 if (phoneSettingsPanel) phoneSettingsPanel.bindMagnifierShortcut(document.querySelector("#pad-magnifier"));
 let statusTimer = null;
 let statusRequestId = 0;
@@ -269,6 +290,7 @@ function say(text, error = false, notice = false) {
 }
 
 function requireLogin() {
+  retirePhoneBluetooth();
   if (remoteSuspended) return;
   touchpadControls.reset();
   mediaControls.stop();
@@ -483,6 +505,7 @@ function showPage(page) {
   menuPage.hidden = page !== "menu";
   sharePage.hidden = page !== "share";
   settingsPage.hidden = page !== "settings";
+  syncPhoneBluetooth();
   window.scrollTo(0, 0);
   if (page === "remote") void phoneSettingsPanel?.refresh();
 }
@@ -559,13 +582,18 @@ function sendKey(key) { return touchpadControls.sendKey(key); }
 // Public fixed lifecycle hook for the native shell, no general JS/native bridge.
 function reconcileMediaOnReturn() {
   if (csrf && !remoteSuspended) mediaControls.reconcile();
+  syncPhoneBluetooth();
 }
 window.addEventListener("focus", reconcileMediaOnReturn);
 window.addEventListener("pageshow", reconcileMediaOnReturn);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) reconcileMediaOnReturn(); });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) reconcileMediaOnReturn();
+  else syncPhoneBluetooth();
+});
 window.adLinuxTvRemoteLifecycle = Object.freeze({resume:reconcileMediaOnReturn, suspend() {
   if (remoteSuspended) return;
   remoteSuspended = true;
+  retirePhoneBluetooth();
   csrf = "";
   touchpadControls.stop();
   mediaControls.stop();

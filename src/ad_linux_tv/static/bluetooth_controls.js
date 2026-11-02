@@ -298,7 +298,8 @@ class BluetoothControls {
         this.retiredOperation = operation.id;
       }
     }
-    if (this.lease && method === "POST" && operation && operation.id !== this.retiredOperation) {
+    if (this.lease && method === "POST" && operation && operation.phase !== "finished" &&
+        operation.id !== this.retiredOperation) {
       const challenge = envelope.challenge;
       if (operation.kind === "pair" && challenge && this.handle(challenge.id) &&
           !(this.answeredChallenge?.operation_id === operation.id && this.answeredChallenge.id === challenge.id) &&
@@ -347,7 +348,7 @@ class BluetoothControls {
 
   operation() {
     const operation = this.state?.operation;
-    return operation && operation.remaining_ms > 0 && operation.phase !== "finished" ? operation : null;
+    return operation && operation.remaining_ms > 0 ? operation : null;
   }
 
   mutate(op, fields = {}) {
@@ -471,7 +472,8 @@ class BluetoothControls {
       const kinds = {discover: "Поиск", pair: "Сопряжение", connect: "Подключение", disconnect: "Отключение",
         select_remote: "Выбор пульта", learn: "Обучение кнопки", forget: "Удаление сопряжения"};
       const phases = {queued: "в очереди", requested: "запрошено", accepted: "запрос принят",
-        waiting: "ожидаем устройство", observed: "получено состояние", confirm: "требуется подтверждение"};
+        waiting: "ожидаем устройство", finished: "ожидаем подтверждение состояния",
+        observed: "получено состояние", confirm: "требуется подтверждение"};
       this.element("p", `${Object.hasOwn(kinds, operation.kind) ? kinds[operation.kind] : "Операция"}: ` +
         `${Object.hasOwn(phases, operation.phase) ? phases[operation.phase] : "ожидаем результат"}. ` +
         `Осталось ${Math.ceil(operation.remaining_ms / 1000)} с.`, this.content);

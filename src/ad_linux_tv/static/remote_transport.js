@@ -1,7 +1,9 @@
 "use strict";
 
 class RemoteTransport {
-  constructor(location) {
+  constructor(location, options = {}) {
+    this.onClose = options.onClose;
+    this.opened = false;
     const address = new URL("/api/remote-ws", location.href);
     address.protocol = address.protocol === "https:" ? "wss:" : "ws:";
     const parameters = new URLSearchParams(new URL(location.href).hash.slice(1));
@@ -22,6 +24,8 @@ class RemoteTransport {
 
   close() {
     const socket = this.socket;
+    const opened = this.opened;
+    this.opened = false;
     const rejectConnect = this.connectReject;
     this.socket = null;
     this.connecting = null;
@@ -33,6 +37,9 @@ class RemoteTransport {
       item.reject(new Error("remote connection closed"));
     }
     this.pending.clear();
+    if (opened) {
+      try { this.onClose?.(); } catch (_) { /* Cleanup must complete even if a consumer fails. */ }
+    }
   }
 
   connect(csrf) {
@@ -61,6 +68,7 @@ class RemoteTransport {
       socket.onopen = () => {
         if (this.socket !== socket) return;
         settled = true;
+        this.opened = true;
         clearTimeout(timer);
         this.connectReject = null;
         this.connecting = null;
