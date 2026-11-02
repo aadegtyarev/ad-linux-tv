@@ -32,9 +32,17 @@ Callbacks run on the dedicated thread: they MUST be quick/nonblocking and must
 not call close(). A raising listener is retired, including its active operation.
 close() suppresses new callbacks immediately and joins the thread; a stuck caller
 callback raises rather than silently leaking a worker. No automatic restart or
-retry after bus loss or a cleanup failure (which disconnects to release this
-client's discovery session). Construct a new transport to reconnect after bus
-loss. Service owner replacement on the same bus is handled with fresh epochs.
+retry after bus loss, unconfirmed-write retirement or a cleanup identity/failure
+(which disconnect to release this client's resources). Construct a new transport
+to reconnect. Discovery ownership survives operation/inventory retirement until
+an original-instance StopDiscovery succeeds or the connection is shut down.
+Cleanup pins both adapter and device opaque IDs/epochs, never just their paths.
+Service owner replacement uses fresh epochs, but fails the connection closed if
+an owned discovery session or unconfirmed write could survive that boundary.
+All sends track write completion separately from reply waiting. Cancelling an
+unconfirmed write closes the connection; it is never replayed. Agent replies use
+one actual writer plus a two-entry reply queue, including rejections and Cancel.
+Queue overflow or a reply write timeout also closes the connection.
 
 bus_factory (async, returns a connected dbus-fast-compatible MessageBus) and clock
 are injectable; a factory owns partial resources until it returns successfully.
@@ -138,8 +146,10 @@ class _Operation:
     device_epoch: int
     epoch: int
     deadline: float
+    adapter_id: str = ""
+    adapter_epoch: int = 0
+    write: asyncio.Future | None = None
     dispatched: bool = False
-    discovery_owned: bool = False
     task: asyncio.Task | None = None
     challenge: Challenge | None = None
     answer: asyncio.Future | None = None
@@ -243,8 +253,15 @@ class BluezTransport:
         self._agent_task = None
         self._bootstrap_task = None
         self._cleanup_task = None
+        self._cleanup_op = None
+        self._discovery = None
+        self._agent_reply_task = None
+        self._agent_replies = asyncio.Queue(maxsize=2)
+        self._agent_reply_write = None
+        self._failed_closed = False
         self._service = None
         self._pending = {}
+        self._writes = set()
 
     def start(self, on_event: Callable[[BluezEvent], None]) -> None:
         with self._lock:
@@ -313,6 +330,7 @@ class BluezTransport:
             if (
                 self._thread is None
                 or self._closed.is_set()
+                or self._failed_closed
                 or self._shutting_down
                 or not self._thread.is_alive()
             ):
@@ -398,6 +416,8 @@ class BluezTransport:
                     self._command(kind, op_id, args)
                 if self._op and self._clock() >= self._op.deadline:
                     self._retire("uncertain" if self._op.dispatched else "expired")
+                if self._failed_closed:
+                    break
                 if getattr(self._bus, "connected", True) is False:
                     self._invalidate("bus_unavailable")
                     break
@@ -416,8 +436,64 @@ class BluezTransport:
     async def _dbus(self, member, signature="", body=None):
         return await self._call(_DBUS, "/org/freedesktop/DBus", _DBUS, member, signature, body)
 
+    @staticmethod
+    def _written(write):
+        return (
+            write is not None
+            and write.done()
+            and not write.cancelled()
+            and write.exception() is None
+        )
+
+    def _fail_closed(self, reason):
+        if self._failed_closed:
+            return
+        # disconnect() shuts down the socket: cancelling a send future does NOT
+        # retract dbus-fast's serialized bytes. Never admit another command here.
+        self._failed_closed = True
+        if self._bus and getattr(self._bus, "connected", True):
+            self._bus.disconnect()
+        self._invalidate(reason)
+        if self._wake:
+            self._wake.set()
+
+    async def _send(self, msg, *, op=None, agent_reply=False):
+        if agent_reply and self._closed.is_set():
+            raise ConnectionError("closed")
+        if self._failed_closed or len(self._writes) >= 8:
+            self._fail_closed("bus_unavailable")
+            raise ConnectionError("unavailable")
+        try:
+            write = asyncio.ensure_future(self._bus.send(msg))
+        except Exception:
+            self._fail_closed("bus_unavailable")
+            raise
+        self._writes.add(write)
+        if op:
+            op.write = write
+            if op.kind == "discover":
+                self._discovery = op
+        if agent_reply:
+            self._agent_reply_write = write
+        try:
+            # Preserve write completion separately from cancellation of reply waits.
+            await asyncio.shield(write)
+        except BaseException:
+            if not self._written(write):
+                self._fail_closed("bus_unavailable")
+            raise
+        finally:
+            self._writes.discard(write)
+            if not write.done():
+                write.add_done_callback(self._consume_write)
+
+    @staticmethod
+    def _consume_write(write):
+        if not write.cancelled():
+            write.exception()
+
     async def _call(
-        self, destination, path, interface, member, signature="", body=None, *, timeout=2
+        self, destination, path, interface, member, signature="", body=None, *, timeout=2, op=None
     ):
         # Use public send/next_serial plus our bounded reply ledger. dbus-fast.call()
         # retains its reply handler after cancellation until a remote reply arrives.
@@ -437,7 +513,7 @@ class BluezTransport:
         self._pending[msg.serial] = (destination, future)
         try:
             async with asyncio.timeout(timeout):
-                await self._bus.send(msg)
+                await self._send(msg, op=op)
                 reply = await future
         finally:
             self._pending.pop(msg.serial, None)
@@ -507,6 +583,8 @@ class BluezTransport:
         self._emit("unavailable", code=reason)
 
     def _publish(self):
+        if self._failed_closed:
+            return
         adapters = tuple(
             Adapter(
                 obj.id,
@@ -586,6 +664,8 @@ class BluezTransport:
         return props
 
     def _add(self, path, interface, raw):
+        if self._failed_closed:
+            return
         if not isinstance(path, str) or len(path) > 256:
             return
         props = self._props(raw)
@@ -609,6 +689,8 @@ class BluezTransport:
             )
             if any(old.props.get(k) != props.get(k) for k in identity):
                 self._remove(path, interface)
+                if self._failed_closed:
+                    return
             else:
                 old.props = props
                 return
@@ -633,6 +715,9 @@ class BluezTransport:
         obj = objects.pop(path, None)
         if not obj:
             return
+        cleanup = self._cleanup_op
+        if cleanup and path in {cleanup.adapter_path, cleanup.device_path}:
+            self._fail_closed("cleanup_failed")
         op = self._op
         if op and (path == op.device_path or path == op.adapter_path):
             if (
@@ -656,7 +741,9 @@ class BluezTransport:
         except Exception:
             # Never let dbus-fast's generic handler log an untrusted message/traceback.
             if msg.message_type == self._MessageType.METHOD_CALL:
-                return self._Message.new_error(msg, "org.bluez.Error.Rejected", "Rejected")
+                return self._queue_agent_reply(
+                    self._Message.new_error(msg, "org.bluez.Error.Rejected", "Rejected")
+                )
             return None
 
     def _handle_message(self, msg):
@@ -667,21 +754,28 @@ class BluezTransport:
                     pending[1].set_result(msg)
                 return True
             return None
-        if self._closed.is_set():
-            if msg.message_type == self._MessageType.METHOD_CALL and msg.path == _AGENT_PATH:
-                return self._Message.new_error(msg, "org.bluez.Error.Rejected", "Rejected")
-            return None
+        if self._closed.is_set() or self._failed_closed:
+            return True if msg.message_type == self._MessageType.METHOD_CALL else None
         if msg.message_type == self._MessageType.METHOD_CALL and msg.path == _AGENT_PATH:
             if (
                 msg.interface == "org.freedesktop.DBus.Introspectable"
                 and msg.member == "Introspect"
                 and msg.signature == ""
             ):
-                return None  # Public interface description only, no values or secrets.
+                from dbus_fast.introspection import Node
+
+                xml = Node(interfaces=[self._service.introspect()]).tostring()
+                return self._queue_agent_reply(self._Message.new_method_return(msg, "s", [xml]))
             if msg.interface != _AGENT:
                 # Missing interface otherwise bypasses sender checks via service dispatch.
-                return self._Message.new_error(msg, "org.bluez.Error.Rejected", "Rejected")
+                return self._queue_agent_reply(
+                    self._Message.new_error(msg, "org.bluez.Error.Rejected", "Rejected")
+                )
             return self._agent_message(msg)
+        if msg.message_type == self._MessageType.METHOD_CALL:
+            return self._queue_agent_reply(
+                self._Message.new_error(msg, "org.bluez.Error.Rejected", "Rejected")
+            )
         if msg.message_type != self._MessageType.SIGNAL:
             return None
         if (
@@ -692,7 +786,7 @@ class BluezTransport:
         ):
             self._invalidate("service_unavailable")
             self._owner = msg.body[2] or None
-            if self._owner:
+            if self._owner and not self._failed_closed:
                 self._bootstrap_task = asyncio.create_task(self._bootstrap(self._epoch))
             return None
         if msg.sender != self._owner or not self._inventory_ready:
@@ -801,7 +895,13 @@ class BluezTransport:
         dummy = _Operation(
             op_id, kind, "", None, target if kind != "discover" else None, 0, self._epoch, deadline
         )
-        if op or self._cleanup_task and not self._cleanup_task.done():
+        if (
+            op
+            or self._cleanup_task
+            and not self._cleanup_task.done()
+            or self._agent_reply_task
+            and not self._agent_reply_task.done()
+        ):
             self._emit("finished", dummy, code="busy")
             return
         if not self._registered or not self._owner:
@@ -832,6 +932,8 @@ class BluezTransport:
             0 if kind == "discover" else obj.epoch,
             self._epoch,
             deadline,
+            adapter_id=adapter.id,
+            adapter_epoch=adapter.epoch,
         )
         op.task = asyncio.create_task(self._dispatch(op))
 
@@ -842,6 +944,7 @@ class BluezTransport:
             and op.epoch == self._epoch
             and self._clock() < op.deadline
             and not self._closed.is_set()
+            and not self._failed_closed
         )
 
     async def _dispatch(self, op):
@@ -857,8 +960,6 @@ class BluezTransport:
             }[op.kind]
             adapter_call = op.kind in {"discover", "forget"}
             op.dispatched = True
-            # StartDiscovery takes a per-client session; even an uncertain reply needs cleanup.
-            op.discovery_owned = op.kind == "discover"
             self._emit("requested", op)
             if not self._current(op):
                 return
@@ -870,6 +971,7 @@ class BluezTransport:
                 "o" if op.kind == "forget" else "",
                 [op.device_path] if op.kind == "forget" else [],
                 timeout=max(0.001, op.deadline - self._clock()),
+                op=op,
             )
             if self._current(op):
                 self._emit("accepted", op)
@@ -881,10 +983,26 @@ class BluezTransport:
                 code = getattr(exc, "text", "uncertain")
                 self._retire(code if code in {"denied", "failed"} else "uncertain")
 
+    def _target_matches(self, op):
+        adapter = self._adapters.get(op.adapter_path)
+        if not adapter or adapter.id != op.adapter_id or adapter.epoch != op.adapter_epoch:
+            return False
+        if op.device_path:
+            device = self._devices.get(op.device_path)
+            if not device or device.id != op.device_id or device.epoch != op.device_epoch:
+                return False
+        return True
+
     def _retire(self, code, *, cleanup=True):
         op, self._op = self._op, None
         if not op:
             return
+        unwritten = op.write is not None and not self._written(op.write)
+        reply_unwritten = self._agent_reply_write is not None and not self._written(
+            self._agent_reply_write
+        )
+        if unwritten or reply_unwritten:
+            code = "uncertain"
         if op.answer and not op.answer.done():
             op.answer.cancel()
         op.challenge = None
@@ -892,37 +1010,61 @@ class BluezTransport:
             op.task.cancel()
         if self._agent_task and self._agent_task is not asyncio.current_task():
             self._agent_task.cancel()
+        if unwritten or reply_unwritten:
+            self._fail_closed("bus_unavailable")
+        elif op.write is not None and code != "observed" and not self._target_matches(op):
+            self._fail_closed("cleanup_failed")
+        # Close admission/the socket before invoking a listener which could submit
+        # another command in response to this terminal event.
         self._emit("finished", op, code=code)
-        if cleanup and op.dispatched and op.epoch == self._epoch and self._owner:
-            if op.discovery_owned or op.kind == "pair":
-                if not self._cleanup_task or self._cleanup_task.done():
-                    self._cleanup_task = asyncio.create_task(self._cleanup(op, self._owner))
+        if self._failed_closed:
+            return
+        # Discovery ownership outlives the operation and inventory, even on paths
+        # where no path-targeted cancellation was requested (cleanup=False).
+        if self._discovery is op or cleanup and op.kind == "pair" and op.write is not None:
+            self._cleanup_op = op
+            self._cleanup_task = asyncio.create_task(self._cleanup(op, self._owner))
 
     async def _cleanup(self, op, owner):
-        if op.epoch != self._epoch or owner != self._owner:
-            return
-        if op.device_path:
-            obj = self._devices.get(op.device_path)
-            if not obj or obj.id != op.device_id or obj.epoch != op.device_epoch:
-                return
-        if op.adapter_path not in self._adapters:
-            return
         try:
+            if op.epoch != self._epoch or owner != self._owner or not self._target_matches(op):
+                self._fail_closed("cleanup_failed")
+                return
+            discovery = self._discovery is op
             await self._call(
                 owner,
-                op.adapter_path if op.discovery_owned else op.device_path,
-                _ADAPTER if op.discovery_owned else _DEVICE,
-                "StopDiscovery" if op.discovery_owned else "CancelPairing",
+                op.adapter_path if discovery else op.device_path,
+                _ADAPTER if discovery else _DEVICE,
+                "StopDiscovery" if discovery else "CancelPairing",
             )
+            if discovery and self._discovery is op:
+                self._discovery = None
         except Exception:
-            # Release BlueZ's per-client discovery/agent ownership even if Stop fails.
-            # Do not keep a potentially permanent scan on a surviving connection.
-            self._invalidate("cleanup_failed")
-            self._bus.disconnect()
+            self._fail_closed("cleanup_failed")
+        finally:
+            if self._cleanup_op is op:
+                self._cleanup_op = None
 
     def _invalidate(self, reason):
+        # A service may lose its name without exiting. Release our connection,
+        # not just its inventory, if discovery or unconfirmed bytes still belong
+        # to that epoch. Cancellation alone cannot retract buffered writes.
+        if not self._failed_closed and (
+            self._discovery is not None or any(not self._written(write) for write in self._writes)
+        ):
+            self._fail_closed(reason)
+            return
+        self._discovery = None
         self._retire("invalidated", cleanup=False)
-        for task in (self._bootstrap_task, self._cleanup_task, self._agent_task):
+        self._cleanup_op = None
+        while not self._agent_replies.empty():
+            self._agent_replies.get_nowait()
+        for task in (
+            self._bootstrap_task,
+            self._cleanup_task,
+            self._agent_task,
+            self._agent_reply_task,
+        ):
             if task and not task.done() and task is not asyncio.current_task():
                 task.cancel()
         self._epoch += 1
@@ -935,13 +1077,15 @@ class BluezTransport:
 
     def _agent_message(self, msg):
         def reject():
-            return self._Message.new_error(msg, "org.bluez.Error.Rejected", "Rejected")
+            return self._queue_agent_reply(
+                self._Message.new_error(msg, "org.bluez.Error.Rejected", "Rejected")
+            )
 
         if msg.sender != self._owner or not self._registered:
             return reject()
         if msg.member in {"Cancel", "Release"} and msg.signature == "":
             self._release_agent(msg.member)
-            return self._Message.new_method_return(msg)
+            return self._queue_agent_reply(self._Message.new_method_return(msg))
         methods = {method.name: method for method in self._service._get_methods(self._service)}
         method = methods.get(msg.member)
         op = self._op
@@ -980,9 +1124,41 @@ class BluezTransport:
             )
         except (Exception, asyncio.CancelledError):
             reply = self._Message.new_error(msg, "org.bluez.Error.Rejected", "Rejected")
-        if not self._closed.is_set():
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(self._bus.send(reply), 2)
+        if not self._closed.is_set() and not self._failed_closed:
+            self._queue_agent_reply(reply)
+            if self._agent_reply_task:
+                await self._agent_reply_task
+
+    def _queue_agent_reply(self, reply):
+        if self._closed.is_set() or self._failed_closed:
+            return True
+        try:
+            # Cancel may need its own return plus the rejected challenge reply.
+            # Bound these in application memory, with only ONE actual write.
+            self._agent_replies.put_nowait(reply)
+        except asyncio.QueueFull:
+            self._fail_closed("bus_unavailable")
+            return True
+        if not self._agent_reply_task or self._agent_reply_task.done():
+            self._agent_reply_write = None
+            self._agent_reply_task = asyncio.create_task(self._send_agent_replies())
+        return True
+
+    async def _send_agent_replies(self):
+        try:
+            while (
+                not self._agent_replies.empty()
+                and not self._closed.is_set()
+                and not self._failed_closed
+            ):
+                reply = self._agent_replies.get_nowait()
+                async with asyncio.timeout(2):
+                    await self._send(reply, agent_reply=True)
+        except (Exception, asyncio.CancelledError):
+            if not self._failed_closed and not self._closed.is_set():
+                self._fail_closed("bus_unavailable")
+        finally:
+            self._agent_reply_write = None
 
     async def _agent(self, member, path=None, *args):
         from dbus_fast import DBusError
@@ -1040,7 +1216,12 @@ class BluezTransport:
         self._retire("cancelled")
         tasks = [
             t
-            for t in (self._bootstrap_task, self._agent_task, self._cleanup_task)
+            for t in (
+                self._bootstrap_task,
+                self._agent_task,
+                self._cleanup_task,
+                self._agent_reply_task,
+            )
             if t and not t.done()
         ]
         # Cleanup already in flight gets one bounded chance; all other work is retired.
@@ -1051,7 +1232,7 @@ class BluezTransport:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 2.1)
         if self._bus:
-            if self._registered and self._owner:
+            if not self._failed_closed and self._registered and self._owner:
                 with contextlib.suppress(Exception):
                     await self._call(
                         self._owner,
@@ -1061,21 +1242,35 @@ class BluezTransport:
                         "o",
                         [_AGENT_PATH],
                     )
+            if not self._failed_closed:
+                with contextlib.suppress(Exception):
+                    await asyncio.gather(
+                        *(self._dbus("RemoveMatch", "s", [rule]) for rule in self._matches),
+                        return_exceptions=True,
+                    )
+            if not self._failed_closed:
+                with contextlib.suppress(Exception):
+                    self._bus.disconnect()
+            wait = getattr(self._bus, "wait_for_disconnect", None)
+            if wait:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(wait(), 0.5)
+            # Unexport after socket shutdown so no removal signal can be buffered
+            # behind an uncertain write. dbus-fast also unexports on finalization.
             if self._exported:
                 with contextlib.suppress(Exception):
                     self._bus.unexport(_AGENT_PATH, self._service)
             with contextlib.suppress(Exception):
-                await asyncio.gather(
-                    *(self._dbus("RemoveMatch", "s", [rule]) for rule in self._matches),
-                    return_exceptions=True,
-                )
-            with contextlib.suppress(Exception):
                 self._bus.remove_message_handler(self._on_message)
-            with contextlib.suppress(Exception):
-                self._bus.disconnect()
+            self._bus = None
         while not self._queue.empty():
             with contextlib.suppress(queue.Empty):
                 self._queue.get_nowait()
         self._adapters.clear()
         self._devices.clear()
+        self._discovery = None
+        self._cleanup_op = None
+        self._agent_reply_write = None
+        while not self._agent_replies.empty():
+            self._agent_replies.get_nowait()
         self._listener = None

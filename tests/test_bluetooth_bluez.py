@@ -61,6 +61,9 @@ class FakeBus:
         self.removed = []
         self.unexported = False
         self.serial = 0
+        self.tasks = set()
+        self.discovery_sessions = set()
+        self.disconnects = 0
 
     async def factory(self):
         return self
@@ -84,7 +87,14 @@ class FakeBus:
         self.exported = None
 
     def disconnect(self):
+        self.disconnects += 1
         self.connected = False
+        self.discovery_sessions.clear()
+        for task in self.tasks:
+            task.cancel()
+
+    async def wait_for_disconnect(self):
+        assert not self.connected
 
     def next_serial(self):
         self.serial += 1
@@ -105,17 +115,83 @@ class FakeBus:
             result = Message.new_method_return(msg)
             result.body = [self.inventory]
             return result
+        if msg.member == "StartDiscovery":
+            self.discovery_sessions.add(msg.path)
+        if msg.member == "StopDiscovery":
+            self.discovery_sessions.discard(msg.path)
         if msg.member == "RemoveMatch":
             self.removed.append(msg.body[0])
         return Message.new_method_return(msg)
 
-    async def send(self, msg):
+    def send(self, msg):
+        # Normal writes complete independently of the service method's reply.
+        written = asyncio.get_running_loop().create_future()
+        if not self.connected:
+            raise ConnectionError("closed")
+        written.set_result(None)
+        self.deliver(msg)
+        return written
+
+    def deliver(self, msg):
         if msg.message_type == MessageType.METHOD_CALL:
-            reply = await self.call(msg)
-            reply.sender = msg.destination
-            self.handler(reply)
+            task = asyncio.create_task(self.respond(msg))
+            self.tasks.add(task)
+            task.add_done_callback(self.tasks.discard)
         else:
             self.sent.append(msg)
+
+    async def respond(self, msg):
+        reply = await self.call(msg)
+        reply.sender = msg.destination
+        if self.connected and self.handler:
+            self.handler(reply)
+
+
+class BackpressuredBus(FakeBus):
+    """Like dbus-fast: send queues bytes immediately; cancelling its Future
+    cannot retract them, and a writable socket could deliver them much later.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.block_members = set()
+        self.block_replies = False
+        self.buffered = []
+        self.max_buffered = 0
+        self.queued = []
+        self.writes = []
+
+    def send(self, msg):
+        if not self.connected:
+            raise ConnectionError("closed")
+        if msg.member in self.block_members or (
+            self.block_replies
+            and msg.message_type in {MessageType.METHOD_RETURN, MessageType.ERROR}
+        ):
+            written = asyncio.get_running_loop().create_future()
+            self.buffered.append((msg, written))
+            self.writes.append(written)
+            self.queued.append(msg)
+            self.max_buffered = max(self.max_buffered, len(self.buffered))
+            return written
+        return super().send(msg)
+
+    def drain(self):
+        if not self.connected:
+            return
+        for msg, written in self.buffered:
+            # Delivers serialized bytes even when the send Future was cancelled.
+            self.deliver(msg)
+            if not written.done():
+                written.set_result(None)
+        self.buffered.clear()
+
+    def disconnect(self):
+        super().disconnect()
+        for _, written in self.buffered:
+            if not written.done():
+                written.cancel()
+        self.buffered.clear()
 
 
 class Clock:
@@ -140,6 +216,7 @@ class Lane:
         self.bus = bus or FakeBus()
         self.clock = Clock()
         self.events = []
+        self.request_serial = 1000
         self.transport = BluezTransport(bus_factory=self.bus.factory, clock=self.clock)
         self.transport.start(listener or self.events.append)
         eventually(lambda: self.transport.snapshot().reason != "not_started")
@@ -167,10 +244,30 @@ class Lane:
             member=member,
             signature=signature,
             body=body or [],
-            serial=1000,
+            serial=self.request_serial,
         )
+        self.request_serial += 1
         msg.sender = sender
-        return self.invoke(lambda: self.bus.handler(msg))
+        return self.message(msg)
+
+    def message(self, msg):
+        def dispatch():
+            before = self.transport._agent_replies.qsize()
+            result = self.bus.handler(msg)
+            return result, self.transport._agent_replies.qsize() > before
+
+        result, queued = self.invoke(dispatch)
+        if queued:
+            eventually(
+                lambda: (
+                    any(reply.reply_serial == msg.serial for reply in self.bus.sent)
+                    or not self.bus.connected
+                )
+            )
+            return next(
+                (reply for reply in self.bus.sent if reply.reply_serial == msg.serial), result
+            )
+        return result
 
     def begin(self, kind="pair", op_id="op", deadline=None):
         snapshot = self.transport.snapshot()
@@ -275,11 +372,15 @@ def test_forget_only_object_removal_is_success(lane):
     lane.signal(_PROPS, "PropertiesChanged", [_DEVICE, {}, ["Connected"]], DP)
     assert not any(e.kind == "forgotten" for e in lane.events)
     assert any(e.code == "invalidated" for e in lane.events)
-    lane.signal(_OM, "InterfacesAdded", [DP, objects()[DP]])
-    lane.begin("forget", "op2")
+    eventually(lambda: not lane.bus.connected)
+    assert not lane.transport.forget("op2", "stale", 150)
+
+
+def test_forget_observed_removal_is_success(lane):
+    lane.begin("forget")
     lane.accepted()
     lane.signal(_OM, "InterfacesRemoved", [DP, [_DEVICE]])
-    assert any(e.kind == "forgotten" and e.operation_id == "op2" for e in lane.events)
+    assert any(e.kind == "forgotten" and e.operation_id == "op" for e in lane.events)
     assert not lane.transport.snapshot().devices
 
 
@@ -365,7 +466,7 @@ def test_negative_confirmation_and_stale_answers(lane):
     eventually(lambda: len([e for e in lane.events if e.kind == "challenge"]) == 2)
     lane.transport.answer("op", challenge.id, {"confirm": True})
     lane.invoke(lambda: None)
-    assert len(lane.bus.sent) == 1
+    assert len(lane.bus.sent) == 2
 
 
 @pytest.mark.parametrize(
@@ -489,9 +590,13 @@ def test_target_invalidation_retires_agent(lane, change):
     else:
         lane.signal(_PROPS, "PropertiesChanged", [_ADAPTER, {"Powered": False}, []], AP)
     assert any(e.code == "invalidated" for e in lane.events)
-    assert lane.agent("RequestPinCode", "o", [DP]).message_type == MessageType.ERROR
-    eventually(lambda: lane.bus.sent)
-    assert lane.bus.sent[-1].message_type == MessageType.ERROR
+    if change not in {"power", "bad_state"}:
+        eventually(lambda: not lane.bus.connected)
+        assert not lane.transport.pair("replacement", "stale", 150)
+    else:
+        assert lane.agent("RequestPinCode", "o", [DP]).message_type == MessageType.ERROR
+        eventually(lambda: lane.bus.sent)
+        assert lane.bus.sent[-1].message_type == MessageType.ERROR
 
 
 def test_inventory_names_identity_bounds_and_multiple_adapter_pinning(lane):
@@ -665,7 +770,7 @@ def test_agent_interface_cannot_bypass_sender_guard(lane, interface):
         serial=1001,
     )
     msg.sender = ":1.99"
-    response = lane.invoke(lambda: lane.bus.handler(msg))
+    response = lane.message(msg)
     assert response.message_type == MessageType.ERROR
     assert not any(e.kind == "challenge" for e in lane.events)
 
@@ -684,12 +789,10 @@ def test_cancelling_dispatched_effect_is_uncertain_without_replay(lane, kind):
 
 def test_same_path_replacement_never_cancels_new_device(lane):
     lane.begin()
-    old = lane.transport.snapshot().devices[0]
     lane.properties(Address="22:33:44:55:66:77")
-    replacement = lane.transport.snapshot().devices[0]
-    assert replacement.id != old.id and replacement.device_epoch > old.device_epoch
     assert any(e.code == "invalidated" for e in lane.events)
-    lane.invoke(lambda: None)
+    eventually(lambda: not lane.bus.connected)
+    assert not lane.transport.snapshot().available
     assert not any(m.member == "CancelPairing" for m in lane.bus.calls)
 
 
@@ -880,3 +983,437 @@ def test_real_dbus_fast_private_bus_agent_roundtrip():
         daemon.terminate()
         daemon.wait(timeout=3)
         daemon.stdout.close()
+
+
+def assert_retired_connection(lane):
+    eventually(lambda: not lane.bus.connected)
+    lane.close()
+    assert lane.bus.handler is None and lane.bus.exported is None
+    assert not lane.bus.discovery_sessions
+    assert not lane.transport._thread.is_alive()
+    assert not lane.transport._pending and not lane.transport._writes
+    assert lane.transport._op is None and lane.transport._discovery is None
+    assert lane.transport._cleanup_op is None
+    assert lane.transport._agent_replies.empty()
+    assert all(task.done() for task in lane.bus.tasks)
+    if isinstance(lane.bus, BackpressuredBus):
+        assert not lane.bus.buffered
+        lane.bus.drain()  # A later writable socket must never replay on a new bus.
+    count = len(lane.events)
+    for i in range(20):
+        assert not lane.transport.cancel(f"retired_{i}")
+        assert not lane.transport.connect(f"retired_{i}", "stale", 150)
+    assert len(lane.events) == count
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "powered_invalidated",
+        "discovering_invalidated",
+        "address_replaced",
+        "zero_address",
+        "invalid_address",
+        "removed",
+    ],
+)
+def test_discovery_logical_adapter_loss_releases_owned_session(change):
+    lane = Lane()
+    try:
+        lane.begin("discover")
+        lane.accepted()
+        assert lane.bus.discovery_sessions == {AP}
+        if change.endswith("invalidated"):
+            prop = "Powered" if change == "powered_invalidated" else "Discovering"
+            lane.signal(_PROPS, "PropertiesChanged", [_ADAPTER, {}, [prop]], AP)
+        elif change == "removed":
+            lane.signal(_OM, "InterfacesRemoved", [AP, [_ADAPTER]])
+        else:
+            address = {
+                "address_replaced": "AA:BB:CC:DD:EE:01",
+                "zero_address": "00:00:00:00:00:00",
+                "invalid_address": "invalid",
+            }[change]
+            lane.signal(_PROPS, "PropertiesChanged", [_ADAPTER, {"Address": address}, []], AP)
+        assert_retired_connection(lane)
+        assert [m.member for m in lane.bus.calls].count("StartDiscovery") == 1
+        assert not any(m.member == "StopDiscovery" for m in lane.bus.calls)
+    finally:
+        lane.close()
+
+
+@pytest.mark.parametrize("kind", ["discover", "pair"])
+@pytest.mark.parametrize("replacement", ["address", "opaque_id", "epoch", "missing"])
+@pytest.mark.parametrize(
+    "retirement",
+    ["cancel", "expiry", "dispatch_failure", "listener", "agent_cancel", "agent_release"],
+)
+def test_deferred_cleanup_fences_original_adapter_instance(kind, replacement, retirement):
+    lane = Lane()
+    try:
+        lane.begin(kind)
+        lane.accepted()
+
+        def retire_and_replace():
+            transport = lane.transport
+            op = transport._op
+            original = transport._adapters[AP]
+            assert op.adapter_id == original.id and op.adapter_epoch == original.epoch
+            if retirement == "cancel":
+                transport._command("cancel", "op", ())
+            elif retirement in {"agent_cancel", "agent_release"}:
+                transport._release_agent("Cancel" if retirement == "agent_cancel" else "Release")
+            elif retirement == "listener":
+
+                def broken(_):
+                    raise ValueError("private listener detail")
+
+                transport._listener = broken
+                transport._emit("inventory")
+            else:
+                transport._retire("uncertain" if retirement == "expiry" else "failed")
+            assert transport._cleanup_op is op  # cleanup cannot run within this loop turn
+            if replacement == "address":
+                transport._add(AP, _ADAPTER, {"Address": "AA:BB:CC:DD:EE:01", "Powered": True})
+            elif replacement == "opaque_id":
+                transport._adapters[AP] = dataclasses.replace(original, id="replacement")
+            elif replacement == "epoch":
+                transport._adapters[AP] = dataclasses.replace(original, epoch=original.epoch + 1)
+            else:
+                transport._adapters.pop(AP)
+
+        lane.invoke(retire_and_replace)
+        assert_retired_connection(lane)
+        assert not any(m.member in {"StopDiscovery", "CancelPairing"} for m in lane.bus.calls)
+    finally:
+        lane.close()
+
+
+@pytest.mark.parametrize("kind,member", [("discover", "StopDiscovery"), ("pair", "CancelPairing")])
+def test_adapter_replacement_aborts_already_buffered_cleanup(kind, member):
+    bus = BackpressuredBus()
+    lane = Lane(bus)
+    try:
+        lane.begin(kind)
+        lane.accepted()
+        bus.block_members.add(member)
+        lane.transport.cancel("op")
+        eventually(lambda: len(bus.buffered) == 1)
+        lane.signal(
+            _PROPS, "PropertiesChanged", [_ADAPTER, {"Address": "AA:BB:CC:DD:EE:01"}, []], AP
+        )
+        assert_retired_connection(lane)
+        assert bus.max_buffered == 1
+        assert not any(m.member == member for m in bus.calls)
+    finally:
+        lane.close()
+
+
+def test_device_replacement_before_pair_cleanup_disconnects_without_cancelling_replacement():
+    lane = Lane()
+    try:
+        lane.begin()
+        lane.accepted()
+
+        def replace():
+            lane.transport._retire("cancelled")
+            lane.transport._add(
+                DP, _DEVICE, {**objects()[DP][_DEVICE], "Address": "22:33:44:55:66:77"}
+            )
+
+        lane.invoke(replace)
+        assert_retired_connection(lane)
+        assert not any(m.member == "CancelPairing" for m in lane.bus.calls)
+    finally:
+        lane.close()
+
+
+@pytest.mark.parametrize(
+    "kind,member",
+    [("connect", "Connect"), ("disconnect", "Disconnect"), ("forget", "RemoveDevice")],
+)
+@pytest.mark.parametrize(
+    "retirement", ["cancel", "expire", "device_invalidated", "observed", "shutdown"]
+)
+def test_unconfirmed_command_write_retires_connection_without_growth_or_replay(
+    kind, member, retirement
+):
+    bus = BackpressuredBus()
+    lane = Lane(bus)
+    try:
+        bus.block_members.add(member)
+        lane.begin(kind)
+        eventually(lambda: len(bus.buffered) == 1)
+        if retirement == "cancel":
+            lane.transport.cancel("op")
+        elif retirement == "expire":
+            lane.clock.now = 1000
+        elif retirement == "device_invalidated":
+            lane.signal(_PROPS, "PropertiesChanged", [_DEVICE, {}, ["Address"]], DP)
+        elif retirement == "observed":
+            if kind == "forget":
+                lane.signal(_OM, "InterfacesRemoved", [DP, [_DEVICE]])
+            else:
+                lane.properties(Connected=kind == "connect")
+        else:
+            lane.close()
+        assert_retired_connection(lane)
+        assert bus.max_buffered == 1
+        assert len([m for m in bus.queued if m.member == member]) == 1
+        assert not any(m.member == member for m in bus.calls)
+        assert not any(e.kind == "accepted" for e in lane.events)
+        if retirement != "shutdown":
+            assert any(e.kind == "finished" and e.code == "uncertain" for e in lane.events)
+            assert not any(e.kind == "finished" and e.code == "observed" for e in lane.events)
+    finally:
+        lane.close()
+
+
+@pytest.mark.parametrize(
+    "kind,member",
+    [("connect", "Connect"), ("disconnect", "Disconnect"), ("forget", "RemoveDevice")],
+)
+def test_confirmed_write_retirement_does_not_confuse_pending_method_reply_with_buffer(kind, member):
+    bus = BackpressuredBus()
+    lane = Lane(bus)
+    try:
+        bus.block_members.add(member)
+        bus.hold.add(member)
+        lane.begin(kind)
+        eventually(lambda: len(bus.buffered) == 1)
+
+        def drain_then_cancel():
+            bus.drain()
+            assert lane.transport._op.write.done()
+            lane.transport._command("cancel", "op", ())
+
+        lane.invoke(drain_then_cancel)
+        eventually(lambda: not lane.transport._pending and not lane.transport._writes)
+        assert bus.connected and not bus.buffered
+        assert any(e.code == "uncertain" for e in lane.events)
+        assert sum(m.member == member for m in bus.calls) == 1
+    finally:
+        lane.close()
+
+
+def incoming_agent(member="RequestPinCode", *, serial=5000):
+    message = Message(
+        destination=":1.2",
+        path=_AGENT_PATH,
+        interface=_AGENT,
+        member=member,
+        signature="o",
+        body=[DP],
+        serial=serial,
+    )
+    message.sender = ":1.7"
+    return message
+
+
+@pytest.mark.parametrize("retirement", ["cancel", "expire", "invalidate", "observed", "shutdown"])
+def test_unconfirmed_secret_agent_reply_never_survives_retirement(retirement):
+    bus = BackpressuredBus()
+    lane = Lane(bus)
+    try:
+        lane.begin()
+        bus.block_replies = True
+        lane.agent("RequestPinCode", "o", [DP])
+        challenge = lane.challenge()
+        lane.transport.answer("op", challenge.id, {"pin": "privatePin"})
+        eventually(lambda: len(bus.buffered) == 1)
+        assert bus.buffered[0][0].body == ["privatePin"]
+        if retirement == "cancel":
+            lane.transport.cancel("op")
+        elif retirement == "expire":
+            lane.clock.now = 1000
+        elif retirement == "invalidate":
+            lane.signal(_OM, "InterfacesRemoved", [DP, [_DEVICE]])
+        elif retirement == "observed":
+            lane.properties(Paired=True)
+        else:
+            lane.close()
+        assert_retired_connection(lane)
+        assert bus.max_buffered == 1
+        assert not any(msg.body == ["privatePin"] for msg in bus.sent)
+        assert "privatePin" not in repr(lane.events)
+        if retirement != "shutdown":
+            assert any(e.kind == "finished" and e.code == "uncertain" for e in lane.events)
+    finally:
+        lane.close()
+
+
+@pytest.mark.parametrize("mode", ["timeout", "overflow"])
+def test_unsolicited_agent_reply_writer_is_bounded_and_fails_closed(mode):
+    bus = BackpressuredBus()
+    lane = Lane(bus)
+    try:
+        bus.block_replies = True
+        lane.invoke(lambda: bus.handler(incoming_agent()))  # rejected; no active pair
+        eventually(lambda: len(bus.buffered) == 1)
+        if mode == "overflow":
+
+            def flood():
+                for i in range(20):
+                    if bus.connected:
+                        bus.handler(incoming_agent(serial=5001 + i))
+
+            lane.invoke(flood)
+        assert_retired_connection(lane)
+        assert bus.max_buffered == 1
+        assert not bus.sent
+        assert not any(e.kind == "challenge" for e in lane.events)
+    finally:
+        lane.close()
+
+
+def test_backpressured_fixture_keeps_serialized_bytes_after_future_cancel():
+    async def scenario():
+        bus = BackpressuredBus()
+        bus.block_members.add("Connect")
+        message = Message(
+            destination=":1.7", path=DP, interface=_DEVICE, member="Connect", serial=1
+        )
+        write = bus.send(message)
+        write.cancel()
+        assert len(bus.buffered) == 1
+        bus.drain()
+        await asyncio.sleep(0)
+        assert [msg.member for msg in bus.calls] == ["Connect"]
+        bus.disconnect()
+
+    asyncio.run(scenario())
+
+
+def test_service_owner_replacement_cannot_abandon_discovery_on_surviving_old_service():
+    lane = Lane()
+    try:
+        lane.begin("discover")
+        lane.accepted()
+        assert lane.bus.discovery_sessions == {AP}
+        lane.signal(_DBUS, "NameOwnerChanged", [_BLUEZ, ":1.7", ":1.8"], sender=_DBUS)
+        assert_retired_connection(lane)
+        assert [msg.member for msg in lane.bus.calls].count("RegisterAgent") == 1
+        assert not any(msg.member == "StopDiscovery" for msg in lane.bus.calls)
+    finally:
+        lane.close()
+
+
+def test_shutdown_discards_agent_reply_queued_before_writer_starts(lane):
+    def queue_then_close():
+        reply = Message(
+            message_type=MessageType.METHOD_RETURN,
+            reply_serial=9000,
+            destination=":1.7",
+            signature="s",
+            body=["privatePin"],
+        )
+        lane.transport._queue_agent_reply(reply)
+        assert lane.transport._agent_replies.qsize() == 1
+        lane.transport._closed.set()
+        lane.transport._request_close()
+
+    lane.invoke(queue_then_close)
+    lane.close()
+    assert lane.transport._agent_replies.empty()
+    assert not any(msg.body == ["privatePin"] for msg in lane.bus.sent)
+    assert not lane.transport._writes and not lane.transport._pending
+
+
+def test_qualified_dbus_fast_writer_retains_bytes_when_send_future_is_cancelled():
+    """Dependency-level no-IO proof of the behavior modeled by BackpressuredBus."""
+    from dbus_fast.aio.message_bus import _MessageWriter
+
+    class Socket:
+        writable = False
+        bytes_written = 0
+
+        def send(self, data):
+            if not self.writable:
+                return 0  # partial write: callback must await future writability
+            self.bytes_written += len(data)
+            return len(data)
+
+    class Loop:
+        def add_writer(self, *args):
+            pass
+
+        def remove_writer(self, *args):
+            pass
+
+    class Bus:
+        _negotiate_unix_fd = False
+        _sock = Socket()
+        _fd = 17
+        _loop = Loop()
+        unique_name = ":1.7"
+        _user_disconnect = False
+
+        def _finalize(self, error):
+            raise AssertionError("unexpected writer failure") from error
+
+    async def scenario():
+        bus = Bus()
+        writer = _MessageWriter(bus)
+        written = asyncio.get_running_loop().create_future()
+        msg = Message(destination=":1.7", path=DP, interface=_DEVICE, member="Connect", serial=1)
+        writer.schedule_write(msg, written)
+        assert not written.done() and writer.buf is not None
+        written.cancel()
+        assert writer.buf is not None
+        bus._sock.writable = True
+        writer.write_callback()
+        assert bus._sock.bytes_written > 0  # cancellation did not retract the frame
+        assert written.cancelled()
+        assert writer.buf is None and not writer.messages
+
+    asyncio.run(scenario())
+
+
+def test_uncertain_retirement_rejects_reentrant_listener_commands_before_notification():
+    bus = BackpressuredBus()
+    lane = Lane(bus)
+    admissions = []
+    try:
+        target = lane.transport.snapshot().devices[0].id
+
+        def listener(event):
+            lane.events.append(event)
+            if event.kind in {"finished", "unavailable"}:
+                admissions.append(lane.transport.connect("from_listener", target, 150))
+
+        lane.invoke(lambda: setattr(lane.transport, "_listener", listener))
+        bus.block_members.add("Connect")
+        lane.begin("connect")
+        eventually(lambda: len(bus.buffered) == 1)
+        lane.transport.cancel("op")
+        assert_retired_connection(lane)
+        assert admissions and not any(admissions)
+        assert bus.max_buffered == 1
+        assert not any(msg.member == "Connect" for msg in bus.calls)
+    finally:
+        lane.close()
+
+
+@pytest.mark.parametrize("kind,member", [("discover", "StartDiscovery"), ("pair", "Pair")])
+@pytest.mark.parametrize("retirement", ["cancel", "expire", "adapter_invalidated"])
+def test_unconfirmed_pair_or_discovery_write_also_fails_closed(kind, member, retirement):
+    bus = BackpressuredBus()
+    lane = Lane(bus)
+    try:
+        bus.block_members.add(member)
+        lane.begin(kind)
+        eventually(lambda: len(bus.buffered) == 1)
+        if retirement == "cancel":
+            lane.transport.cancel("op")
+        elif retirement == "expire":
+            lane.clock.now = 1000
+        else:
+            lane.signal(_PROPS, "PropertiesChanged", [_ADAPTER, {}, ["Address"]], AP)
+        assert_retired_connection(lane)
+        assert bus.max_buffered == 1
+        assert any(e.kind == "finished" and e.code == "uncertain" for e in lane.events)
+        assert not any(
+            msg.member in {member, "CancelPairing", "StopDiscovery"} for msg in bus.calls
+        )
+    finally:
+        lane.close()
