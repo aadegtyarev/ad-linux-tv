@@ -1299,6 +1299,9 @@ def test_service_owner_replacement_cannot_abandon_discovery_on_surviving_old_ser
 
 
 def test_shutdown_discards_agent_reply_queued_before_writer_starts(lane):
+    lane.begin()
+    lane.accepted()
+
     def queue_then_close():
         reply = Message(
             message_type=MessageType.METHOD_RETURN,
@@ -1307,7 +1310,7 @@ def test_shutdown_discards_agent_reply_queued_before_writer_starts(lane):
             signature="s",
             body=["privatePin"],
         )
-        lane.transport._queue_agent_reply(reply)
+        lane.transport._queue_agent_reply(reply, op=lane.transport._op)
         assert lane.transport._agent_replies.qsize() == 1
         lane.transport._closed.set()
         lane.transport._request_close()
@@ -1417,3 +1420,229 @@ def test_unconfirmed_pair_or_discovery_write_also_fails_closed(kind, member, ret
         )
     finally:
         lane.close()
+
+
+@pytest.fixture
+def before_reply_writer(monkeypatch):
+    """Schedule a callback before the newly queued reply writer's first step.
+
+    _reply_agent still reaches its await on that Task before this callback runs,
+    so retiring the operation propagates cancellation to a never-started writer.
+    No sleep, fake bus backpressure, or post-write window is used here.
+    """
+
+    def install(lane, before_write, *, generic="rejection"):
+        transport = lane.transport
+        original_queue = transport._queue_agent_reply
+        original_writer = transport._send_agent_replies
+        state = {"started": set(), "armed": False, "completed": False, "error": None}
+
+        async def writer():
+            state["started"].add(asyncio.current_task())
+            await original_writer()
+
+        def probe():
+            try:
+                task = state["writer"] = transport._agent_reply_task
+                assert task not in state["started"]
+                assert transport._agent_reply_write is None
+                entry = state["entry"] = transport._agent_replies.get_nowait()
+                transport._agent_replies.put_nowait(entry)
+                op = state["operation"] = transport._op
+                assert entry.operation is op
+                assert (
+                    entry.operation_id,
+                    entry.controller_epoch,
+                    entry.device_id,
+                    entry.device_epoch,
+                    entry.deadline,
+                ) == (op.id, op.epoch, op.device_id, op.device_epoch, op.deadline)
+                before_write(transport, state)
+                assert task not in state["started"]
+                if generic == "rejection":
+                    msg = incoming_agent(serial=7777)
+                    msg.sender = ":1.99"
+                else:
+                    msg = Message(
+                        destination=":1.2",
+                        path=_AGENT_PATH,
+                        interface=_AGENT
+                        if generic == "Cancel"
+                        else "org.freedesktop.DBus.Introspectable",
+                        member=generic,
+                        serial=7777,
+                    )
+                    msg.sender = ":1.7"
+                assert transport._on_message(msg) is True
+                assert transport._agent_replies.qsize() <= 2
+            except BaseException as exc:
+                state["error"] = exc
+            finally:
+                state["completed"] = True
+
+        def queue(reply, *, op=None):
+            if op is not None and not state["armed"]:
+                state["armed"] = True
+                # Queue this BEFORE create_task() schedules its first step.
+                asyncio.get_running_loop().call_soon(probe)
+            return original_queue(reply, op=op)
+
+        monkeypatch.setattr(transport, "_send_agent_replies", writer)
+        monkeypatch.setattr(transport, "_queue_agent_reply", queue)
+        return state
+
+    return install
+
+
+_POSITIVE_AGENT_REPLIES = [
+    pytest.param("RequestPinCode", "o", [DP], {"pin": "queuedPin"}, id="pin"),
+    pytest.param("RequestPasskey", "o", [DP], {"passkey": "654321"}, id="passkey"),
+    pytest.param("RequestConfirmation", "ou", [DP, 654321], {"confirm": True}, id="confirmation"),
+    pytest.param("RequestAuthorization", "o", [DP], {"confirm": True}, id="just-works"),
+    pytest.param(
+        "AuthorizeService",
+        "os",
+        [DP, "00001124-0000-1000-8000-00805f9b34fb"],
+        None,
+        id="classic-hid",
+    ),
+    pytest.param(
+        "AuthorizeService", "os", [DP, "00001812-0000-1000-8000-00805f9b34fb"], None, id="le-hid"
+    ),
+    pytest.param("DisplayPinCode", "os", [DP, "displayPin"], None, id="display-pin-ack"),
+    pytest.param("DisplayPasskey", "ouq", [DP, 654321, 2], None, id="display-passkey-ack"),
+]
+
+
+def retire_before_reply_writer(transport, state, retirement):
+    op = state["operation"]
+    if retirement == "cancel":
+        transport._command("cancel", op.id, ())
+    elif retirement == "expire":
+        transport._clock.now = op.deadline + 1
+        transport._retire("uncertain")
+    elif retirement == "observed":
+        msg = Message.new_signal(DP, _PROPS, "PropertiesChanged")
+        msg.body = [_DEVICE, {"Paired": True}, []]
+        msg.sender = ":1.7"
+        transport._on_message(msg)
+    elif retirement == "listener":
+
+        def broken(_):
+            raise ValueError("fixed listener failure")
+
+        transport._listener = broken
+        transport._emit("inventory")
+    else:
+        msg = Message(
+            destination=":1.2", path=_AGENT_PATH, interface=_AGENT, member=retirement, serial=6666
+        )
+        msg.sender = ":1.7"
+        transport._on_message(msg)
+    assert transport._op is None
+    assert transport._target_matches(op)  # This is retirement, not identity loss.
+    assert state["writer"].cancelling()
+    assert transport._agent_replies.qsize() <= 1  # only a generic Cancel/Release return
+
+
+def assert_prewrite_reply_not_sent(lane, state):
+    eventually(lambda: state["completed"])
+    if state["error"]:
+        raise state["error"]
+    eventually(lambda: any(reply.reply_serial == 7777 for reply in lane.bus.sent))
+    eventually(
+        lambda: (
+            lane.transport._agent_reply_task is None
+            and lane.transport._agent_replies.empty()
+            and not lane.transport._pending
+            and not lane.transport._writes
+        )
+    )
+    original = state["entry"].message
+    assert not any(
+        reply.reply_serial == original.reply_serial
+        and reply.message_type == MessageType.METHOD_RETURN
+        for reply in lane.bus.sent
+    )
+    assert lane.bus.connected
+    assert lane.transport._agent_reply_write is None
+    assert sum(msg.member == "Pair" for msg in lane.bus.calls) == 1
+    assert sum(msg.member == "RegisterAgent" for msg in lane.bus.calls) == 1
+    assert "queuedPin" not in repr(lane.events) + repr(state["entry"])
+    return next(reply for reply in lane.bus.sent if reply.reply_serial == 7777)
+
+
+@pytest.mark.parametrize("member,signature,body,answer", _POSITIVE_AGENT_REPLIES)
+@pytest.mark.parametrize(
+    "retirement", ["cancel", "expire", "observed", "listener", "Cancel", "Release"]
+)
+def test_positive_agent_reply_loses_authority_before_writer_first_step(
+    lane, before_reply_writer, member, signature, body, answer, retirement
+):
+    lane.begin()
+    lane.accepted()  # confirmed Pair write; no backpressure/connection failure masks this race
+    state = before_reply_writer(
+        lane, lambda transport, state: retire_before_reply_writer(transport, state, retirement)
+    )
+    assert lane.agent(member, signature, body) is True
+    if answer:
+        challenge = lane.challenge()
+        assert lane.transport.answer("op", challenge.id, answer)
+    generic = assert_prewrite_reply_not_sent(lane, state)
+    assert generic.message_type == MessageType.ERROR and generic.body == ["Rejected"]
+    assert state["writer"].cancelled()
+    assert state["writer"] not in state["started"]  # no writer try/finally ever executed
+
+
+@pytest.mark.parametrize("generic", ["Cancel", "Introspect"])
+def test_prestart_cancelled_reply_writer_resumes_bounded_generic_responses(
+    lane, before_reply_writer, generic
+):
+    lane.begin()
+    lane.accepted()
+    state = before_reply_writer(
+        lane,
+        lambda transport, state: retire_before_reply_writer(transport, state, "cancel"),
+        generic=generic,
+    )
+    lane.agent("RequestPinCode", "o", [DP])
+    lane.transport.answer("op", lane.challenge().id, {"pin": "queuedPin"})
+    response = assert_prewrite_reply_not_sent(lane, state)
+    assert response.message_type == MessageType.METHOD_RETURN
+    if generic == "Introspect":
+        assert _AGENT in response.body[0] and "queuedPin" not in response.body[0]
+    else:
+        assert response.body == []
+    assert state["writer"].cancelled() and state["writer"] not in state["started"]
+
+
+@pytest.mark.parametrize(
+    "changed", ["operation_id", "controller_epoch", "device_id", "device_epoch", "deadline"]
+)
+def test_agent_reply_frozen_ownership_is_rechecked_at_bus_send(lane, before_reply_writer, changed):
+    lane.begin()
+    lane.accepted()
+
+    def stale_metadata(transport, state):
+        entry = transport._agent_replies.get_nowait()
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            entry.deadline = 999
+        values = {
+            "operation_id": "wrong",
+            "controller_epoch": transport._epoch + 1,
+            "device_id": "wrong",
+            "device_epoch": entry.device_epoch + 1,
+            "deadline": lane.clock() - 1,
+        }
+        transport._agent_replies.put_nowait(
+            dataclasses.replace(entry, **{changed: values[changed]})
+        )
+        assert transport._op is state["operation"]  # no retirement removed this entry
+
+    state = before_reply_writer(lane, stale_metadata)
+    lane.agent("RequestPinCode", "o", [DP])
+    lane.transport.answer("op", lane.challenge().id, {"pin": "queuedPin"})
+    generic = assert_prewrite_reply_not_sent(lane, state)
+    assert generic.message_type == MessageType.ERROR
+    assert lane.transport._op is state["operation"]
+    assert state["writer"] in state["started"] and not state["writer"].cancelled()

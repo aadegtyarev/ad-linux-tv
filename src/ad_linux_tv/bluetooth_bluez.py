@@ -42,7 +42,10 @@ an owned discovery session or unconfirmed write could survive that boundary.
 All sends track write completion separately from reply waiting. Cancelling an
 unconfirmed write closes the connection; it is never replayed. Agent replies use
 one actual writer plus a two-entry reply queue, including rejections and Cancel.
-Queue overflow or a reply write timeout also closes the connection.
+Queue overflow or a reply write timeout also closes the connection. Unsent
+operation replies carry a frozen ownership/deadline fence, are dropped on
+retirement, and are revalidated immediately before entering the bus writer.
+Generic rejection/Cancel replies never inherit a retired operation's authority.
 
 bus_factory (async, returns a connected dbus-fast-compatible MessageBus) and clock
 are injectable; a factory owns partial resources until it returns successfully.
@@ -153,6 +156,19 @@ class _Operation:
     task: asyncio.Task | None = None
     challenge: Challenge | None = None
     answer: asyncio.Future | None = None
+
+
+@dataclass(frozen=True)
+class _AgentReply:
+    """Only fixed generic replies may omit the captured pairing operation."""
+
+    message: object = field(repr=False)
+    operation: _Operation | None = field(default=None, repr=False)
+    operation_id: str | None = None
+    controller_epoch: int = 0
+    device_id: str | None = None
+    device_epoch: int = 0
+    deadline: float = 0
 
 
 def _address(value):
@@ -457,12 +473,15 @@ class BluezTransport:
         if self._wake:
             self._wake.set()
 
-    async def _send(self, msg, *, op=None, agent_reply=False):
+    async def _send(self, msg, *, op=None, agent_reply=None):
         if agent_reply and self._closed.is_set():
             raise ConnectionError("closed")
         if self._failed_closed or len(self._writes) >= 8:
             self._fail_closed("bus_unavailable")
             raise ConnectionError("unavailable")
+        # No await between this operation fence and dbus-fast buffering bytes.
+        if agent_reply and not self._agent_reply_current(agent_reply):
+            return
         try:
             write = asyncio.ensure_future(self._bus.send(msg))
         except Exception:
@@ -997,6 +1016,15 @@ class BluezTransport:
         op, self._op = self._op, None
         if not op:
             return
+        # Drop unsent positive responses even if their writer is cancelled before
+        # its first step (when the coroutine's finally cannot run).
+        retained = []
+        while not self._agent_replies.empty():
+            entry = self._agent_replies.get_nowait()
+            if entry.operation is not op:
+                retained.append(entry)
+        for entry in retained:
+            self._agent_replies.put_nowait(entry)
         unwritten = op.write is not None and not self._written(op.write)
         reply_unwritten = self._agent_reply_write is not None and not self._written(
             self._agent_reply_write
@@ -1125,24 +1153,60 @@ class BluezTransport:
         except (Exception, asyncio.CancelledError):
             reply = self._Message.new_error(msg, "org.bluez.Error.Rejected", "Rejected")
         if not self._closed.is_set() and not self._failed_closed:
-            self._queue_agent_reply(reply)
+            self._queue_agent_reply(
+                reply, op=op if reply.message_type == self._MessageType.METHOD_RETURN else None
+            )
             if self._agent_reply_task:
                 await self._agent_reply_task
 
-    def _queue_agent_reply(self, reply):
+    def _agent_reply_current(self, entry):
+        op = entry.operation
+        return op is None or (
+            self._current(op)
+            and self._target_matches(op)
+            and op.id == entry.operation_id
+            and self._epoch == entry.controller_epoch
+            and op.device_id == entry.device_id
+            and op.device_epoch == entry.device_epoch
+            and self._clock() < entry.deadline
+        )
+
+    def _queue_agent_reply(self, reply, *, op=None):
         if self._closed.is_set() or self._failed_closed:
             return True
         try:
             # Cancel may need its own return plus the rejected challenge reply.
             # Bound these in application memory, with only ONE actual write.
-            self._agent_replies.put_nowait(reply)
+            entry = (
+                _AgentReply(reply, op, op.id, op.epoch, op.device_id, op.device_epoch, op.deadline)
+                if op
+                else _AgentReply(reply)
+            )
+            self._agent_replies.put_nowait(entry)
         except asyncio.QueueFull:
             self._fail_closed("bus_unavailable")
             return True
         if not self._agent_reply_task or self._agent_reply_task.done():
-            self._agent_reply_write = None
-            self._agent_reply_task = asyncio.create_task(self._send_agent_replies())
+            self._start_agent_reply_writer()
         return True
+
+    def _start_agent_reply_writer(self):
+        self._agent_reply_write = None
+        self._agent_reply_task = asyncio.create_task(self._send_agent_replies())
+        self._agent_reply_task.add_done_callback(self._agent_reply_done)
+
+    def _agent_reply_done(self, task):
+        if self._agent_reply_task is task:
+            self._agent_reply_task = None
+            # Cancellation before the task's first step bypasses its finally.
+            # A generic reply queued meanwhile still needs its bounded writer.
+            if (
+                not self._closed.is_set()
+                and not self._failed_closed
+                and not self._shutting_down
+                and not self._agent_replies.empty()
+            ):
+                self._start_agent_reply_writer()
 
     async def _send_agent_replies(self):
         try:
@@ -1151,9 +1215,9 @@ class BluezTransport:
                 and not self._closed.is_set()
                 and not self._failed_closed
             ):
-                reply = self._agent_replies.get_nowait()
+                entry = self._agent_replies.get_nowait()
                 async with asyncio.timeout(2):
-                    await self._send(reply, agent_reply=True)
+                    await self._send(entry.message, agent_reply=entry)
         except (Exception, asyncio.CancelledError):
             if not self._failed_closed and not self._closed.is_set():
                 self._fail_closed("bus_unavailable")
