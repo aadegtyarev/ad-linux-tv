@@ -10,6 +10,8 @@ class BluetoothControls {
     const clock = options.clock || globalThis;
     this.later = clock.setTimeout.bind(clock);
     this.clear = clock.clearTimeout.bind(clock);
+    this.now = clock.now ? clock.now.bind(clock) : () => globalThis.performance.now();
+    this.nextRefresh = null;
     this.serial = Promise.resolve();
     this.transportPending = false;
     this.transportEpoch = 0;
@@ -107,6 +109,7 @@ class BluetoothControls {
     this.document.removeEventListener("visibilitychange", this.onVisibility);
     this.clear(this.timer);
     this.timer = null;
+    this.nextRefresh = null;
     this.lease = null;
     this.ownerReason = null;
     this.pending = false;
@@ -142,56 +145,91 @@ class BluetoothControls {
       .filter(element => !element.disabled && !element.closest("[hidden]"));
   }
 
+  ownerPollDue() {
+    return !!this.lease && this.nextRefresh !== null && this.now() >= this.nextRefresh;
+  }
+
   schedule() {
     this.clear(this.timer);
     this.timer = null;
     if (!this.active) return;
+    if (this.nextRefresh === null) this.nextRefresh = this.now() + 5000;
     this.timer = this.later(() => {
       this.timer = null;
       if (!this.visible()) { this.deactivate(); return; }
+      // Keep the deadline overdue while busy; run() services it before enabling
+      // more controls. Mutations never reset the heartbeat deadline.
+      if (this.pending) return;
       const generation = this.generation;
       void this.run(() => this.receive(this.lease ? "POST" : "GET",
         this.lease ? {op: "poll", lease: this.lease} : null, generation));
-    }, 5000);
+    }, Math.max(0, this.nextRefresh - this.now()));
   }
 
-  // The entire Response (including json()) is bounded. Old lifetimes share the
-  // same serial lane; a retired response cannot unblock a concurrent mutation.
-  exchange(method, body, generation) {
+  authorized(generation, transportEpoch) {
+    return transportEpoch === this.transportEpoch &&
+      (generation === null || (this.current(generation) && this.visible()));
+  }
+
+  // One serial lane, including priority heartbeats. Revalidate a queued mutation
+  // after its heartbeat: polling may retire its operation, challenge or revision.
+  exchange(method, body, generation, beforeDispatch) {
     const transportEpoch = this.transportEpoch;
     const task = this.serial.then(async () => {
-      if (transportEpoch !== this.transportEpoch || (generation !== null && !this.current(generation))) return null;
-      // The caller's transport has no cancellation API. After a timeout, never
-      // stack another request behind a still-unsettled fetch/body promise.
-      if (this.transportPending) throw new Error("transport still pending");
-      this.transportPending = true;
-      let timeout;
-      try {
-        return await Promise.race([
-          Promise.resolve().then(async () => {
-            const response = await this.request(method, "/api/bluetooth", ...(body ? [body] : []));
-            if (response.status === 401 || response.status === 403)
-              return {status: response.status, ok: false, body: null};
-            return {status: response.status, ok: response.ok, body: await response.json()};
-          }).finally(() => { this.transportPending = false; }),
-          new Promise((resolve, reject) => {
-            timeout = this.later(() => reject(new Error("timeout")), 8000);
-          }),
-        ]);
-      } finally { this.clear(timeout); }
+      if (!this.authorized(generation, transportEpoch)) return null;
+      if (generation !== null && body && !["acquire", "poll", "release"].includes(body.op)) {
+        if (this.ownerPollDue()) {
+          const poll = {op: "poll", lease: this.lease};
+          const reply = await this.dispatch("POST", poll, generation, transportEpoch);
+          if (!this.accept(reply, "POST", poll, generation)) return null;
+        }
+        if (!this.authorized(generation, transportEpoch) || !this.lease || body.lease !== this.lease) return null;
+      }
+      if (beforeDispatch && !beforeDispatch()) return null;
+      return this.dispatch(method, body, generation, transportEpoch);
     });
     // Do not retain the last envelope (lease/challenge) in the serial tail.
     this.serial = task.then(() => undefined, () => undefined);
     return task;
   }
 
+  // Bound the entire Response/body. The injected API has no abort parameter;
+  // an unsettled timed-out request blocks replacement requests rather than
+  // accumulating concurrent work. There is no microtask between the final
+  // authority check and actual supplied request invocation.
+  async dispatch(method, body, generation, transportEpoch) {
+    if (!this.authorized(generation, transportEpoch)) return null;
+    if (this.transportPending) throw new Error("transport still pending");
+    this.transportPending = true;
+    let timeout;
+    try {
+      return await Promise.race([
+        (async () => {
+          if (method === "GET" || ["acquire", "poll"].includes(body?.op))
+            this.nextRefresh = this.now() + 5000;
+          if (!this.authorized(generation, transportEpoch)) return null;
+          const response = await this.request(method, "/api/bluetooth", ...(body ? [body] : []));
+          if (response.status === 401 || response.status === 403)
+            return {status: response.status, ok: false, body: null};
+          return {status: response.status, ok: response.ok, body: await response.json()};
+        })().finally(() => { this.transportPending = false; }),
+        new Promise((resolve, reject) => {
+          timeout = this.later(() => reject(new Error("timeout")), 8000);
+        }),
+      ]);
+    } finally { this.clear(timeout); }
+  }
+
   async run(work) {
     if (!this.active || this.pending || !this.visible()) return;
     const generation = this.generation;
     this.pending = true;
-    this.clear(this.timer);
     this.render();
-    try { await work(); }
+    try {
+      await work();
+      if (this.current(generation) && this.visible() && this.ownerPollDue())
+        await this.receive("POST", {op: "poll", lease: this.lease}, generation);
+    }
     catch {
       if (this.current(generation)) {
         this.retire();
@@ -207,10 +245,14 @@ class BluetoothControls {
     }
   }
 
-  async receive(method, body, generation) {
-    const reply = await this.exchange(method, body, generation);
-    if (!reply || !this.current(generation)) return false;
+  async receive(method, body, generation, beforeDispatch) {
+    return this.accept(await this.exchange(method, body, generation, beforeDispatch), method, body, generation);
+  }
+
+  accept(reply, method, body, generation) {
+    if (!this.current(generation)) return false;
     if (!this.visible()) { this.deactivate(); return false; }
+    if (!reply) return false;
     if (reply.status === 401 || reply.status === 403) {
       this.retire();
       this.message = "Доступ завершён. Войдите в пульт заново.";
@@ -313,17 +355,43 @@ class BluetoothControls {
     const body = {op, lease: this.lease, ...fields};
     const generation = this.generation;
     if (fields.operation_id && fields.operation_id !== this.operation()?.id) return Promise.resolve();
-    if (op === "cancel") this.retiredOperation = fields.operation_id;
-    if (op === "answer") this.answeredChallenge = {operation_id: fields.operation_id, id: fields.challenge_id};
-    if (op === "forget_confirm") this.forgetAttempt = fields.operation_id;
-    if (["cancel", "answer", "bind", "select_remote", "forget_confirm"].includes(op)) {
+    const remoteId = this.state?.remote?.device_id;
+    const clear = () => {
       this.wipeInputs();
       if (this.challenge) this.challenge.value = "";
       this.challenge = null;
       this.observation = null;
       this.confirmation = null;
-    }
-    return this.run(() => this.receive("POST", body, generation));
+    };
+    // Cancel retires secrets immediately, even when an overdue heartbeat must
+    // run first. Other staged identities remain available for revalidation.
+    this.wipeInputs();
+    if (op === "cancel") { this.retiredOperation = fields.operation_id; clear(); }
+    const beforeDispatch = () => {
+      if (!this.current(generation)) return false;
+      const valid = (!fields.operation_id || fields.operation_id === this.operation()?.id) &&
+        (!fields.device_id || this.state.devices.some(device => device.id === fields.device_id)) &&
+        (fields.revision === undefined || fields.revision === this.state.revision) &&
+        (op !== "answer" || fields.challenge_id === this.challenge?.id) &&
+        (op !== "forget_confirm" || fields.confirmation_id === this.confirmation?.id) &&
+        (!["test", "bind"].includes(op) ||
+          (fields.observation_id === this.observation?.id && this.observation.complete &&
+            (op !== "test" || !this.observation.tested))) &&
+        (op !== "learn" || (remoteId === this.state.remote?.device_id &&
+          this.state.remote?.connected && this.state.remote?.input_available));
+      if (!valid) {
+        this.message = this.text(fields.revision !== undefined ? "revision_mismatch" : "invalidated");
+        return false;
+      }
+      if (op === "answer") this.answeredChallenge = {operation_id: fields.operation_id, id: fields.challenge_id};
+      if (op === "forget_confirm") this.forgetAttempt = fields.operation_id;
+      if (["cancel", "answer", "bind", "select_remote", "forget_confirm"].includes(op)) {
+        clear();
+        this.render();
+      }
+      return true;
+    };
+    return this.run(() => this.receive("POST", body, generation, beforeDispatch));
   }
 
   retry() {
@@ -366,7 +434,7 @@ class BluetoothControls {
     this.content.className = "bluetooth-controls";
     this.element("h3", "Bluetooth и кнопки пульта", this.content);
     const status = this.element("p", this.message, this.content);
-    status.className = "bt-feedback";
+    status.className = localFocus ? "bt-feedback bt-focus-anchor" : "bt-feedback";
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
     status.tabIndex = -1;

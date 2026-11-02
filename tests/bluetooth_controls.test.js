@@ -5,6 +5,9 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 
 const source = fs.readFileSync("src/ad_linux_tv/static/bluetooth_controls.js", "utf8");
+const css = fs.readFileSync("src/ad_linux_tv/static/bluetooth_controls.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const hiddenSelectors = [...css.matchAll(/([^{}]+)\{([^{}]+)\}/g)]
+  .filter(match => /display:\s*none/.test(match[2])).flatMap(match => match[1].trim().split(","));
 const lease = "a".repeat(32);
 const clone = value => JSON.parse(JSON.stringify(value));
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return {promise, resolve, reject}; };
@@ -14,7 +17,7 @@ const settle = async () => { for (let n = 0; n < 60; n++) await Promise.resolve(
 class Element {
   constructor(tag, document) {
     this.tagName = tag.toUpperCase(); this.ownerDocument = document; this.children = [];
-    this.parentElement = null; this.dataset = {}; this.attributes = {}; this.value = "";
+    this.parentElement = null; this.dataset = {}; this.attributes = {}; this.value = ""; this.style = {};
     this.disabled = false; this.hidden = false; this._text = ""; this.classList = {add() {}};
   }
   append(child) { child.parentElement = this; this.children.push(child); }
@@ -31,8 +34,24 @@ class Element {
   set innerHTML(value) { throw new Error(`unsafe markup: ${value}`); }
   setAttribute(key, value) { this.attributes[key] = value; }
   matches(selector) {
+    const parts = selector.trim().split(/\s+/);
+    if (parts.length > 1) {
+      const last = parts.pop();
+      if (!this.matches(last)) return false;
+      for (let ancestor = this.parentElement; ancestor; ancestor = ancestor.parentElement)
+        if (ancestor.matches(parts.join(" "))) return true;
+      return false;
+    }
     if (selector === "[hidden]") return this.hidden;
     if (selector === "[data-secret]") return this.dataset.secret !== undefined;
+    if (selector.startsWith(".")) {
+      const classes = (this.className || "").split(/\s+/);
+      const not = selector.match(/:not\(\.([\w-]+)\)/);
+      if (not && classes.includes(not[1])) return false;
+      const positive = selector.replace(/:not\([^)]*\)/g, "");
+      return [...positive.matchAll(/\.([\w-]+)/g)].every(match => classes.includes(match[1])) &&
+        (!positive.includes(":empty") || (!this._text && !this.children.length));
+    }
     return this.tagName.toLowerCase() === selector;
   }
   closest(selector) { return this.matches(selector) ? this : this.parentElement?.closest(selector) || null; }
@@ -43,7 +62,18 @@ class Element {
     ]);
   }
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
-  focus() { if (!this.disabled) this.ownerDocument.activeElement = this; }
+  rendered() {
+    if (!this.ownerDocument.body.contains(this)) return false;
+    for (let node = this; node; node = node.parentElement)
+      if (node.hidden || node.style.display === "none" || node.style.visibility === "hidden" ||
+          hiddenSelectors.some(selector => node.matches(selector))) return false;
+    return true;
+  }
+  focus() {
+    const focusable = ["BUTTON", "INPUT", "SELECT"].includes(this.tagName) || typeof this.tabIndex === "number";
+    if (focusable && !this.disabled && this.type !== "hidden" && this.rendered())
+      this.ownerDocument.activeElement = this;
+  }
   setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
 }
 class Document {
@@ -54,17 +84,18 @@ class Document {
   visibility(hidden) { this.hidden = hidden; for (const listener of [...this.listeners]) listener(); }
 }
 class Clock {
-  constructor() { this.now = 0; this.id = 0; this.jobs = new Map(); }
-  setTimeout(fn, delay) { const id = ++this.id; this.jobs.set(id, {fn, at: this.now + delay}); return id; }
+  constructor() { this.time = 0; this.id = 0; this.jobs = new Map(); }
+  now() { return this.time; }
+  setTimeout(fn, delay) { const id = ++this.id; this.jobs.set(id, {fn, at: this.time + delay}); return id; }
   clearTimeout(id) { this.jobs.delete(id); }
   async tick(delay) {
-    const until = this.now + delay;
+    const until = this.time + delay;
     for (;;) {
       const next = [...this.jobs].filter(([, job]) => job.at <= until).sort((a, b) => a[1].at - b[1].at)[0];
       if (!next) break;
-      this.now = next[1].at; this.jobs.delete(next[0]); next[1].fn(); await settle();
+      this.time = Math.max(this.time, next[1].at); this.jobs.delete(next[0]); next[1].fn(); await settle();
     }
-    this.now = until; await settle();
+    this.time = until; await settle();
   }
 }
 function snapshot(changes = {}) {
@@ -80,13 +111,17 @@ const operation = (kind, changes = {}) => ({id: "operation", kind, phase: "waiti
 const response = (state, extras = {}, status = 200) => ({ok: status >= 200 && status < 300, status, json: async () => clone({state, ...extras})});
 function panel(state = snapshot()) {
   const document = new Document(); const root = document.createElement("section"); document.body.append(root);
-  const clock = new Clock(); const calls = []; const replies = [];
+  const clock = new Clock(); const calls = []; const replies = []; const invocations = [];
   const context = vm.createContext({console});
   vm.runInContext(source + "\nglobalThis.Controls = BluetoothControls;", context);
-  const ui = {state, root, document, clock, calls, replies, auth: 0, changes: 0};
+  const ui = {state, root, document, clock, calls, replies, invocations, auth: 0, changes: 0};
   ui.controls = new context.Controls(root, async (method, path, body) => {
+    invocations.push({method, op: body?.op, at: clock.now(), active: ui.controls.active,
+      generation: ui.controls.generation, epoch: ui.controls.transportEpoch});
+    ui.onRequest?.(method, body);
     calls.push({method, path, ...(body ? {body: clone(body)} : {})});
     if (replies.length) return replies.shift()(method, body);
+    if (ui.server) return ui.server(method, body);
     return response(ui.state, body?.op === "acquire" ? {lease} : {});
   }, {clock, onAuthLost: () => ui.auth++, onActionsChanged: () => ui.changes++});
   ui.find = key => root.querySelectorAll("button, input, select").find(element => element.dataset.btKey === key);
@@ -434,7 +469,6 @@ test("BluetoothControls malformed response fails closed, no lease, no error inte
   assert.ok(!ui.root.textContent.includes("SECRET")); assert.equal(ui.calls.length, 1);
 });
 test("BluetoothControls CSS rules stay scoped to the component", () => {
-  const css = fs.readFileSync("src/ad_linux_tv/static/bluetooth_controls.css", "utf8");
   for (const rule of css.matchAll(/([^{}]+)\{/g)) {
     if (rule[1].trim().startsWith("@")) continue;
     for (const selector of rule[1].trim().split(",")) assert.ok(selector.trim().startsWith(".bluetooth-controls"), selector);
@@ -549,3 +583,246 @@ for (const error of ["busy", "stale"])
     const ui = panel(state); ui.reply(state); ui.reply(state, {error}, 409); await ui.start(); await ui.click("device:device");
     assert.equal(ui.find("select_remote").disabled, true);
   });
+
+// Review P1: authority is checked at actual invocation, not one microtask earlier.
+for (const cleanup of ["retire", "deactivate", "reactivate"]) {
+  for (const op of ["discover", "pair", "connect", "disconnect", "select_remote", "answer", "cancel",
+    "forget_prepare", "forget_confirm", "learn", "test", "bind", "unmap", "reset"]) {
+    test(`BluetoothControls ${op} cannot dispatch in a retired microtask (${cleanup})`, async () => {
+      for (let turns = 0; turns <= 3; turns++) {
+        const ui = await panel().start(); const generation = ui.controls.generation;
+        const state = snapshot({operation: operation(op === "answer" ? "pair" : op === "forget_confirm" ? "forget" : "learn")});
+        ui.controls.state = state;
+        ui.controls.challenge = {id: "challenge", operation_id: "operation", kind: "pin", remaining_ms: 10000};
+        ui.controls.confirmation = {id: "confirmation", operation_id: "operation"};
+        ui.controls.observation = {id: "observation", operation_id: "operation", key: "KEY_ENTER", action: "ok", complete: true, tested: false};
+        const fields = {answer: {pin: "1234"}, operation_id: "operation", challenge_id: "challenge"};
+        const byOp = {answer: fields, cancel: {operation_id: "operation"},
+          forget_confirm: {operation_id: "operation", confirmation_id: "confirmation"},
+          test: {operation_id: "operation", observation_id: "observation"},
+          bind: {operation_id: "operation", observation_id: "observation"},
+          unmap: {key: "KEY_ENTER", revision: 7}, reset: {revision: 7}, learn: {action: "ok"}};
+        void ui.controls.mutate(op, byOp[op] || (op === "discover" ? {} : {device_id: "device"}));
+        for (let n = 0; n < turns; n++) await Promise.resolve();
+        const dispatched = ui.calls.filter(call => call.body?.op === op).length;
+        if (cleanup === "reactivate") { ui.controls.deactivate(); void ui.controls.activate(); }
+        else ui.controls[cleanup]();
+        await settle();
+        assert.equal(ui.calls.filter(call => call.body?.op === op).length, dispatched, `${op}, turn ${turns}`);
+        for (const call of ui.invocations.filter(call => call.op === op)) {
+          assert.equal(call.active, true); assert.equal(call.generation, generation);
+        }
+      }
+    });
+  }
+  for (const start of ["activate", "retry", "poll", "readonly"]) {
+    test(`BluetoothControls ${start} dispatch is microtask-fenced (${cleanup})`, async () => {
+      for (let turns = 0; turns <= 18; turns++) {
+        const ui = panel();
+        if (start !== "activate") {
+          if (["retry", "readonly"].includes(start)) { ui.reply(ui.state); ui.reply(ui.state, {error: "busy"}, 409); }
+          await ui.start();
+        }
+        if (start === "activate") void ui.controls.activate();
+        else if (start === "retry") void ui.controls.retry();
+        else {
+          // Invoke the scheduled deadline without draining its promise turns.
+          const [id, job] = [...ui.clock.jobs].find(([, job]) => job.at === 5000);
+          ui.clock.time = 5000; ui.clock.jobs.delete(id); job.fn();
+        }
+        for (let n = 0; n < turns; n++) await Promise.resolve();
+        const before = ui.invocations.length;
+        if (cleanup === "reactivate") { ui.controls.deactivate(); void ui.controls.activate(); }
+        else ui.controls[cleanup]();
+        await settle();
+        const later = ui.invocations.slice(before).filter(call => call.op !== "release");
+        assert.deepEqual(later.map(call => call.op || call.method), cleanup === "reactivate" ? ["GET", "acquire"] : [],
+          `${start}, turn ${turns}`);
+        assert.ok(later.every(call => call.active));
+      }
+    });
+  }
+}
+test("BluetoothControls release honors transport epoch at actual invocation, including the intervening turn", async () => {
+  for (let turns = 0; turns <= 3; turns++) {
+    const ui = await panel().start(); const epoch = ui.controls.transportEpoch;
+    ui.controls.deactivate();
+    for (let n = 0; n < turns; n++) await Promise.resolve();
+    const count = ui.calls.filter(call => call.body?.op === "release").length;
+    ui.controls.retire(); await settle();
+    assert.equal(ui.calls.filter(call => call.body?.op === "release").length, count, `turn ${turns}`);
+    assert.ok(ui.invocations.filter(call => call.op === "release").every(call => call.epoch === epoch));
+  }
+});
+
+// Review P1: fake owner leases expire after15s; ONLY poll renews them.
+function leaseServer(ui, delays = {}) {
+  const log = []; let owned = false, expiry, expiresAt = null, active = 0, maxActive = 0, expirations = 0;
+  const renew = () => {
+    ui.clock.clearTimeout(expiry); expiresAt = ui.clock.now() + 15000; owned = true;
+    expiry = ui.clock.setTimeout(() => { owned = false; expirations++; }, 15000);
+  };
+  ui.server = (method, body) => {
+    const at = ui.clock.now(); active++; maxActive = Math.max(maxActive, active);
+    let status = 200, extras = {};
+    if (body?.op === "acquire") { renew(); extras = {lease}; }
+    else if (method === "POST") {
+      if (!owned || body.lease !== lease) { status = 409; extras = {error: "stale"}; }
+      else if (body.op === "poll") renew();
+      else if (body.op === "unmap") { delete ui.state.remote.bindings[body.key]; ui.state.revision++; }
+    }
+    log.push({op: body?.op || method, at, expiresAt, status});
+    const envelope = clone({state: ui.state, ...extras});
+    const result = {ok: status < 300, status, json: async () => { active--; return envelope; }};
+    return delays[body?.op] ? new Promise(resolve => ui.clock.setTimeout(() => resolve(result), delays[body.op])) : result;
+  };
+  return {log, get owned() { return owned; }, get expiresAt() { return expiresAt; },
+    get maxActive() { return maxActive; }, get expirations() { return expirations; }};
+}
+test("BluetoothControls mutations at4/8/12s never debounce poll deadlines or renew the lease themselves", async () => {
+  const state = snapshot(); state.remote.bindings = {KEY_ENTER: "ok", KEY_UP: "up", KEY_DOWN: "down"};
+  const ui = panel(state); const server = leaseServer(ui); await ui.start();
+  for (const key of ["KEY_ENTER", "KEY_UP", "KEY_DOWN"]) {
+    await ui.clock.tick(4000); await ui.click(`unmap:${key}`);
+  }
+  await ui.clock.tick(4000);
+  assert.deepEqual(server.log.filter(call => call.op === "unmap").map(call => call.at), [4000, 8000, 12000]);
+  assert.deepEqual(server.log.filter(call => call.op === "poll").map(call => call.at), [5000, 10000, 15000]);
+  assert.deepEqual(server.log.filter(call => call.op === "unmap").map(call => call.expiresAt), [15000, 20000, 25000]);
+  assert.equal(server.owned, true); assert.equal(server.expirations, 0); assert.equal(server.maxActive, 1);
+  assert.equal(ui.controls.lease, lease);
+});
+test("BluetoothControls seven-second mutation overlapping heartbeat is followed immediately by owner poll", async () => {
+  const ui = panel(); const server = leaseServer(ui, {unmap: 7000}); await ui.start();
+  await ui.clock.tick(4000); await ui.click("unmap:KEY_ENTER");
+  await ui.clock.tick(6999); assert.equal(server.log.filter(call => call.op === "poll").length, 0);
+  assert.equal(server.expiresAt, 15000); assert.equal(ui.controls.pending, true);
+  await ui.clock.tick(1);
+  assert.deepEqual(server.log.filter(call => call.op === "poll").map(call => call.at), [11000]);
+  assert.equal(server.expiresAt, 26000); assert.equal(server.maxActive, 1);
+  await ui.clock.tick(5000); assert.equal(server.owned, true); assert.equal(server.expirations, 0);
+  assert.equal(ui.controls.lease, lease);
+});
+for (const queued of [false, true]) test(`BluetoothControls overdue heartbeat has priority before a ${queued ? "queued" : "new"} mutation`, async () => {
+  const ui = panel(); const server = leaseServer(ui); await ui.start();
+  const lane = deferred();
+  if (queued) { ui.controls.serial = lane.promise; void ui.controls.mutate("unmap", {key: "KEY_ENTER", revision: 7}); }
+  // Simulate delayed browser timers, or a request waiting for the serial slot.
+  ui.clock.time = 6000;
+  if (queued) lane.resolve(); else void ui.controls.mutate("unmap", {key: "KEY_ENTER", revision: 7});
+  await settle();
+  assert.deepEqual(server.log.slice(-2).map(call => [call.op, call.at]), [["poll", 6000], ["unmap", 6000]]);
+  assert.equal(server.maxActive, 1); assert.equal(server.expirations, 0);
+  await ui.clock.tick(10000); assert.equal(server.owned, true);
+});
+for (const status of [200, 202, 409, 503]) test(`BluetoothControls mutation HTTP${status} retaining ownership cannot postpone heartbeat`, async () => {
+  const ui = await panel().start(); await ui.clock.tick(4000);
+  ui.reply(snapshot(), status >= 400 ? {error: "failed"} : {}, status); await ui.click("reset");
+  await ui.clock.tick(1000);
+  assert.equal(lastBody(ui).op, "poll"); assert.equal(ui.invocations.at(-1).at, 5000);
+});
+test("BluetoothControls priority poll revalidates queued revision rather than silently retrying mutation", async () => {
+  const ui = await panel().start(); ui.clock.time = 6000;
+  ui.reply(snapshot({revision: 8})); await ui.click("reset");
+  assert.equal(lastBody(ui).op, "poll"); assert.equal(ui.calls.filter(call => call.body?.op === "reset").length, 0);
+  assert.match(ui.root.textContent, /Назначения изменились/);
+});
+test("BluetoothControls priority poll cannot send an answer for a replacement challenge or operation", async () => {
+  const ui = await pairing("pin"); ui.clock.time = 11000;
+  const input = ui.root.querySelector("input"); input.value = "1234";
+  ui.reply(snapshot({operation: operation("pair", {id: "replacement"})}),
+    {challenge: {id: "replacement-challenge", kind: "pin", remaining_ms: 10000}});
+  await ui.click("answer-submit");
+  assert.equal(ui.calls.filter(call => call.body?.op === "answer").length, 0);
+  assert.equal(input.value, ""); assert.equal(ui.controls.challenge.id, "replacement-challenge");
+});
+test("BluetoothControls priority poll stale lease suppresses queued mutation without reacquisition", async () => {
+  const ui = await panel().start(); ui.clock.time = 6000;
+  ui.reply(snapshot(), {error: "stale"}, 409); await ui.click("reset");
+  assert.equal(ui.controls.lease, null); assert.equal(lastBody(ui).op, "poll");
+  assert.equal(ui.calls.filter(call => call.body?.op === "reset").length, 0);
+  assert.equal(ui.calls.filter(call => call.body?.op === "acquire").length, 1);
+});
+test("BluetoothControls unsettled transport still expires honestly, retires locally and never retries mutation", async () => {
+  const ui = panel(); const server = leaseServer(ui, {poll: 20000}); await ui.start();
+  await ui.clock.tick(20000);
+  assert.equal(server.owned, false); assert.equal(server.expirations, 1);
+  assert.equal(ui.controls.active, false); assert.equal(ui.controls.lease, null);
+  assert.equal(server.log.filter(call => call.op === "poll").length, 1);
+  assert.equal(server.log.filter(call => call.op === "acquire").length, 1);
+});
+
+// Review P1: the real stylesheet participates in this bounded fake focus model.
+test("BluetoothControls fake focus rejects CSS-hidden, disconnected, disabled and non-focusable nodes", () => {
+  const ui = panel(); const p = ui.document.createElement("p"); p.tabIndex = -1; p.className = "bt-feedback";
+  ui.root.children[0].append(p); p.focus(); assert.notEqual(ui.document.activeElement, p);
+  p.className += " bt-focus-anchor"; p.focus(); assert.equal(ui.document.activeElement, p);
+  const outside = ui.document.createElement("button"); ui.document.body.append(outside); outside.focus();
+  p.hidden = true; p.focus(); assert.equal(ui.document.activeElement, outside);
+  p.hidden = false; p.style.display = "none"; p.focus(); assert.equal(ui.document.activeElement, outside);
+  p.style.display = ""; p.parentElement.hidden = true; p.focus(); assert.equal(ui.document.activeElement, outside);
+  const detached = ui.document.createElement("button"); detached.focus(); assert.equal(ui.document.activeElement, outside);
+  const plain = ui.document.createElement("p"); ui.document.body.append(plain); plain.focus(); assert.equal(ui.document.activeElement, outside);
+  outside.disabled = true; ui.document.activeElement = ui.document.body; outside.focus(); assert.equal(ui.document.activeElement, ui.document.body);
+});
+for (const key of ["disconnect", "action", "answer:challenge"]) test(`BluetoothControls empty-feedback poll keeps rendered pending focus and restores ${key}`, async () => {
+  const ui = key.startsWith("answer") ? await pairing("pin") : await panel().start();
+  const element = ui.find(key); element.focus(); assert.equal(ui.controls.message, "");
+  if (element.tagName === "INPUT") element.value = "1234";
+  const held = deferred(); ui.replies.push(() => held.promise); await ui.clock.tick(5000);
+  const anchor = ui.document.activeElement;
+  assert.ok(ui.root.contains(anchor)); assert.equal(anchor.dataset.btKey, key);
+  assert.equal(anchor.tagName, "P"); assert.equal(anchor.textContent, ""); assert.equal(anchor.rendered(), true);
+  assert.ok(anchor.className.includes("bt-focus-anchor"));
+  const state = key.startsWith("answer") ? snapshot({operation: operation("pair")}) : snapshot();
+  held.resolve(response(state, key.startsWith("answer") ? {challenge: {id: "challenge", kind: "pin", remaining_ms: 10000}} : {}));
+  await settle(); assert.equal(ui.document.activeElement, ui.find(key)); assert.equal(ui.find(key).rendered(), true);
+  if (element.tagName === "INPUT") { assert.equal(element.value, ""); assert.equal(ui.find(key).value, "1234"); }
+});
+test("BluetoothControls successful blank response preserves pending focus after nonempty feedback", async () => {
+  const ui = await panel().start(); ui.controls.message = "Запрос принят."; ui.controls.render();
+  ui.find("disconnect").focus(); await ui.poll();
+  assert.equal(ui.document.activeElement, ui.find("disconnect")); assert.equal(ui.controls.message, "");
+});
+test("BluetoothControls external focus acquired during a pending poll is not stolen by its reply", async () => {
+  const ui = await panel().start(); ui.find("action").focus();
+  const held = deferred(); ui.replies.push(() => held.promise); await ui.clock.tick(5000);
+  const external = ui.document.createElement("button"); ui.document.body.append(external); external.focus();
+  held.resolve(response(snapshot())); await settle(); assert.equal(ui.document.activeElement, external);
+});
+
+for (const cleanup of ["retire", "deactivate", "reactivate"])
+  test(`BluetoothControls priority-poll continuation cannot dispatch a retired mutation (${cleanup})`, async () => {
+    for (let turns = 0; turns <= 18; turns++) {
+      const ui = await panel().start(); ui.clock.time = 6000;
+      const held = deferred(); ui.replies.push(() => held.promise); void ui.controls.mutate("reset", {revision: 7});
+      await settle(); assert.equal(lastBody(ui).op, "poll"); held.resolve(response(snapshot()));
+      for (let n = 0; n < turns; n++) await Promise.resolve();
+      const count = ui.calls.filter(call => call.body?.op === "reset").length;
+      if (cleanup === "reactivate") { ui.controls.deactivate(); void ui.controls.activate(); }
+      else ui.controls[cleanup]();
+      await settle(); assert.equal(ui.calls.filter(call => call.body?.op === "reset").length, count, `turn ${turns}`);
+    }
+  });
+test("BluetoothControls actual dispatch rechecks authority after an integration render callback retires it", async () => {
+  const ui = await panel().start(); let armed = false;
+  ui.controls.options.onActionsChanged = () => {
+    if (armed && ui.controls.pending && ui.controls.selected !== null) { armed = false; ui.controls.retire(); }
+  };
+  // Retire at the before-dispatch render, after the initial pending render.
+  const render = ui.controls.render.bind(ui.controls); let renders = 0;
+  ui.controls.render = () => { if (++renders === 2) armed = true; render(); };
+  void ui.controls.mutate("select_remote", {device_id: "device"}); await settle();
+  assert.equal(ui.controls.active, false);
+  assert.equal(ui.calls.filter(call => call.body?.op === "select_remote").length, 0);
+});
+test("BluetoothControls focus remains on rendered anchor until the full Response body completes", async () => {
+  const ui = await panel().start(); ui.find("action").focus(); const body = deferred();
+  ui.replies.push(() => ({ok: true, status: 200, json: () => body.promise})); await ui.clock.tick(5000);
+  assert.equal(ui.controls.pending, true); assert.equal(ui.document.activeElement.rendered(), true);
+  assert.equal(ui.document.activeElement.dataset.btKey, "action"); assert.equal(ui.document.activeElement.tagName, "P");
+  // A real browser Response.json() may require an event-loop turn, unlike a
+  // resolved-Promise-only fixture wait. Restore only after the body is ready.
+  await ui.clock.tick(1); body.resolve({state: snapshot()}); await settle();
+  assert.equal(ui.controls.pending, false); assert.equal(ui.document.activeElement, ui.find("action"));
+});

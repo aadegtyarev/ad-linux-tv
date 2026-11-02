@@ -16,7 +16,9 @@
 .bluetooth-controls h3:first-child { margin-top: 0; }
 .bluetooth-controls p { margin: 0.55em 0 0.85em; }
 .bluetooth-controls .bt-feedback { color: #ffe0a0; }
-.bluetooth-controls .bt-feedback:empty { display: none; }
+.bluetooth-controls .bt-feedback:empty:not(.bt-focus-anchor) { display: none; }
+/* Programmatic focus must survive pending renders even with empty feedback. */
+.bluetooth-controls .bt-focus-anchor { min-height: 1px; }
 .bluetooth-controls .bt-devices { display: grid; gap: 10px; margin-block: 16px; }
 .bluetooth-controls .bt-device,
 .bluetooth-controls .bt-binding {
