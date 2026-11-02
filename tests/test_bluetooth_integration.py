@@ -714,3 +714,158 @@ def test_socket_private_source_precedes_session_lookup(integrated, monkeypatch):
     finally:
         stream.close()
         sock.close()
+
+
+def connect_raw_headers(rig, headers):
+    """Send header names/duplicates unchanged through the actual HTTP parser."""
+    import base64
+
+    sock = socket.create_connection(("127.0.0.1", rig.port), timeout=2)
+    sock.settimeout(2)
+    stream = sock.makefile("rb")
+    key = base64.b64encode(b"0123456789abcdef").decode()
+    authority = "".join(f"{name}: {value}\r\n" for name, value in headers)
+    sock.sendall(
+        (
+            f"GET /api/remote-ws HTTP/1.1\r\n{authority}"
+            "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n\r\n"
+        ).encode()
+    )
+    status = stream.readline()
+    while stream.readline() not in (b"\r\n", b""):
+        pass
+    return sock, stream, status
+
+
+@pytest.mark.parametrize("host_name,origin_name", [("host", "origin"), ("hOsT", "oRiGiN")])
+@pytest.mark.parametrize(
+    "client_csrf",
+    [
+        [],
+        [("x-csrf-token", "client-wrong")],
+        [
+            ("x-csrf-token", "client-first"),
+            ("X-CSRF-Token", "client-middle"),
+            ("X-CsRf-ToKeN", "client-last"),
+            ("x-csrf-token", "client-duplicate"),
+        ],
+    ],
+)
+def test_remote_request_header_casing_and_internal_csrf_on_real_socket(
+    integrated, monkeypatch, host_name, origin_name, client_csrf
+):
+    from ad_linux_tv import remote_rpc
+
+    rig = integrated
+    adapted = []
+    original = remote_rpc.handle_bluetooth
+
+    def capture(request, sessions, method):
+        adapted.append(request)
+        return original(request, sessions, method)
+
+    monkeypatch.setattr(remote_rpc, "handle_bluetooth", capture)
+    host = f"127.0.0.1:{rig.port}"
+    headers = [
+        (host_name, host),
+        (origin_name, f"http://{host}"),
+        ("Cookie", rig.cookie),
+        ("Sec-WebSocket-Protocol", f"csrf.{rig.csrf}"),
+        ("X-TV-Launcher", "1"),
+        *client_csrf,
+    ]
+    sock, stream, status = connect_raw_headers(rig, headers)
+    try:
+        assert b" 101 " in status
+        reply = ws_request(sock, stream, method="GET")
+        assert reply["status"] == 200 and set(reply["body"]) == {"state"}
+        principal = rig.calls[-1][1]
+        assert principal.kind == "phone" and principal.connection
+        assert principal.owner == phone_principal(rig.cookie.split("=", 1)[1]).owner
+        reply = ws_request(sock, stream, {"op": "acquire"}, number=2)
+        assert reply["status"] == 200 and rig.calls[-1][1] is principal
+        lease = reply["body"]["lease"]
+        assert ws_request(sock, stream, {"op": "poll", "lease": lease}, number=3)["status"] == 200
+        assert rig.calls[-1][1] is principal
+        assert len(adapted) == 3
+        for request in adapted:
+            assert request.headers is not request.handler.headers
+            assert request.headers.get("HOST") == host
+            assert request.headers.get("Origin") == f"http://{host}"
+            assert request.headers.get_all("x-CsRf-ToKeN") == [rig.csrf]
+            assert sum(name.lower() == "x-csrf-token" for name in request.headers) == 1
+            assert request.handler.headers.get_all("X-CSRF-Token", []) == [
+                value for _, value in client_csrf
+            ]
+    finally:
+        stream.close()
+        sock.close()
+    wait_until(lambda: principal in rig.retired)
+    assert rig.retired.count(principal) == 1
+
+
+@pytest.mark.parametrize("field", ["Host", "Origin"])
+@pytest.mark.parametrize("valid_first", [True, False])
+def test_remote_request_preserves_upgrade_duplicate_header_order(
+    integrated, monkeypatch, field, valid_first
+):
+    from ad_linux_tv import remote_rpc
+
+    rig = integrated
+    captured = []
+    original = remote_rpc.handle_bluetooth
+
+    def capture(request, sessions, method):
+        captured.append(request)
+        return original(request, sessions, method)
+
+    monkeypatch.setattr(remote_rpc, "handle_bluetooth", capture)
+    host = f"127.0.0.1:{rig.port}"
+    valid = host if field == "Host" else f"http://{host}"
+    invalid = f"attacker.example:{rig.port}" if field == "Host" else "http://attacker.example"
+    values = [valid, invalid] if valid_first else [invalid, valid]
+    headers = [
+        ("hOsT", host),
+        ("oRiGiN", f"http://{host}"),
+        ("Cookie", rig.cookie),
+        ("Sec-WebSocket-Protocol", f"csrf.{rig.csrf}"),
+    ]
+    headers = [(name, value) for name, value in headers if name.lower() != field.lower()]
+    headers.extend([(field.lower(), values[0]), (field, values[1])])
+    sock, stream, status = connect_raw_headers(rig, headers)
+    try:
+        if not valid_first:
+            assert b" 403 " in status and not rig.calls and not captured
+            return
+        assert b" 101 " in status
+        assert ws_request(sock, stream, method="GET")["status"] == 200
+        for request in captured:
+            assert request.headers.get_all(field) == values
+            assert request.headers.get(field) == request.handler.headers.get(field) == valid
+        assert rig.calls[-1][1].kind == "phone"
+    finally:
+        stream.close()
+        sock.close()
+
+
+@pytest.mark.parametrize("host_name,origin_name", [("host", "origin"), ("hOsT", "oRiGiN")])
+@pytest.mark.parametrize("invalid", ["host", "origin", "session", "csrf"])
+def test_socket_cased_headers_do_not_relax_authority(integrated, host_name, origin_name, invalid):
+    rig = integrated
+    host = f"127.0.0.1:{rig.port}"
+    headers = [
+        (host_name, f"attacker.example:{rig.port}" if invalid == "host" else host),
+        (origin_name, "http://attacker.example" if invalid == "origin" else f"http://{host}"),
+        ("Cookie", "session=invalid" if invalid == "session" else rig.cookie),
+        ("Sec-WebSocket-Protocol", "csrf.invalid" if invalid == "csrf" else f"csrf.{rig.csrf}"),
+        ("x-csrf-token", rig.csrf),
+        ("X-CSRF-Token", rig.csrf),
+    ]
+    sock, stream, status = connect_raw_headers(rig, headers)
+    try:
+        assert b" 403 " in status
+        assert not rig.calls and not rig.retired
+    finally:
+        stream.close()
+        sock.close()

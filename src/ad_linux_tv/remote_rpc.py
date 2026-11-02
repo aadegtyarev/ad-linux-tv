@@ -1,6 +1,7 @@
 """Phone RPC adapter for the existing, separately maintained HTTP actions."""
 
 import json
+from http.client import HTTPMessage
 
 from .bluetooth_routes import handle_bluetooth
 from .browser_media import choose_media
@@ -45,7 +46,12 @@ class RemoteRequest:
         self.connection = handler.connection
         self.bluetooth_manager = getattr(handler, "bluetooth_manager", None)
         self.bluetooth_principal = principal
-        self.headers = dict(handler.headers)
+        self.headers = HTTPMessage()
+        for name, value in handler.headers.items():
+            self.headers[name] = value
+        # HTTPMessage preserves case-insensitive lookup and duplicate order.
+        # Assignment appends, so remove every client spelling before inserting authority.
+        del self.headers["X-CSRF-Token"]
         self.headers["X-CSRF-Token"] = csrf
         self.response = None
         self.host_power = getattr(handler, "host_power", None)
