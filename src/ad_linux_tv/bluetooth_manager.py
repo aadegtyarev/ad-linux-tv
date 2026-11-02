@@ -111,6 +111,12 @@ class _Operation:
     def active(self):
         return self.phase not in ("finished", "observed")
 
+    @property
+    def outstanding(self):
+        # Terminal transport status can still leave proof awaiting inventory,
+        # capable of a settings effect. It remains exclusive and cancellable.
+        return self.active or (not self.retired and self.pending_observation is not None)
+
 
 def _identifier(value):
     return isinstance(value, str) and _ID.fullmatch(value) is not None
@@ -336,7 +342,7 @@ class BluetoothManager:
 
     def _cancel(self, reason):
         operation = self._operation
-        if operation is None or not (operation.active or operation.pending_observation):
+        if operation is None or not operation.outstanding:
             return
         if operation.admitted and operation.transport_result is None:
             if not self._command("cancel", operation.id):
@@ -412,7 +418,7 @@ class BluetoothManager:
     def _adapter(self):
         adapters = self._adapters()
         operation = self._operation
-        if operation and operation.active:
+        if operation and operation.outstanding:
             return next(
                 (
                     a
@@ -505,11 +511,7 @@ class BluetoothManager:
         if self._owner is not None and now >= self._lease_deadline:
             self._retire_owner("expired")
         operation = self._operation
-        if (
-            operation
-            and (operation.active or operation.pending_observation)
-            and now >= operation.deadline
-        ):
+        if operation and operation.outstanding and now >= operation.deadline:
             self._cancel("expired")
 
     def tick(self):
@@ -545,7 +547,7 @@ class BluetoothManager:
             self._expire(now)
             self._resolve_observation(now)
             operation = self._operation
-            if operation and (operation.active or operation.pending_observation):
+            if operation and operation.outstanding:
                 allow_missing = operation.kind == "forget" and operation.phase != "confirm"
                 if not self._current_target(operation, allow_missing=allow_missing):
                     self._cancel("invalidated")
@@ -796,7 +798,7 @@ class BluetoothManager:
                     "phase": operation.phase,
                     "device_id": operation.device_id,
                     "remaining_ms": max(0, int((operation.deadline - self._clock()) * 1000))
-                    if operation.active
+                    if operation.outstanding
                     else 0,
                     "error": operation.error,
                 }
@@ -874,16 +876,21 @@ class BluetoothManager:
                 )
             if op in ("cancel", "answer", "forget_confirm", "bind", "test"):
                 operation = self._operation
-                if operation is None or not operation.active or dto["operation_id"] != operation.id:
-                    return self._reply(409, "stale")
-                if op in ("bind", "test"):
-                    # No observations exist until a reviewed input adapter is integrated.
+                if (
+                    operation is None
+                    or not operation.outstanding
+                    or dto["operation_id"] != operation.id
+                ):
                     return self._reply(409, "stale")
                 if op == "cancel":
                     self._cancel("cancelled")
                     return self._reply(
                         503 if self._failed else 200, "unavailable" if self._failed else None
                     )
+                # Pending terminal proof is cancellable work, not permission to
+                # revive commands/private challenges or absent input observations.
+                if not operation.active or op in ("bind", "test"):
+                    return self._reply(409, "stale")
                 failure = self._dispatch_fence(operation)
                 if failure:
                     return self._reply(*failure)
@@ -903,7 +910,7 @@ class BluetoothManager:
                 ):
                     return self._reply(503, "unavailable")
                 return self._reply(202, private=True)
-            if self._operation and self._operation.active:
+            if self._operation and self._operation.outstanding:
                 return self._reply(409, "busy")
             if op in ("unmap", "reset"):
                 return self._edit_maps(dto)

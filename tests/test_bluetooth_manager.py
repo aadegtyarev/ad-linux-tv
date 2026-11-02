@@ -1930,3 +1930,160 @@ def test_event_drain_cannot_validate_pending_observation_past_original_deadline(
         assert rig.manager._operation.pending_observation is None
         assert rig.manager._operation.error == "uncertain"
     assert not rig.settings.saves
+
+
+def begin_terminal_pending_proof(rig, kind, terminal="uncertain"):
+    if kind == "disconnect":
+        rig.transport.device(connected=True)
+    operation_id = begin_command(rig, kind)
+    # Keep the authoritative inventory contradictory even during later HTTP
+    # ticks. Only the exact event exists so far, not a confirming snapshot.
+    rig.transport.emit(_PHYSICAL[kind][0], operation_id)
+    rig.transport.emit("finished", operation_id, code=terminal)
+    rig.manager.tick()
+    operation = rig.manager._operation
+    assert operation.phase == "finished" and not operation.active
+    assert operation.pending_observation == _PHYSICAL[kind][0]
+    assert not operation.retired and not operation.observed
+    return operation
+
+
+@pytest.mark.parametrize("kind", _PHYSICAL)
+@pytest.mark.parametrize("terminal", ["uncertain", "failed", "denied"])
+def test_public_cancel_retires_terminal_pending_proof_before_later_confirmation(
+    rig, kind, terminal
+):
+    rig.settings.saved_remote()
+    original = copy.deepcopy(rig.settings.section)
+    with rig.manager._lock:
+        operation = begin_terminal_pending_proof(rig, kind, terminal)
+        deadline = operation.deadline
+        calls = list(rig.transport.calls)
+        owner, lease = rig.manager._owner, rig.manager._lease
+        assert operation.outstanding
+        status, response = rig.request("cancel", operation_id=operation.id)
+        assert status == 200
+        assert response["state"]["operation"]["error"] == "uncertain"
+        assert response["state"]["operation"]["remaining_ms"] == 0
+        assert operation.retired and not operation.outstanding
+        assert operation.pending_observation is None
+        assert operation.deadline == deadline
+        assert rig.manager._owner == owner and rig.manager._lease == lease
+        # Transport already terminated: cancelling proof must not issue another
+        # transport command or create a new lifetime/permission.
+        assert rig.transport.calls == calls
+        assert set(response) == {"state"}
+        physical_change(rig, kind)
+        for event in (_PHYSICAL[kind][0], _PHYSICAL[kind][0], "accepted", "finished"):
+            rig.transport.emit(event, operation.id, code="observed")
+        rig.manager.tick()
+        rig.manager.tick()
+        assert not operation.observed and operation.phase == "finished"
+        assert operation.error == "uncertain"
+        assert operation.pending_observation is None
+        assert operation.challenge is operation.confirmation is None
+        assert rig.request("cancel", operation_id=operation.id)[0] == 409
+        assert rig.transport.calls == calls
+    assert rig.settings.section == original
+    assert not rig.settings.saves
+
+
+@pytest.mark.parametrize("kind", _PHYSICAL)
+@pytest.mark.parametrize("retirement", ["cancel", "expiry"])
+def test_terminal_pending_proof_is_exclusive_until_cancel_or_original_expiry(rig, kind, retirement):
+    rig.settings.saved_remote()
+    with rig.manager._lock:
+        operation = begin_terminal_pending_proof(rig, kind)
+        deadline = operation.deadline
+        revision = rig.state()["revision"]
+        requests = [
+            ("discover", {}),
+            *[
+                (op, {"device_id": "device"})
+                for op in ("pair", "connect", "disconnect", "forget_prepare", "select_remote")
+            ],
+            ("learn", {"action": "up"}),
+            ("unmap", {"key": "KEY_UP", "revision": revision}),
+            ("reset", {"revision": revision}),
+        ]
+        calls = list(rig.transport.calls)
+        for op, fields in requests:
+            status, response = rig.request(op, **fields)
+            assert status == 409 and response["error"] == "busy"
+            assert rig.manager._operation is operation and operation.outstanding
+        assert rig.transport.calls == calls and not rig.settings.saves
+        if retirement == "cancel":
+            assert rig.request("cancel", operation_id=operation.id)[0] == 200
+        else:
+            while rig.clock.now < deadline:
+                rig.advance(5, poll=True)
+                assert operation.deadline == deadline
+            assert rig.manager._owner == PHONE  # Operation expiry, not lease loss.
+        assert operation.retired and not operation.outstanding
+        assert operation.pending_observation is None and operation.error == "uncertain"
+        assert rig.transport.calls == calls
+        new_id, _ = rig.begin("discover")
+        assert new_id != operation.id
+        physical_change(rig, kind)
+        rig.emit(_PHYSICAL[kind][0], operation.id)
+        rig.emit("finished", operation.id, code="uncertain")
+        assert rig.manager._operation.id == new_id
+        assert rig.manager._operation.phase == "queued"
+    assert not rig.settings.saves
+
+
+@pytest.mark.parametrize("kind", _PHYSICAL)
+@pytest.mark.parametrize("mode", ["observed", "uncertain", "busy"])
+def test_completed_terminal_outcome_without_pending_proof_does_not_block_new_work(rig, kind, mode):
+    operation_id = begin_command(rig, kind)
+    if mode == "observed":
+        rig.emit(physical_change(rig, kind), operation_id)
+        rig.manager.tick()
+    else:
+        fields = {"device_epoch": 0} if mode == "busy" else {}
+        rig.emit("finished", operation_id, code=mode, **fields)
+    operation = rig.manager._operation
+    assert not operation.active and not operation.outstanding
+    assert operation.pending_observation is None
+    assert rig.begin("discover")[0] != operation_id
+
+
+@pytest.mark.parametrize("kind", _PHYSICAL)
+def test_terminal_pending_proof_does_not_reauthorize_answers_confirmations_or_private_state(
+    rig, kind
+):
+    with rig.manager._lock:
+        operation = begin_terminal_pending_proof(rig, kind)
+        calls = list(rig.transport.calls)
+        assert set(rig.poll()) == {"state"}
+        for op, fields in [
+            ("answer", {"challenge_id": "old", "answer": {"pin": "x"}}),
+            ("forget_confirm", {"confirmation_id": "old"}),
+            ("bind", {"observation_id": "old"}),
+            ("test", {"observation_id": "old"}),
+        ]:
+            assert rig.request(op, operation_id=operation.id, **fields)[0] == 409
+        assert operation.outstanding and not operation.active
+        assert operation.pending_observation == _PHYSICAL[kind][0]
+        assert operation.challenge is operation.confirmation is None
+        assert rig.transport.calls == calls
+    assert not rig.settings.saves
+
+
+def test_terminal_pending_proof_keeps_adapter_pin_and_original_remaining_deadline(rig):
+    with rig.manager._lock:
+        operation = begin_terminal_pending_proof(rig, "pair")
+        rig.transport.state = replace(
+            rig.transport.state,
+            adapters=(Adapter(id="hci0", address=A0), Adapter()),
+        )
+        state = rig.state()
+        assert state["adapter"]["id"] == "hci1"
+        assert state["operation"]["phase"] == "finished"
+        assert state["operation"]["remaining_ms"] == 60000
+        rig.advance(5, poll=True)
+        assert rig.state()["operation"]["remaining_ms"] == 55000
+        assert rig.request("cancel", operation_id=operation.id)[0] == 200
+        state = rig.state()
+        assert state["adapter"]["id"] == "hci0"
+        assert state["operation"]["remaining_ms"] == 0
