@@ -14,6 +14,7 @@ from threading import RLock, Timer
 import yaml
 
 from .audio import OUTPUT_ID
+from .bluetooth_schema import validate_bluetooth
 from .browser_locale import (
     browser_locale,
     installed_locales,
@@ -201,6 +202,25 @@ class SettingsManager:
                 "browser_locale_restart_required": self.locale_restart_required,
                 "kde_available": kde_available(),
             }
+
+    def bluetooth_config(self):
+        """Detached server-only settings; never included in the generic snapshot."""
+        with self.lock:
+            return validate_bluetooth(self.config.get("bluetooth", {"remote": None}))
+
+    def set_bluetooth(self, value):
+        """Target only Bluetooth under the existing settings lock/atomic writer.
+
+        Management ownership, selected-device proof and mapping revisions belong
+        to the Bluetooth coordinator, not the generic settings action endpoint.
+        """
+        try:
+            candidate = validate_bluetooth(value)
+        except ValueError:
+            raise SettingsError("invalid Bluetooth configuration") from None
+        with self.lock:
+            if self.bluetooth_config() != candidate:
+                self._save_config(dict(self.config, bluetooth=candidate))
 
     def audio_levels(self):
         with self.lock:
