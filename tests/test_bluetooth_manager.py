@@ -1,0 +1,1424 @@
+"""Coordinator-only tests: frozen ducktyped BlueZ DTOs, fake clock, no bus/devices."""
+
+import copy
+import json
+import threading
+import time
+from dataclasses import dataclass, field, replace
+
+import pytest
+
+from ad_linux_tv.bluetooth_manager import BluetoothManager, Principal
+from ad_linux_tv.bluetooth_schema import ACTIONS, BUTTON_CODES
+
+TV = Principal("tv", "launcher", "local")
+PHONE = Principal("phone", "session-secret", "socket-secret")
+OTHER = Principal("phone", "other", "other-socket")
+A0 = "11:22:33:44:55:60"
+A1 = "11:22:33:44:55:61"
+PEER = "22:33:44:55:66:77"
+
+
+@dataclass(frozen=True)
+class Adapter:
+    id: str = "hci1"
+    address: str = A1
+    powered: bool = True
+    discovering: bool = False
+
+
+@dataclass(frozen=True)
+class Device:
+    id: str = "device"
+    adapter_id: str = "hci1"
+    address: str = PEER
+    address_type: str = "public"
+    name: str = "Пульт"
+    paired: bool = False
+    connected: bool = False
+    device_epoch: int = 2
+
+
+@dataclass(frozen=True)
+class AdapterSnapshot:
+    available: bool = True
+    reason: str = ""
+    controller_epoch: int = 3
+    adapters: tuple = (Adapter(),)
+    devices: tuple = (Device(),)
+
+
+@dataclass(frozen=True)
+class Challenge:
+    id: str = "challenge"
+    kind: str = "pin"
+    deadline: float = 160
+    value: str = field(default="", repr=False)
+    entered: int = 0
+
+
+@dataclass(frozen=True)
+class BluezEvent:
+    kind: str
+    operation_id: str | None
+    controller_epoch: int = 3
+    device_id: str | None = "device"
+    device_epoch: int = 2
+    code: str = ""
+    challenge: Challenge | None = field(default=None, repr=False)
+
+
+class Clock:
+    def __init__(self):
+        self.now = 100.0
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
+class Transport:
+    def __init__(self):
+        self.state = AdapterSnapshot()
+        self.calls = []
+        self.on_event = None
+        self.fail = set()
+        self.start_count = 0
+        self.close_count = 0
+        self.close_thread = None
+        self.closed = threading.Event()
+
+    def start(self, listener):
+        self.start_count += 1
+        self.on_event = listener
+        if "start" in self.fail:
+            raise RuntimeError("secret bus address")
+
+    def snapshot(self):
+        if "snapshot" in self.fail:
+            raise RuntimeError("secret bus address")
+        return self.state
+
+    def close(self):
+        self.close_count += 1
+        self.close_thread = threading.current_thread()
+        self.closed.set()
+        if "close" in self.fail:
+            raise RuntimeError("secret bus address")
+
+    def _command(self, name, *args):
+        self.calls.append((name, *args))
+        if "raise_" + name in self.fail:
+            raise RuntimeError("secret method address")
+        return name not in self.fail
+
+    def discover(self, *args):
+        return self._command("discover", *args)
+
+    def stop_discovery(self, *args):
+        return self._command("stop_discovery", *args)
+
+    def pair(self, *args):
+        return self._command("pair", *args)
+
+    def connect(self, *args):
+        return self._command("connect", *args)
+
+    def disconnect(self, *args):
+        return self._command("disconnect", *args)
+
+    def forget(self, *args):
+        return self._command("forget", *args)
+
+    def answer(self, *args):
+        return self._command("answer", *args)
+
+    def cancel(self, *args):
+        return self._command("cancel", *args)
+
+    def emit(self, kind, operation_id, **kwargs):
+        self.on_event(BluezEvent(kind, operation_id, **kwargs))
+
+    def device(self, **changes):
+        self.state = replace(self.state, devices=(replace(self.state.devices[0], **changes),))
+
+
+class Settings:
+    def __init__(self):
+        self.section = {"remote": None}
+        self.saves = []
+        self.threads = []
+        self.fail_get = False
+        self.fail_save = False
+
+    def get(self):
+        self.threads.append(threading.current_thread())
+        if self.fail_get:
+            raise ValueError("secret YAML")
+        return copy.deepcopy(self.section)
+
+    def save(self, section):
+        self.threads.append(threading.current_thread())
+        if self.fail_save:
+            raise OSError("secret filename")
+        self.saves.append(copy.deepcopy(section))
+        self.section = copy.deepcopy(section)
+
+    def saved_remote(self, **identity):
+        self.section = {
+            "remote": {
+                "identity": {"adapter": A1, "address": PEER, "address_type": "public", **identity},
+                "bindings": {"KEY_UP": "up", "KEY_ENTER": "ok"},
+            }
+        }
+
+
+class Rig:
+    def __init__(self, *, enabled=True):
+        self.clock = Clock()
+        self.transport = Transport()
+        self.settings = Settings()
+        self.manager = BluetoothManager(
+            transport=self.transport,
+            get_config=self.settings.get,
+            save_config=self.settings.save,
+            enabled=enabled,
+            clock=self.clock,
+        )
+        self.lease = None
+        self.principal = PHONE
+
+    def start(self):
+        self.manager.start()
+        self.manager.tick()
+
+    def acquire(self, principal=PHONE):
+        self.principal = principal
+        status, response = self.manager.request(principal, {"op": "acquire"})
+        assert status == 200
+        self.lease = response["lease"]
+        return response
+
+    def request(self, op, **fields):
+        return self.manager.request(self.principal, {"op": op, "lease": self.lease, **fields})
+
+    def begin(self, op="pair"):
+        fields = {} if op == "discover" else {"device_id": "device"}
+        status, response = self.request(op, **fields)
+        assert status == (200 if op == "forget_prepare" else 202)
+        return response["state"]["operation"]["id"], response
+
+    def emit(self, kind, operation_id, **fields):
+        self.transport.emit(kind, operation_id, **fields)
+        self.manager.tick()
+
+    def state(self):
+        return self.manager.snapshot(self.principal)
+
+    def poll(self):
+        status, reply = self.request("poll")
+        assert status == 200
+        return reply
+
+    def advance(self, seconds, *, poll=False):
+        self.clock.advance(seconds)
+        self.manager.tick()
+        if poll:
+            self.poll()
+
+
+@pytest.fixture
+def rig():
+    rig = Rig()
+    rig.start()
+    rig.acquire()
+    yield rig
+    rig.manager.close()
+    assert not rig.manager._thread.is_alive()
+
+
+def wait_until(predicate):
+    end = time.monotonic() + 2
+    while not predicate():
+        assert time.monotonic() < end
+        time.sleep(0.005)
+
+
+def test_construction_disabled_and_explicit_idempotent_lifecycle():
+    rig = Rig(enabled=False)
+    assert rig.transport.start_count == 0
+    assert rig.settings.threads == []
+    rig.manager.start()
+    assert not rig.state()["available"]
+    assert rig.manager.request(TV, {"op": "acquire"})[0] == 503
+    rig.manager.close()
+    assert rig.transport.close_count == 0
+    assert rig.settings.threads == []
+    rig = Rig()
+    assert rig.manager.request(TV, {"op": "acquire"})[0] == 503
+    rig.start()
+    rig.manager.start()
+    rig.manager.close()
+    rig.manager.close()
+    rig.manager.start()
+    assert rig.transport.start_count == rig.transport.close_count == 1
+    assert not rig.manager._thread.is_alive()
+
+
+def test_principal_is_internal_immutable_connection_bound_and_redacted(rig):
+    assert "session-secret" not in repr(PHONE)
+    assert "socket-secret" not in repr(PHONE)
+    assert hash(PHONE)
+    with pytest.raises(AttributeError):
+        PHONE.owner = "spoof"
+    with pytest.raises(ValueError, match="invalid principal"):
+        Principal("json", "x")
+    assert rig.manager.request({"kind": "phone"}, {"op": "acquire"})[0] == 403
+    with pytest.raises(ValueError, match="invalid principal"):
+        rig.manager.snapshot(None)
+    for other in (OTHER, Principal("phone", PHONE.owner, "different"), TV):
+        assert rig.manager.request(other, {"op": "poll", "lease": rig.lease})[0] == 403
+        rig.manager.retire(other)
+    assert rig.poll()
+
+
+def test_lease_is_not_reissued_or_renewed_by_get_mutation_or_failed_poll(rig):
+    assert rig.manager.request(PHONE, {"op": "acquire"})[0] == 409
+    rig.advance(10)
+    rig.state()
+    assert rig.request("poll", lease="0" * 32)[0] == 409
+    rig.begin("discover")
+    rig.advance(5)
+    assert rig.request("poll")[0] == 409
+    assert rig.transport.calls[-1][0] == "cancel"
+    assert rig.state()["operation"]["error"] == "expired"
+    old_lease = rig.lease
+    response = rig.acquire(OTHER)
+    assert response["lease"] != old_lease
+    assert set(response) == {"state", "lease"}
+
+
+def test_only_valid_owner_poll_renews_lease_and_does_not_extend_operation(rig):
+    operation_id, response = rig.begin("discover")
+    assert response["state"]["operation"]["remaining_ms"] == 30000
+    for _ in range(5):
+        rig.advance(5, poll=True)
+    assert rig.state()["operation"]["remaining_ms"] == 5000
+    rig.advance(5)
+    assert rig.state()["operation"]["error"] == "expired"
+    assert rig.transport.calls.count(("cancel", operation_id)) == 1
+    rig.poll()
+
+
+@pytest.mark.parametrize("how", ["release", "retire", "retire_phones"])
+def test_owner_retirement_cancels_and_clears_private_state(rig, how):
+    operation_id, _ = rig.begin()
+    rig.emit("challenge", operation_id, challenge=Challenge(value=""))
+    assert "challenge" in rig.poll()
+    if how == "release":
+        assert rig.request("release")[0] == 200
+    elif how == "retire":
+        rig.manager.retire(PHONE)
+    else:
+        rig.manager.retire_phones()
+    assert rig.request("poll")[0] == 409
+    assert rig.transport.calls[-1] == ("cancel", operation_id)
+    assert rig.manager._operation.challenge is None
+    rig.emit("challenge", operation_id, challenge=Challenge())
+    assert rig.manager._operation.challenge is None
+
+
+def test_retire_phones_preserves_tv_and_exact_connection_hook(rig):
+    rig.request("release")
+    rig.acquire(TV)
+    operation_id, _ = rig.begin()
+    rig.manager.retire_phones()
+    rig.manager.retire(PHONE)
+    assert rig.poll()["state"]["operation"]["id"] == operation_id
+    assert not any(call[0] == "cancel" for call in rig.transport.calls)
+    rig.manager.retire(TV)
+    assert rig.transport.calls[-1] == ("cancel", operation_id)
+
+
+@pytest.mark.parametrize(
+    "dto",
+    [
+        None,
+        [],
+        {},
+        {"op": []},
+        {"op": "unknown"},
+        {"op": "acquire", "owner": "spoof"},
+        {"op": "poll"},
+        {"op": "poll", "lease": "a" * 33},
+        {"op": "poll", "lease": "A" * 32},
+        {"op": "poll", "lease": True},
+        {"op": "pair", "lease": "a" * 32, "device_id": "/org/bluez/hci1/dev"},
+        {"op": "pair", "lease": "a" * 32, "device_id": "d" * 65},
+        {"op": "pair", "lease": "a" * 32, "device_id": []},
+        {"op": "learn", "lease": "a" * 32, "action": "shutdown"},
+        {"op": "learn", "lease": "a" * 32, "action": {}},
+        {"op": "unmap", "lease": "a" * 32, "revision": 0, "key": "KEY_A"},
+        {"op": "unmap", "lease": "a" * 32, "revision": 0, "key": []},
+        *[
+            {"op": "reset", "lease": "a" * 32, "revision": n}
+            for n in (True, -1, 0.0, 2**53, "0", None)
+        ],
+        *[
+            {
+                "op": "answer",
+                "lease": "a" * 32,
+                "operation_id": "x",
+                "challenge_id": "c",
+                "answer": a,
+            }
+            for a in (
+                None,
+                [],
+                {},
+                {"pin": ""},
+                {"pin": "x" * 17},
+                {"pin": "а"},
+                {"pin": "a b"},
+                {"pin": "x\n"},
+                {"passkey": "１２３４５６"},
+                {"passkey": 123456},
+                {"passkey": "12345"},
+                {"confirm": 1},
+                {"confirm": True, "pin": "x"},
+                {"shell": "rm"},
+            )
+        ],
+    ],
+)
+def test_malformed_dtos_fail_before_ownership_and_do_not_call_transport(rig, dto):
+    before = list(rig.transport.calls)
+    status, reply = rig.manager.request(OTHER, dto)
+    assert status == 400
+    assert set(reply) == {"state", "error"}
+    assert rig.transport.calls == before
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        "acquire",
+        "poll",
+        "release",
+        "discover",
+        "cancel",
+        "pair",
+        "connect",
+        "disconnect",
+        "select_remote",
+        "answer",
+        "forget_prepare",
+        "forget_confirm",
+        "learn",
+        "bind",
+        "test",
+        "unmap",
+        "reset",
+    ],
+)
+def test_every_variant_rejects_extra_fields(rig, op):
+    from ad_linux_tv.bluetooth_manager import _FIELDS
+
+    values = {
+        "lease": rig.lease,
+        "device_id": "device",
+        "operation_id": "o",
+        "challenge_id": "c",
+        "confirmation_id": "c",
+        "observation_id": "o",
+        "answer": {"pin": "1234"},
+        "action": "up",
+        "key": "KEY_UP",
+        "revision": 0,
+    }
+    dto = {"op": op, **{key: values[key] for key in _FIELDS[op]}, "extra": {"owner": PHONE.owner}}
+    assert rig.manager.request(PHONE, dto)[0] == 400
+
+
+@pytest.mark.parametrize(
+    "op,observed,changes",
+    [
+        ("pair", "paired", {"paired": True}),
+        ("connect", "connected", {"connected": True}),
+        ("disconnect", "disconnected", {"connected": False}),
+    ],
+)
+@pytest.mark.parametrize("early", [True, False])
+def test_accepted_is_not_observed_and_early_property_wins(rig, op, observed, changes, early):
+    if op == "disconnect":
+        rig.transport.device(connected=True)
+    operation_id, _ = rig.begin(op)
+    assert rig.state()["operation"]["phase"] == "queued"
+    rig.emit("requested", operation_id)
+    assert rig.state()["operation"]["phase"] == "requested"
+    if not early:
+        rig.emit("accepted", operation_id)
+        assert rig.state()["operation"]["phase"] == "accepted"
+    rig.transport.device(**changes)
+    rig.emit(observed, operation_id)
+    assert rig.state()["operation"]["phase"] == "observed"
+    rig.emit("accepted", operation_id)
+    rig.emit("finished", operation_id, code="uncertain")
+    assert rig.state()["operation"]["phase"] == "observed"
+    assert rig.state()["operation"]["error"] == ""
+
+
+def test_property_event_without_matching_property_is_not_success(rig):
+    operation_id, _ = rig.begin()
+    rig.emit("paired", operation_id)
+    assert rig.state()["operation"]["phase"] == "queued"
+    rig.emit("finished", operation_id, code="observed")
+    assert rig.state()["operation"]["error"] == "uncertain"
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"operation_id": "old"},
+        {"controller_epoch": 2},
+        {"device_id": "other"},
+        {"device_epoch": 1},
+    ],
+)
+def test_stale_events_cannot_deliver_challenges_or_change_operations(rig, fields):
+    operation_id, _ = rig.begin()
+    event = {"operation_id": operation_id, **fields}
+    rig.emit("challenge", challenge=Challenge(), **event)
+    assert "challenge" not in rig.poll()
+    rig.emit("accepted", **event)
+    assert rig.state()["operation"]["phase"] == "queued"
+
+
+@pytest.mark.parametrize(
+    "kind,value,answer",
+    [
+        ("pin", "", {"pin": "a!9"}),
+        ("passkey", "", {"passkey": "000123"}),
+        ("confirmation", "012345", {"confirm": True}),
+        ("confirmation", "012345", {"confirm": False}),
+        ("display_pin", "s3cret", None),
+        ("display_passkey", "012345", None),
+    ],
+)
+def test_challenge_forms_private_delivery_and_exact_answers(rig, kind, value, answer):
+    operation_id, _ = rig.begin()
+    challenge = Challenge(kind=kind, value=value, entered=2)
+    rig.emit("challenge", operation_id, challenge=challenge)
+    poll = rig.poll()
+    assert poll["challenge"]["kind"] == kind
+    assert set(rig.state()) == {
+        "available",
+        "reason",
+        "revision",
+        "adapter",
+        "devices",
+        "remote",
+        "operation",
+    }
+    encoded = json.dumps(rig.state())
+    for private in (rig.lease, "challenge", "confirmation_id", PHONE.owner, PHONE.connection):
+        assert private not in encoded
+    status, other = rig.manager.request(OTHER, {"op": "poll", "lease": rig.lease})
+    assert status == 403 and "challenge" not in other
+    if answer is None:
+        assert (
+            rig.request(
+                "answer", operation_id=operation_id, challenge_id="challenge", answer={"pin": "x"}
+            )[0]
+            == 400
+        )
+        assert not any(call[0] == "answer" for call in rig.transport.calls)
+    else:
+        assert (
+            rig.request("answer", operation_id=operation_id, challenge_id="wrong", answer=answer)[0]
+            == 409
+        )
+        assert (
+            rig.request(
+                "answer", operation_id=operation_id, challenge_id="challenge", answer=answer
+            )[0]
+            == 202
+        )
+        assert "challenge" not in rig.poll()
+        assert (
+            rig.request(
+                "answer", operation_id=operation_id, challenge_id="challenge", answer=answer
+            )[0]
+            == 409
+        )
+        rig.emit("challenge", operation_id, challenge=challenge)
+        assert "challenge" not in rig.poll()  # No event replay resurrects an answered secret.
+        assert sum(call[0] == "answer" for call in rig.transport.calls) == 1
+
+
+def test_mismatched_answer_does_not_consume_challenge(rig):
+    operation_id, _ = rig.begin()
+    rig.emit("challenge", operation_id, challenge=Challenge())
+    assert (
+        rig.request(
+            "answer", operation_id=operation_id, challenge_id="challenge", answer={"confirm": True}
+        )[0]
+        == 400
+    )
+    assert "challenge" in rig.poll()
+
+
+@pytest.mark.parametrize(
+    "challenge",
+    [
+        Challenge(kind="shell"),
+        Challenge(id="/path"),
+        Challenge(deadline=float("inf")),
+        Challenge(deadline=float("nan")),
+        Challenge(deadline=True),
+        Challenge(deadline=100),
+        Challenge(value="leaked-secret"),
+        Challenge(kind="display_pin", value="a b"),
+        Challenge(kind="confirmation", value="123"),
+        Challenge(entered=True),
+        Challenge(entered=7),
+    ],
+)
+def test_invalid_challenge_cancels_without_exposing_data(rig, challenge):
+    operation_id, _ = rig.begin()
+    rig.emit("challenge", operation_id, challenge=challenge)
+    assert "challenge" not in rig.poll()
+    assert rig.state()["operation"]["error"] == "invalidated"
+
+
+def test_challenge_updates_cannot_extend_deadline_or_replace_id(rig):
+    operation_id, _ = rig.begin()
+    rig.emit("challenge", operation_id, challenge=Challenge(deadline=110))
+    rig.advance(5)
+    rig.emit("challenge", operation_id, challenge=Challenge(deadline=150))
+    assert rig.poll()["challenge"]["remaining_ms"] == 5000
+    rig.advance(5)
+    assert "challenge" not in rig.poll()
+    assert rig.state()["operation"]["error"] == "expired"
+    operation_id, _ = rig.begin()
+    rig.emit("challenge", operation_id, challenge=Challenge())
+    rig.emit("challenge", operation_id, challenge=Challenge(id="new"))
+    assert rig.state()["operation"]["error"] == "invalidated"
+
+
+def test_original_pair_deadline_and_bounded_challenge_replay_ledger(rig):
+    operation_id, _ = rig.begin()
+    for i in range(9):
+        rig.emit("challenge", operation_id, challenge=Challenge(id=f"c{i}", deadline=999))
+        assert rig.poll()["challenge"]["remaining_ms"] == 60000
+        status, _ = rig.request(
+            "answer", operation_id=operation_id, challenge_id=f"c{i}", answer={"pin": "x"}
+        )
+        assert status == (202 if i < 8 else 409)
+    assert rig.state()["operation"]["error"] == "invalidated"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["controller", "device_epoch", "address", "adapter_address", "loss", "off", "service"],
+)
+def test_target_epochs_identity_and_loss_invalidate_without_retargeting(rig, mutation):
+    operation_id, _ = rig.begin()
+    rig.emit("challenge", operation_id, challenge=Challenge())
+    if mutation == "controller":
+        rig.transport.state = replace(rig.transport.state, controller_epoch=4)
+    elif mutation == "device_epoch":
+        rig.transport.device(device_epoch=3)
+    elif mutation == "address":
+        rig.transport.device(address="33:44:55:66:77:88")
+    elif mutation == "adapter_address":
+        rig.transport.state = replace(rig.transport.state, adapters=(Adapter(address=A0),))
+    elif mutation == "loss":
+        rig.transport.state = replace(rig.transport.state, devices=())
+    elif mutation == "off":
+        rig.transport.state = replace(rig.transport.state, adapters=(Adapter(powered=False),))
+    else:
+        rig.transport.state = replace(rig.transport.state, available=False)
+    assert rig.state()["operation"]["error"] == "invalidated"
+    assert (
+        rig.request(
+            "answer", operation_id=operation_id, challenge_id="challenge", answer={"pin": "x"}
+        )[0]
+        == 409
+    )
+    assert rig.transport.calls[-1] == ("cancel", operation_id)
+
+
+def test_adapter_preference_powered_valid_then_deterministic_off_and_saved_priority(rig):
+    rig.transport.state = replace(
+        rig.transport.state,
+        adapters=(
+            Adapter(id="hci0", address=A0, powered=False),
+            Adapter(),
+            Adapter(id="broken", address="00:00:00:00:00:00"),
+        ),
+    )
+    assert rig.state()["adapter"]["id"] == "hci1"
+    operation_id, _ = rig.begin("discover")
+    assert rig.transport.calls[-1][2] == "hci1"
+    rig.transport.state = replace(
+        rig.transport.state,
+        adapters=(
+            Adapter(id="hci0", address=A0, powered=True),
+            Adapter(),
+        ),
+    )
+    assert rig.state()["operation"]["id"] == operation_id
+    assert rig.state()["adapter"]["id"] == "hci1"
+    assert rig.transport.calls == [("discover", operation_id, "hci1", 130.0)]
+    rig.request("cancel", operation_id=operation_id)
+    rig.settings.saved_remote(adapter=A1)
+    assert rig.state()["adapter"]["id"] == "hci1"
+    rig.transport.state = replace(rig.transport.state, adapters=(Adapter(id="hci0", address=A0),))
+    assert rig.state()["adapter"] is None  # Never migrate a saved identity.
+    assert rig.request("discover")[0] == 503
+    rig.settings.section = {"remote": None}
+    rig.transport.state = replace(
+        rig.transport.state,
+        adapters=(Adapter(powered=False), Adapter(id="hci0", address=A0, powered=False)),
+    )
+    assert rig.state()["adapter"]["id"] == "hci0"
+    assert rig.state()["reason"] == "adapter_off"
+    assert rig.request("discover")[0] == 503
+
+
+def test_inventory_bounded_sanitized_deduplicated_with_selected_and_paired_priority(rig):
+    rig.settings.saved_remote()
+    devices = [Device(id=f"d{i}", address=f"22:33:44:55:66:{i:02X}") for i in range(100)]
+    devices += [
+        Device(id="selected", paired=True, connected=True, name="<img>\n\u202e" + "я" * 100),
+        Device(id="bonded", address="44:55:66:77:88:99", paired=True),
+        devices[0],
+    ]
+    rig.transport.state = replace(rig.transport.state, devices=tuple(devices))
+    state = rig.state()
+    assert len(state["devices"]) == 64
+    assert len({d["id"] for d in state["devices"]}) == 64
+    assert state["devices"][0]["id"] == "selected"
+    assert state["devices"][1]["id"] == "bonded"
+    name = state["devices"][0]["name"]
+    assert name.startswith("<img>") and "\n" not in name and "\u202e" not in name
+    assert len(name) <= 80 and len(name.encode()) <= 160
+    assert state["remote"]["device_id"] == "selected"
+    assert not any(d["input_available"] for d in state["devices"])
+    assert "address" not in json.dumps(state)
+
+
+def test_remote_absent_and_duplicate_identity_never_guess_attached_selection(rig):
+    rig.settings.saved_remote()
+    rig.transport.state = replace(rig.transport.state, devices=())
+    assert rig.state()["remote"]["device_id"] is None
+    assert rig.state()["remote"]["bindings"] == rig.settings.section["remote"]["bindings"]
+    rig.transport.state = replace(rig.transport.state, devices=(Device(), Device(id="duplicate")))
+    assert rig.state()["remote"]["device_id"] is None
+    assert not any(d["selected"] for d in rig.state()["devices"])
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        "pair",
+        "connect",
+        "disconnect",
+        "discover",
+        "forget_prepare",
+        "learn",
+        "select_remote",
+        "reset",
+        "unmap",
+    ],
+)
+def test_exclusive_operation_busy_for_all_new_requests(rig, op):
+    rig.begin()
+    fields = (
+        {"device_id": "device"}
+        if op in ("pair", "connect", "disconnect", "forget_prepare", "select_remote")
+        else {}
+    )
+    if op == "learn":
+        fields["action"] = "up"
+    if op in ("reset", "unmap"):
+        fields["revision"] = 0
+    if op == "unmap":
+        fields["key"] = "KEY_UP"
+    assert rig.request(op, **fields)[0] == 409
+    assert len(rig.transport.calls) == 1
+
+
+def confirm_forget(rig):
+    operation_id, response = rig.begin("forget_prepare")
+    assert (
+        rig.request(
+            "forget_confirm", operation_id=operation_id, confirmation_id=response["confirmation_id"]
+        )[0]
+        == 202
+    )
+    return operation_id
+
+
+def test_forget_prepare_private_bound_once_and_no_effect_on_acceptance(rig):
+    rig.settings.saved_remote()
+    original = copy.deepcopy(rig.settings.section)
+    operation_id, response = rig.begin("forget_prepare")
+    assert rig.transport.calls == []
+    confirmation = response["confirmation_id"]
+    assert rig.poll()["confirmation_id"] == confirmation
+    assert "confirmation_id" not in json.dumps(rig.state())
+    assert (
+        rig.request("forget_confirm", operation_id=operation_id, confirmation_id="wrong")[0] == 409
+    )
+    assert (
+        rig.request("forget_confirm", operation_id="wrong", confirmation_id=confirmation)[0] == 409
+    )
+    assert (
+        rig.request("forget_confirm", operation_id=operation_id, confirmation_id=confirmation)[0]
+        == 202
+    )
+    assert rig.transport.calls == [("forget", operation_id, "device", 115.0)]
+    assert (
+        rig.request("forget_confirm", operation_id=operation_id, confirmation_id=confirmation)[0]
+        == 409
+    )
+    rig.emit("accepted", operation_id)
+    assert rig.settings.section == original
+    assert "confirmation_id" not in rig.poll()
+    assert rig.state()["operation"]["phase"] == "accepted"
+
+
+@pytest.mark.parametrize("early", [True, False])
+@pytest.mark.parametrize("missing_first", [True, False])
+def test_exact_observed_forget_clears_saved_identity_even_removal_before_event(
+    rig, early, missing_first
+):
+    rig.settings.saved_remote()
+    operation_id = confirm_forget(rig)
+    revision = rig.state()["revision"]
+    if not early:
+        rig.emit("accepted", operation_id)
+    rig.transport.state = replace(rig.transport.state, devices=())
+    if missing_first:
+        rig.manager.tick()
+        assert rig.state()["operation"]["phase"] in ("queued", "accepted")
+        assert rig.settings.section["remote"] is not None
+    rig.emit("forgotten", operation_id)
+    assert rig.state()["operation"]["phase"] == "observed"
+    assert rig.state()["operation"]["error"] == ""
+    assert rig.settings.section == {"remote": None}
+    assert rig.state()["revision"] == revision + 1
+    rig.emit("accepted", operation_id)
+    rig.emit("forgotten", operation_id)
+    assert rig.settings.saves == [{"remote": None}]
+
+
+def test_forgotten_requires_actual_removal_and_does_not_clear_other_saved_device(rig):
+    rig.settings.saved_remote(address="33:44:55:66:77:88")
+    operation_id = confirm_forget(rig)
+    rig.emit("forgotten", operation_id)
+    assert rig.state()["operation"]["phase"] == "queued"
+    rig.transport.state = replace(rig.transport.state, devices=())
+    rig.emit("forgotten", operation_id)
+    assert rig.state()["operation"]["phase"] == "observed"
+    assert not rig.settings.saves
+    assert rig.settings.section["remote"] is not None
+
+
+@pytest.mark.parametrize(
+    "change", ["controller", "device", "config", "cancel", "lease", "retire", "timeout"]
+)
+def test_forget_stale_observation_cannot_mutate_config_after_invalidation(rig, change):
+    rig.settings.saved_remote()
+    operation_id = confirm_forget(rig)
+    rig.emit("requested", operation_id)
+    if change == "controller":
+        rig.transport.state = replace(rig.transport.state, controller_epoch=4)
+    elif change == "device":
+        rig.transport.device(device_epoch=3)
+    elif change == "config":
+        rig.settings.saved_remote(address="33:44:55:66:77:88")
+    elif change == "cancel":
+        rig.request("cancel", operation_id=operation_id)
+    elif change == "lease":
+        rig.advance(15)
+    elif change == "retire":
+        rig.manager.retire(PHONE)
+    else:
+        rig.advance(10, poll=True)
+        rig.advance(5)
+    rig.manager.tick()
+    rig.transport.state = replace(rig.transport.state, devices=())
+    rig.emit("forgotten", operation_id)
+    assert rig.settings.section["remote"] is not None
+    assert not rig.settings.saves
+    assert rig.state()["operation"]["phase"] == "finished"
+    assert rig.state()["operation"]["error"] == "uncertain"
+
+
+def test_forget_confirmation_expires_at_twenty_seconds_without_dispatch(rig):
+    operation_id, response = rig.begin("forget_prepare")
+    rig.advance(10, poll=True)
+    rig.advance(10, poll=True)
+    assert (
+        rig.request(
+            "forget_confirm", operation_id=operation_id, confirmation_id=response["confirmation_id"]
+        )[0]
+        == 409
+    )
+    assert rig.state()["operation"]["error"] == "expired"
+    assert rig.transport.calls == []
+
+
+def test_forget_save_failure_keeps_physical_truth_without_rollback_or_retry(rig):
+    rig.settings.saved_remote()
+    operation_id = confirm_forget(rig)
+    rig.settings.fail_save = True
+    rig.transport.state = replace(rig.transport.state, devices=())
+    rig.emit("forgotten", operation_id)
+    state = rig.state()
+    assert state["operation"]["phase"] == "observed"
+    assert state["operation"]["error"] == "save_failed"
+    assert state["remote"]["device_id"] is None
+    assert rig.settings.section["remote"] is not None
+    rig.settings.fail_save = False
+    rig.emit("forgotten", operation_id)
+    assert not rig.settings.saves
+    assert len(rig.transport.calls) == 1
+
+
+@pytest.mark.parametrize("op", ["discover", "pair", "connect", "disconnect"])
+@pytest.mark.parametrize("dispatched", [True, False])
+def test_cancel_once_reports_irreversible_uncertainty_and_never_replays(rig, op, dispatched):
+    operation_id, _ = rig.begin(op)
+    fields = {"device_id": None, "device_epoch": 0} if op == "discover" else {}
+    if dispatched:
+        rig.emit("requested", operation_id, **fields)
+    assert rig.request("cancel", operation_id=operation_id)[0] == 200
+    expected = "uncertain" if dispatched and op in ("connect", "disconnect") else "cancelled"
+    assert rig.state()["operation"]["error"] == expected
+    assert rig.request("cancel", operation_id=operation_id)[0] == 409
+    rig.emit("accepted", operation_id, **fields)
+    assert rig.state()["operation"]["error"] == expected
+    assert rig.transport.calls.count(("cancel", operation_id)) == 1
+    new_id, _ = rig.begin(op)
+    assert new_id != operation_id
+
+
+def test_config_revision_latest_reads_detached_snapshots_and_persisted_map_edits(rig):
+    rig.settings.saved_remote()
+    first = rig.state()
+    revision = first["revision"]
+    first["remote"]["bindings"].clear()
+    assert rig.state()["remote"]["bindings"]
+    assert rig.request("unmap", key="KEY_UP", revision=revision)[0] == 200
+    revision += 1
+    assert rig.state()["revision"] == revision
+    assert rig.settings.section["remote"]["bindings"] == {"KEY_ENTER": "ok"}
+    assert rig.request("reset", revision=revision - 1)[0] == 409
+    assert rig.request("unmap", key="KEY_UP", revision=revision)[0] == 200
+    assert rig.state()["revision"] == revision  # No-op does not rewrite/revise.
+    rig.settings.section["remote"]["bindings"]["KEY_DOWN"] = "down"
+    assert rig.request("reset", revision=revision)[0] == 409
+    revision += 1
+    assert rig.state()["revision"] == revision
+    assert rig.request("reset", revision=revision)[0] == 200
+    assert rig.settings.section["remote"]["bindings"] == {}
+    assert rig.settings.section["remote"]["identity"]["address"] == PEER
+    assert rig.state()["revision"] == revision + 1
+
+
+@pytest.mark.parametrize("op", ["reset", "unmap"])
+def test_map_saving_failure_preserves_current_source_and_snapshot(rig, op):
+    rig.settings.saved_remote()
+    state = rig.state()
+    original = copy.deepcopy(rig.settings.section)
+    rig.settings.fail_save = True
+    fields = {"revision": state["revision"], **({"key": "KEY_UP"} if op == "unmap" else {})}
+    status, result = rig.request(op, **fields)
+    assert status == 503 and result["error"] == "save_failed"
+    assert rig.settings.section == original
+    assert result["state"]["revision"] == state["revision"]
+    assert result["state"]["remote"]["bindings"] == original["remote"]["bindings"]
+    assert "secret" not in json.dumps(result)
+
+
+def test_latest_config_recheck_immediately_before_save_fences_revision(rig):
+    rig.settings.saved_remote()
+    revision = rig.state()["revision"]
+    original_get = rig.settings.get
+    count = 0
+
+    def changing_get():
+        nonlocal count
+        count += 1
+        if count == 3:  # request tick, edit precheck, then immediately-before-save
+            rig.settings.section["remote"]["bindings"]["KEY_DOWN"] = "down"
+        return original_get()
+
+    with rig.manager._lock:
+        rig.manager._get_config = changing_get
+        status, result = rig.request("reset", revision=revision)
+    assert status == 409 and result["error"] == "stale"
+    assert result["state"]["revision"] == revision + 1
+    assert not rig.settings.saves
+    assert rig.settings.section["remote"]["bindings"]["KEY_DOWN"] == "down"
+
+
+def test_config_change_cancels_pending_pair_challenge_and_forget_prepare(rig):
+    operation_id, _ = rig.begin()
+    rig.emit("challenge", operation_id, challenge=Challenge())
+    rig.settings.saved_remote()
+    assert rig.state()["operation"]["error"] == "invalidated"
+    assert "challenge" not in rig.poll()
+    operation_id, response = rig.begin("forget_prepare")
+    rig.settings.section["remote"]["bindings"].clear()
+    assert (
+        rig.request(
+            "forget_confirm", operation_id=operation_id, confirmation_id=response["confirmation_id"]
+        )[0]
+        == 409
+    )
+    assert not any(call[0] == "forget" for call in rig.transport.calls)
+
+
+def test_invalid_or_unreadable_config_fails_closed_without_unvalidated_save(rig):
+    rig.settings.section = {"remote": {"malformed": "secret"}}
+    assert rig.state()["reason"] == "save_failed"
+    assert rig.request("discover")[0] == 503
+    assert rig.request("reset", revision=0)[0] == 503
+    assert not rig.settings.saves
+    rig.settings.fail_get = True
+    assert rig.request("reset", revision=0)[0] == 503
+
+
+@pytest.mark.parametrize("action", ACTIONS)
+def test_learning_reports_absent_helper_only_for_valid_live_selected_remote(rig, action):
+    assert rig.request("learn", action=action)[0] == 409
+    rig.settings.saved_remote()
+    assert rig.request("learn", action=action)[0] == 409
+    rig.transport.device(paired=True, connected=True)
+    before = copy.deepcopy(rig.settings.section)
+    status, reply = rig.request("learn", action=action)
+    assert status == 503 and reply["error"] == "helper_unavailable"
+    assert rig.settings.section == before
+    assert not rig.settings.saves and not rig.transport.calls
+    assert "observation" not in reply
+
+
+def test_select_candidate_eligibility_is_not_guessed_input_availability(rig):
+    rig.settings.saved_remote(address="33:44:55:66:77:88")
+    before = copy.deepcopy(rig.settings.section)
+    for changes in ({"paired": False, "connected": False}, {"paired": True, "connected": False}):
+        rig.transport.device(**changes)
+        assert rig.request("select_remote", device_id="device")[0] == 409
+    rig.transport.device(paired=True, connected=True)
+    assert not rig.state()["devices"][0]["input_available"]
+    status, reply = rig.request("select_remote", device_id="device")
+    assert status == 503 and reply["error"] == "helper_unavailable"
+    assert rig.settings.section == before
+    assert not rig.settings.saves and not rig.transport.calls
+    assert reply["state"]["operation"] is None
+    assert rig.request("select_remote", device_id="missing")[0] == 409
+
+
+@pytest.mark.parametrize("op", ["bind", "test"])
+def test_input_observation_requests_validate_then_stale_never_fabricate_success(rig, op):
+    assert rig.request(op, operation_id="nonexistent", observation_id="nonexistent")[0] == 409
+    operation_id, _ = rig.begin()
+    status, result = rig.request(op, operation_id=operation_id, observation_id="nonexistent")
+    assert status == 409 and result["error"] == "stale"
+    assert "observation" not in result
+    assert not rig.settings.saves
+    assert len(rig.transport.calls) == 1
+
+
+@pytest.mark.parametrize("key", BUTTON_CODES)
+def test_every_fixed_key_can_be_unmapped_without_input_helper(rig, key):
+    rig.settings.saved_remote()
+    rig.settings.section["remote"]["bindings"] = {key: "up"}
+    revision = rig.state()["revision"]
+    assert rig.request("unmap", key=key, revision=revision)[0] == 200
+    assert rig.settings.section["remote"]["bindings"] == {}
+
+
+def test_saved_map_edits_supported_without_live_adapter_or_transport_availability(rig):
+    rig.settings.saved_remote()
+    rig.transport.state = replace(rig.transport.state, available=False, adapters=(), devices=())
+    revision = rig.state()["revision"]
+    assert not rig.state()["available"]
+    assert rig.request("reset", revision=revision)[0] == 200
+    assert rig.settings.section["remote"]["bindings"] == {}
+
+
+@pytest.mark.parametrize(
+    "method", ["discover", "pair", "connect", "disconnect", "forget", "answer", "cancel"]
+)
+@pytest.mark.parametrize("raises", [False, True])
+def test_queue_or_cancellation_failure_fails_closed_cleanup_off_callback(rig, method, raises):
+    if method in ("answer", "cancel"):
+        operation_id, _ = rig.begin()
+        if method == "answer":
+            rig.emit("challenge", operation_id, challenge=Challenge())
+    elif method == "forget":
+        operation_id, response = rig.begin("forget_prepare")
+    rig.transport.fail.add(("raise_" if raises else "") + method)
+    if method == "answer":
+        status, result = rig.request(
+            "answer", operation_id=operation_id, challenge_id="challenge", answer={"pin": "x"}
+        )
+    elif method == "cancel":
+        status, result = rig.request("cancel", operation_id=operation_id)
+    elif method == "forget":
+        status, result = rig.request(
+            "forget_confirm", operation_id=operation_id, confirmation_id=response["confirmation_id"]
+        )
+    else:
+        fields = {} if method == "discover" else {"device_id": "device"}
+        status, result = rig.request(method, **fields)
+    assert status == 503 and result["error"] == "unavailable"
+    wait_until(lambda: rig.transport.closed.is_set())
+    assert rig.transport.close_thread is rig.manager._thread
+    assert not rig.state()["available"]
+    assert rig.request("poll")[0] == 503
+    assert "secret" not in json.dumps(result)
+    assert not rig.settings.saves
+
+
+def test_callback_mailbox_overload_never_blocks_and_retires_possible_discovery(rig):
+    operation_id, _ = rig.begin("discover")
+    callback_thread = None
+    elapsed = None
+
+    def producer():
+        nonlocal callback_thread, elapsed
+        callback_thread = threading.current_thread()
+        begin = time.monotonic()
+        for _ in range(1000):
+            rig.transport.emit("inventory", None, device_id=None, device_epoch=0)
+        elapsed = time.monotonic() - begin
+
+    # Block worker, not callback: callback must never acquire coordinator/settings locks.
+    with rig.manager._lock:
+        producer_thread = threading.Thread(target=producer)
+        producer_thread.start()
+        producer_thread.join(1)
+        assert not producer_thread.is_alive()
+        assert elapsed < 1
+        assert rig.manager._events.qsize() == 64
+    wait_until(lambda: rig.transport.closed.is_set())
+    assert rig.transport.close_thread is not callback_thread
+    assert callback_thread not in rig.settings.threads
+    assert not rig.state()["available"]
+    assert rig.state()["operation"]["id"] == operation_id
+    assert rig.state()["operation"]["error"] == "uncertain"
+    assert rig.manager._owner is None
+
+
+def test_timer_expiry_is_independent_of_http_and_event_traffic(rig):
+    operation_id, _ = rig.begin("discover")
+    rig.clock.advance(15)
+    wait_until(lambda: ("cancel", operation_id) in rig.transport.calls)
+    assert rig.manager._owner is None
+    assert rig.manager._operation.error == "expired"
+
+
+def test_event_batch_cannot_starve_lease_expiry(rig):
+    operation_id, _ = rig.begin("discover")
+    with rig.manager._lock:
+        for _ in range(64):
+            rig.transport.emit("inventory", None, device_id=None, device_epoch=0)
+        rig.clock.advance(15)
+        rig.manager.tick()
+    assert rig.manager._owner is None
+    assert rig.transport.calls[-1] == ("cancel", operation_id)
+    assert rig.manager._events.qsize() == 0
+
+
+@pytest.mark.parametrize("failure", ["start", "snapshot", "close", "malformed_event"])
+def test_lifecycle_listener_failure_is_redacted_and_cleanup_has_no_thread_leak(failure):
+    rig = Rig()
+    if failure != "malformed_event":
+        rig.transport.fail.add(failure)
+    rig.start()
+    if failure == "malformed_event":
+        rig.acquire()
+        rig.begin()
+        rig.transport.on_event(object())
+        rig.manager.tick()
+    if failure == "close":
+        with pytest.raises(RuntimeError, match="^Bluetooth shutdown failed$"):
+            rig.manager.close()
+    else:
+        wait_until(lambda: rig.transport.closed.is_set())
+        rig.manager.close()
+    assert not rig.manager._thread.is_alive()
+    assert rig.transport.close_count == 1
+    assert not rig.state()["available"]
+    assert "secret" not in json.dumps(rig.state())
+
+
+def test_close_cancels_discovery_once_clears_secrets_and_ignores_late_callbacks(rig):
+    operation_id, _ = rig.begin("discover")
+    rig.manager.close()
+    rig.transport.emit("challenge", operation_id, challenge=Challenge())
+    assert rig.transport.calls.count(("cancel", operation_id)) == 1
+    assert rig.transport.close_count == 1
+    assert rig.manager._events.qsize() == 0
+    assert rig.manager._owner is None
+
+
+def test_unknown_transport_error_is_fixed_not_raw_exception_text(rig):
+    operation_id, _ = rig.begin()
+    rig.emit("finished", operation_id, code="D-Bus /private secret pin=1234")
+    assert rig.state()["operation"]["error"] == "uncertain"
+    assert "private" not in json.dumps(rig.state())
+
+
+@pytest.mark.parametrize(
+    "op,duration", [("discover", 30), ("pair", 60), ("connect", 60), ("disconnect", 15)]
+)
+def test_each_original_command_deadline_expires_independent_of_poll_and_acceptance(
+    rig, op, duration
+):
+    operation_id, _ = rig.begin(op)
+    event_fields = {"device_id": None, "device_epoch": 0} if op == "discover" else {}
+    rig.emit("requested", operation_id, **event_fields)
+    for _ in range(duration // 5 - 1):
+        rig.advance(5, poll=True)
+    rig.emit("accepted", operation_id, **event_fields)
+    assert rig.state()["operation"]["remaining_ms"] == 5000
+    rig.advance(5)
+    error = "uncertain" if op in ("connect", "disconnect") else "expired"
+    assert rig.state()["operation"]["error"] == error
+    assert rig.transport.calls.count(("cancel", operation_id)) == 1
+
+
+@pytest.mark.parametrize("change", [{"kind": "passkey"}, {"value": "654321"}])
+def test_same_challenge_id_cannot_change_kind_or_secret(rig, change):
+    operation_id, _ = rig.begin()
+    challenge = Challenge(kind="confirmation", value="123456")
+    rig.emit("challenge", operation_id, challenge=challenge)
+    rig.emit("challenge", operation_id, challenge=replace(challenge, **change))
+    assert "challenge" not in rig.poll()
+    assert rig.state()["operation"]["error"] == "invalidated"
+
+
+def test_display_progress_update_is_bounded_and_does_not_regress_waiting_phase(rig):
+    operation_id, _ = rig.begin()
+    rig.emit(
+        "challenge",
+        operation_id,
+        challenge=Challenge(kind="display_passkey", value="123456", deadline=120),
+    )
+    rig.advance(5)
+    rig.emit("accepted", operation_id)
+    rig.emit("requested", operation_id)
+    rig.emit(
+        "challenge",
+        operation_id,
+        challenge=Challenge(kind="display_passkey", value="123456", entered=4, deadline=150),
+    )
+    reply = rig.poll()
+    assert reply["state"]["operation"]["phase"] == "waiting"
+    assert reply["challenge"]["entered"] == 4
+    assert reply["challenge"]["remaining_ms"] == 15000
+
+
+@pytest.mark.parametrize("why", ["expiry", "device_loss", "controller_loss", "close"])
+def test_failed_cleanup_cannot_abandon_possible_owned_discovery(rig, why):
+    operation_id, _ = rig.begin("discover")
+    rig.transport.fail.add("cancel")
+    if why == "expiry":
+        rig.clock.advance(15)
+    elif why == "device_loss":
+        # Discovery pins the adapter, not an individual discovered device.
+        rig.transport.state = replace(rig.transport.state, adapters=(), devices=())
+    elif why == "controller_loss":
+        rig.transport.state = replace(rig.transport.state, controller_epoch=4)
+    if why == "close":
+        rig.manager.close()
+    else:
+        rig.manager.tick()
+        wait_until(lambda: rig.transport.closed.is_set())
+    assert ("cancel", operation_id) in rig.transport.calls
+    assert rig.manager._owner is None
+    assert rig.transport.close_count == 1
+    assert rig.state()["operation"]["error"] == "uncertain"
+
+
+def test_unrelated_device_loss_does_not_cancel_discovery_or_move_adapter(rig):
+    operation_id, _ = rig.begin("discover")
+    rig.transport.state = replace(rig.transport.state, devices=())
+    assert rig.state()["operation"]["id"] == operation_id
+    assert rig.state()["operation"]["phase"] == "queued"
+    assert len(rig.transport.calls) == 1
+
+
+def test_pair_new_operation_rejects_late_old_observations_and_answers(rig):
+    old_id, _ = rig.begin()
+    rig.emit("challenge", old_id, challenge=Challenge())
+    rig.request("cancel", operation_id=old_id)
+    new_id, _ = rig.begin()
+    rig.emit("challenge", old_id, challenge=Challenge(value=""))
+    rig.transport.device(paired=True)
+    rig.emit("paired", old_id)
+    rig.emit("accepted", old_id)
+    assert rig.state()["operation"]["id"] == new_id
+    assert rig.state()["operation"]["phase"] == "queued"
+    assert "challenge" not in rig.poll()
+    assert (
+        rig.request("answer", operation_id=old_id, challenge_id="challenge", answer={"pin": "x"})[0]
+        == 409
+    )
+
+
+def test_forget_latest_revision_recheck_preserves_changed_settings_and_physical_truth(rig):
+    rig.settings.saved_remote()
+    operation_id = confirm_forget(rig)
+    getter = rig.settings.get
+    count = 0
+
+    def change_during_finalization():
+        nonlocal count
+        count += 1
+        if count == 2:
+            rig.settings.section["remote"]["bindings"]["KEY_DOWN"] = "down"
+        return getter()
+
+    with rig.manager._lock:
+        rig.manager._get_config = change_during_finalization
+        rig.transport.state = replace(rig.transport.state, devices=())
+        rig.transport.emit("forgotten", operation_id)
+        rig.manager.tick()
+    assert rig.state()["operation"]["phase"] == "observed"
+    assert rig.state()["operation"]["error"] == "save_failed"
+    assert not rig.settings.saves
+    assert rig.settings.section["remote"]["bindings"]["KEY_DOWN"] == "down"
+
+
+@pytest.mark.parametrize("effect", ["pair", "answer", "forget_confirm"])
+@pytest.mark.parametrize("race", ["lease", "epoch", "identity", "challenge_deadline"])
+def test_dispatch_rechecks_current_lease_epoch_identity_and_deadline(rig, effect, race):
+    if effect == "answer":
+        operation_id, _ = rig.begin()
+        rig.emit("challenge", operation_id, challenge=Challenge(deadline=105))
+        fields = {"operation_id": operation_id, "challenge_id": "challenge", "answer": {"pin": "x"}}
+    elif effect == "forget_confirm":
+        operation_id, response = rig.begin("forget_prepare")
+        fields = {"operation_id": operation_id, "confirmation_id": response["confirmation_id"]}
+    else:
+        fields = {"device_id": "device"}
+    snapshot = rig.transport.snapshot
+    count = 0
+
+    def change_just_before_dispatch():
+        nonlocal count
+        count += 1
+        if count == 2:  # tick is not sufficient: state changes after validation starts.
+            if race == "lease":
+                rig.clock.advance(15)
+            elif race == "epoch":
+                rig.transport.state = replace(rig.transport.state, controller_epoch=4)
+            elif race == "identity":
+                rig.transport.device(device_epoch=3)
+            elif effect == "answer":
+                rig.clock.advance(5)
+            else:
+                rig.clock.advance(60)
+        return snapshot()
+
+    with rig.manager._lock:
+        rig.transport.snapshot = change_just_before_dispatch
+        before = len(rig.transport.calls)
+        assert rig.request(effect, **fields)[0] == 409
+    commands = rig.transport.calls[before:]
+    assert not any(call[0] in ("pair", "answer", "forget") for call in commands)
+    assert rig.manager._operation.challenge is None
+    assert rig.manager._operation.confirmation is None
+
+
+def test_forget_dispatch_and_terminal_events_remain_honest_after_early_removal(rig):
+    rig.settings.saved_remote()
+    operation_id = confirm_forget(rig)
+    rig.transport.state = replace(rig.transport.state, devices=())
+    rig.manager.tick()
+    rig.emit("requested", operation_id)
+    rig.emit("accepted", operation_id)
+    assert rig.state()["operation"]["phase"] == "accepted"
+    rig.emit("finished", operation_id, code="uncertain")
+    assert rig.state()["operation"]["phase"] == "finished"
+    assert rig.state()["operation"]["error"] == "uncertain"
+    assert not rig.settings.saves
+    assert rig.settings.section["remote"] is not None
+
+
+def test_release_cancellation_failure_reports_unavailable_not_cleanup_success(rig):
+    rig.begin("discover")
+    rig.transport.fail.add("cancel")
+    status, response = rig.request("release")
+    assert status == 503 and response["error"] == "unavailable"
+    wait_until(lambda: rig.transport.closed.is_set())
+    assert rig.manager._owner is None
+
+
+@pytest.mark.parametrize("op", ["unmap", "reset"])
+def test_mapping_save_rechecks_lease_after_latest_config_read(rig, op):
+    rig.settings.saved_remote()
+    revision = rig.state()["revision"]
+    getter = rig.settings.get
+    count = 0
+
+    def expire_before_write():
+        nonlocal count
+        count += 1
+        if count == 3:
+            rig.clock.advance(15)
+        return getter()
+
+    with rig.manager._lock:
+        rig.manager._get_config = expire_before_write
+        fields = {"key": "KEY_UP"} if op == "unmap" else {}
+        status, response = rig.request(op, revision=revision, **fields)
+    assert status == 409 and response["error"] == "expired"
+    assert rig.manager._owner is None
+    assert not rig.settings.saves
+    assert rig.settings.section["remote"]["bindings"]["KEY_UP"] == "up"
+
+
+def test_settings_manager_atomic_writer_preserves_other_settings_and_secrets(tmp_path):
+    from test_settings import manager as settings_manager
+
+    settings, sessions, path, _ = settings_manager(tmp_path)
+    token, _ = sessions.create()
+    rig = Rig()
+    rig.settings.saved_remote()
+    settings.set_bluetooth(rig.settings.section)
+    before_auth = copy.deepcopy(settings.config["auth"])
+    rig.manager = BluetoothManager(
+        transport=rig.transport,
+        get_config=settings.bluetooth_config,
+        save_config=settings.set_bluetooth,
+        enabled=True,
+        clock=rig.clock,
+    )
+    try:
+        rig.start()
+        rig.acquire()
+        revision = rig.state()["revision"]
+        settings.set_audio_level("browser", 37)
+        assert rig.request("unmap", revision=revision, key="KEY_UP")[0] == 200
+        from ad_linux_tv.config import load_config
+
+        persisted = load_config(path)
+        assert persisted["bluetooth"]["remote"]["bindings"] == {"KEY_ENTER": "ok"}
+        assert persisted["audio"]["browser"] == 37
+        assert persisted["auth"] == before_auth
+        assert sessions.valid(token)
+        assert path.stat().st_mode & 0o777 == 0o600
+    finally:
+        rig.manager.close()
