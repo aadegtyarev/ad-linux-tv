@@ -293,7 +293,7 @@ def test_lease_is_not_reissued_or_renewed_by_get_mutation_or_failed_poll(rig):
     rig.advance(5)
     assert rig.request("poll")[0] == 409
     assert rig.transport.calls[-1][0] == "cancel"
-    assert rig.state()["operation"]["error"] == "expired"
+    assert rig.state()["operation"]["error"] == "uncertain"
     old_lease = rig.lease
     response = rig.acquire(OTHER)
     assert response["lease"] != old_lease
@@ -307,7 +307,7 @@ def test_only_valid_owner_poll_renews_lease_and_does_not_extend_operation(rig):
         rig.advance(5, poll=True)
     assert rig.state()["operation"]["remaining_ms"] == 5000
     rig.advance(5)
-    assert rig.state()["operation"]["error"] == "expired"
+    assert rig.state()["operation"]["error"] == "uncertain"
     assert rig.transport.calls.count(("cancel", operation_id)) == 1
     rig.poll()
 
@@ -451,7 +451,7 @@ def test_every_variant_rejects_extra_fields(rig, op):
     ],
 )
 @pytest.mark.parametrize("early", [True, False])
-def test_accepted_is_not_observed_and_early_property_wins(rig, op, observed, changes, early):
+def test_observation_does_not_hide_later_dispatch_uncertainty(rig, op, observed, changes, early):
     if op == "disconnect":
         rig.transport.device(connected=True)
     operation_id, _ = rig.begin(op)
@@ -467,7 +467,7 @@ def test_accepted_is_not_observed_and_early_property_wins(rig, op, observed, cha
     rig.emit("accepted", operation_id)
     rig.emit("finished", operation_id, code="uncertain")
     assert rig.state()["operation"]["phase"] == "observed"
-    assert rig.state()["operation"]["error"] == ""
+    assert rig.state()["operation"]["error"] == "uncertain"
 
 
 def test_property_event_without_matching_property_is_not_success(rig):
@@ -475,6 +475,8 @@ def test_property_event_without_matching_property_is_not_success(rig):
     rig.emit("paired", operation_id)
     assert rig.state()["operation"]["phase"] == "queued"
     rig.emit("finished", operation_id, code="observed")
+    assert rig.state()["operation"]["phase"] != "observed"
+    rig.advance(15)
     assert rig.state()["operation"]["error"] == "uncertain"
 
 
@@ -590,7 +592,7 @@ def test_invalid_challenge_cancels_without_exposing_data(rig, challenge):
     operation_id, _ = rig.begin()
     rig.emit("challenge", operation_id, challenge=challenge)
     assert "challenge" not in rig.poll()
-    assert rig.state()["operation"]["error"] == "invalidated"
+    assert rig.state()["operation"]["error"] == "uncertain"
 
 
 def test_challenge_updates_cannot_extend_deadline_or_replace_id(rig):
@@ -601,11 +603,11 @@ def test_challenge_updates_cannot_extend_deadline_or_replace_id(rig):
     assert rig.poll()["challenge"]["remaining_ms"] == 5000
     rig.advance(5)
     assert "challenge" not in rig.poll()
-    assert rig.state()["operation"]["error"] == "expired"
+    assert rig.state()["operation"]["error"] == "uncertain"
     operation_id, _ = rig.begin()
     rig.emit("challenge", operation_id, challenge=Challenge())
     rig.emit("challenge", operation_id, challenge=Challenge(id="new"))
-    assert rig.state()["operation"]["error"] == "invalidated"
+    assert rig.state()["operation"]["error"] == "uncertain"
 
 
 def test_original_pair_deadline_and_bounded_challenge_replay_ledger(rig):
@@ -617,7 +619,7 @@ def test_original_pair_deadline_and_bounded_challenge_replay_ledger(rig):
             "answer", operation_id=operation_id, challenge_id=f"c{i}", answer={"pin": "x"}
         )
         assert status == (202 if i < 8 else 409)
-    assert rig.state()["operation"]["error"] == "invalidated"
+    assert rig.state()["operation"]["error"] == "uncertain"
 
 
 @pytest.mark.parametrize(
@@ -641,7 +643,7 @@ def test_target_epochs_identity_and_loss_invalidate_without_retargeting(rig, mut
         rig.transport.state = replace(rig.transport.state, adapters=(Adapter(powered=False),))
     else:
         rig.transport.state = replace(rig.transport.state, available=False)
-    assert rig.state()["operation"]["error"] == "invalidated"
+    assert rig.state()["operation"]["error"] == "uncertain"
     assert (
         rig.request(
             "answer", operation_id=operation_id, challenge_id="challenge", answer={"pin": "x"}
@@ -899,7 +901,7 @@ def test_cancel_once_reports_irreversible_uncertainty_and_never_replays(rig, op,
     if dispatched:
         rig.emit("requested", operation_id, **fields)
     assert rig.request("cancel", operation_id=operation_id)[0] == 200
-    expected = "uncertain" if dispatched and op in ("connect", "disconnect") else "cancelled"
+    expected = "uncertain"  # Admission cannot exclude dispatch before notification.
     assert rig.state()["operation"]["error"] == expected
     assert rig.request("cancel", operation_id=operation_id)[0] == 409
     rig.emit("accepted", operation_id, **fields)
@@ -973,7 +975,7 @@ def test_config_change_cancels_pending_pair_challenge_and_forget_prepare(rig):
     operation_id, _ = rig.begin()
     rig.emit("challenge", operation_id, challenge=Challenge())
     rig.settings.saved_remote()
-    assert rig.state()["operation"]["error"] == "invalidated"
+    assert rig.state()["operation"]["error"] == "uncertain"
     assert "challenge" not in rig.poll()
     operation_id, response = rig.begin("forget_prepare")
     rig.settings.section["remote"]["bindings"].clear()
@@ -1124,7 +1126,7 @@ def test_timer_expiry_is_independent_of_http_and_event_traffic(rig):
     rig.clock.advance(15)
     wait_until(lambda: ("cancel", operation_id) in rig.transport.calls)
     assert rig.manager._owner is None
-    assert rig.manager._operation.error == "expired"
+    assert rig.manager._operation.error == "uncertain"
 
 
 def test_event_batch_cannot_starve_lease_expiry(rig):
@@ -1193,7 +1195,7 @@ def test_each_original_command_deadline_expires_independent_of_poll_and_acceptan
     rig.emit("accepted", operation_id, **event_fields)
     assert rig.state()["operation"]["remaining_ms"] == 5000
     rig.advance(5)
-    error = "uncertain" if op in ("connect", "disconnect") else "expired"
+    error = "uncertain"  # Pair/discovery writes are not confirmed by local expiry either.
     assert rig.state()["operation"]["error"] == error
     assert rig.transport.calls.count(("cancel", operation_id)) == 1
 
@@ -1205,7 +1207,7 @@ def test_same_challenge_id_cannot_change_kind_or_secret(rig, change):
     rig.emit("challenge", operation_id, challenge=challenge)
     rig.emit("challenge", operation_id, challenge=replace(challenge, **change))
     assert "challenge" not in rig.poll()
-    assert rig.state()["operation"]["error"] == "invalidated"
+    assert rig.state()["operation"]["error"] == "uncertain"
 
 
 def test_display_progress_update_is_bounded_and_does_not_regress_waiting_phase(rig):
@@ -1286,7 +1288,7 @@ def test_forget_latest_revision_recheck_preserves_changed_settings_and_physical_
     def change_during_finalization():
         nonlocal count
         count += 1
-        if count == 2:
+        if count == 3:
             rig.settings.section["remote"]["bindings"]["KEY_DOWN"] = "down"
         return getter()
 
@@ -1422,3 +1424,509 @@ def test_settings_manager_atomic_writer_preserves_other_settings_and_secrets(tmp
         assert path.stat().st_mode & 0o777 == 0o600
     finally:
         rig.manager.close()
+
+
+_PHYSICAL = {
+    "pair": ("paired", {"paired": True}),
+    "connect": ("connected", {"connected": True}),
+    "disconnect": ("disconnected", {"connected": False}),
+    "forget": ("forgotten", None),
+}
+
+
+def begin_command(rig, kind):
+    if kind == "forget":
+        return confirm_forget(rig)
+    return rig.begin(kind)[0]
+
+
+def event_target(kind):
+    return {"device_id": None, "device_epoch": 0} if kind == "discover" else {}
+
+
+def physical_change(rig, kind):
+    event_kind, changes = _PHYSICAL[kind]
+    if changes is None:
+        rig.transport.state = replace(rig.transport.state, devices=())
+    else:
+        rig.transport.device(**changes)
+    return event_kind
+
+
+@pytest.mark.parametrize("kind", _PHYSICAL)
+@pytest.mark.parametrize("terminal", ["observed", "uncertain"])
+def test_snapshot_before_mailbox_retains_exact_pending_physical_proof(rig, kind, terminal):
+    rig.settings.saved_remote()
+    if kind == "disconnect":
+        rig.transport.device(connected=True)
+    operation_id = begin_command(rig, kind)
+    original_deadline = rig.manager._operation.deadline
+    snapshot = rig.transport.snapshot
+    fired = False
+
+    def publish_after_sampling_old_dto():
+        nonlocal fired
+        old = snapshot()
+        if not fired:
+            fired = True
+            event_kind = physical_change(rig, kind)
+            rig.transport.emit(event_kind, operation_id)
+            rig.transport.emit("finished", operation_id, code=terminal)
+        return old
+
+    with rig.manager._lock:
+        rig.transport.snapshot = publish_after_sampling_old_dto
+        rig.manager.tick()
+        operation = rig.manager._operation
+        assert operation.pending_observation == _PHYSICAL[kind][0]
+        assert not operation.observed
+        assert not rig.settings.saves
+        assert operation.deadline == original_deadline
+        rig.manager.tick()  # Newer authoritative sample, not an inferred property.
+        assert operation.pending_observation is None
+        assert operation.observed
+        assert operation.phase == "observed"
+        assert operation.error == ("" if terminal == "observed" else "uncertain")
+        assert operation.deadline == original_deadline
+    expected = [{"remote": None}] if kind == "forget" else []
+    assert rig.settings.saves == expected
+    rig.emit(_PHYSICAL[kind][0], operation_id)
+    rig.emit("finished", operation_id, code="observed")
+    assert rig.settings.saves == expected
+    assert rig.state()["operation"]["error"] == ("" if terminal == "observed" else "uncertain")
+
+
+@pytest.mark.parametrize("kind", _PHYSICAL)
+@pytest.mark.parametrize("invalidate", ["deadline", "lease", "controller", "identity", "config"])
+def test_pending_observation_keeps_original_fences(rig, kind, invalidate):
+    rig.settings.saved_remote()
+    operation_id = begin_command(rig, kind)
+    with rig.manager._lock:
+        # First sample cannot yet confirm this exact positive notification.
+        rig.transport.emit(_PHYSICAL[kind][0], operation_id)
+        rig.transport.emit("finished", operation_id, code="observed")
+        rig.manager.tick()
+        assert rig.manager._operation.pending_observation
+        physical_change(rig, kind)
+        if invalidate == "deadline":
+            rig.clock.now = rig.manager._operation.deadline
+            rig.manager._lease_deadline = rig.clock.now + 5
+        elif invalidate == "lease":
+            rig.clock.advance(15)
+        elif invalidate == "controller":
+            rig.transport.state = replace(rig.transport.state, controller_epoch=4)
+        elif invalidate == "identity":
+            rig.transport.state = replace(rig.transport.state, devices=(Device(device_epoch=99),))
+        else:
+            rig.settings.saved_remote(address="33:44:55:66:77:88")
+        rig.manager.tick()
+        assert not rig.manager._operation.observed
+        assert rig.manager._operation.pending_observation is None
+        assert rig.manager._operation.error == "uncertain"
+    assert not rig.settings.saves
+
+
+@pytest.mark.parametrize("kind", _PHYSICAL)
+def test_snapshot_truth_or_successful_terminal_without_positive_event_is_not_proof(rig, kind):
+    rig.settings.saved_remote()
+    operation_id = begin_command(rig, kind)
+    physical_change(rig, kind)
+    rig.emit("finished", operation_id, code="observed")
+    assert not rig.manager._operation.observed
+    assert not rig.settings.saves
+    assert rig.state()["operation"]["phase"] != "observed"
+    rig.manager.retire(PHONE)
+    rig.emit(_PHYSICAL[kind][0], operation_id)
+    assert not rig.settings.saves  # Retired late proof never starts config effects.
+
+
+@pytest.mark.parametrize("kind", _PHYSICAL)
+@pytest.mark.parametrize("terminal", ["observed", "uncertain"])
+def test_observed_reality_and_late_transport_certainty_are_independent(rig, kind, terminal):
+    rig.settings.saved_remote()
+    operation_id = begin_command(rig, kind)
+    rig.emit(physical_change(rig, kind), operation_id)
+    assert rig.state()["operation"]["phase"] == "observed"
+    saved_once = copy.deepcopy(rig.settings.saves)
+    rig.emit("finished", operation_id, code=terminal)
+    assert rig.state()["operation"]["phase"] == "observed"
+    assert rig.state()["operation"]["error"] == ("uncertain" if terminal == "uncertain" else "")
+    # Retain outcome correlation even after owner and controller retirement.
+    rig.manager.retire(PHONE)
+    rig.transport.state = replace(rig.transport.state, controller_epoch=4)
+    rig.emit("finished", operation_id, code="uncertain")
+    assert rig.manager._owner is None
+    assert rig.manager._operation.error == "uncertain"
+    assert rig.manager._operation.phase == "observed"
+    assert rig.settings.saves == saved_once
+    assert rig.manager._operation.challenge is None
+    assert rig.manager._operation.confirmation is None
+
+
+@pytest.mark.parametrize("kind", ["discover", "pair", "connect", "disconnect", "forget"])
+@pytest.mark.parametrize(
+    "retirement",
+    ["cancel", "expire", "release", "exact", "phones", "target", "controller", "config"],
+)
+def test_admitted_retirement_before_dispatch_notification_is_conservatively_uncertain(
+    rig, kind, retirement
+):
+    rig.settings.saved_remote()
+    operation_id = begin_command(rig, kind)
+    assert not rig.manager._operation.dispatched
+    if retirement == "cancel":
+        rig.request("cancel", operation_id=operation_id)
+    elif retirement == "expire":
+        rig.advance(15)
+    elif retirement == "release":
+        rig.request("release")
+    elif retirement == "exact":
+        rig.manager.retire(PHONE)
+    elif retirement == "phones":
+        rig.manager.retire_phones()
+    elif retirement == "target":
+        rig.transport.state = replace(rig.transport.state, adapters=(), devices=())
+        rig.manager.tick()
+    elif retirement == "controller":
+        rig.transport.state = replace(rig.transport.state, controller_epoch=4)
+        rig.manager.tick()
+    else:
+        rig.settings.saved_remote(address="33:44:55:66:77:88")
+        rig.manager.tick()
+    operation = rig.manager._operation
+    assert operation.retired and operation.error == "uncertain"
+    assert operation.pending_observation is None
+    owner_after = rig.manager._owner
+    calls_after = list(rig.transport.calls)
+    # These were dispatched before retirement but delivered afterwards, including
+    # when the CURRENT controller no longer matches the old outcome's epoch.
+    for event in ("requested", "accepted"):
+        rig.emit(event, operation_id, **event_target(kind))
+    rig.emit("finished", operation_id, code="uncertain", **event_target(kind))
+    assert operation.error == "uncertain"
+    assert rig.manager._owner == owner_after
+    assert rig.transport.calls == calls_after
+    assert operation.challenge is operation.confirmation is None
+    if kind == "forget":
+        rig.transport.state = replace(rig.transport.state, devices=())
+        rig.emit("forgotten", operation_id)
+        assert not rig.settings.saves
+
+
+@pytest.mark.parametrize("kind", ["discover", "pair", "connect", "disconnect", "forget"])
+def test_new_operation_never_receives_old_outcome_uncertainty(rig, kind):
+    old_id = begin_command(rig, kind)
+    rig.request("cancel", operation_id=old_id)
+    new_id = rig.begin("pair")[0]
+    for event in ("requested", "accepted", "finished"):
+        rig.emit(event, old_id, code="uncertain", **event_target(kind))
+    assert rig.state()["operation"]["id"] == new_id
+    assert rig.state()["operation"]["phase"] == "queued"
+    assert rig.state()["operation"]["error"] == ""
+
+
+def overflow(rig):
+    for _ in range(65):
+        rig.transport.emit("inventory", None, device_id=None, device_epoch=0)
+
+
+def poison_from_hook(rig, source, trigger):
+    target = rig.manager if source == "config" else rig.transport
+    attribute = "_get_config" if source == "config" else "snapshot"
+    original = getattr(target, attribute)
+    count = 0
+
+    def hook():
+        nonlocal count
+        result = original()
+        count += 1
+        if count == trigger:
+            overflow(rig)
+        return result
+
+    setattr(target, attribute, hook)
+
+
+def assert_poisoned_cleanup(rig, response=None):
+    if response is not None:
+        status, envelope = response
+        assert status == 503 and envelope["error"] == "unavailable"
+        assert not ({"lease", "challenge", "confirmation_id", "observation"} & set(envelope))
+    wait_until(lambda: rig.transport.closed.is_set())
+    assert rig.transport.close_count == 1
+    assert rig.transport.close_thread is rig.manager._thread
+    assert rig.manager._owner is None
+    assert not rig.settings.saves
+
+
+@pytest.mark.parametrize(
+    "kind,source,trigger",
+    [
+        (kind, source, trigger)
+        for kind in ("discover", "pair", "connect", "disconnect", "forget", "answer", "cancel")
+        for source in ("config", "snapshot")
+        for trigger in (1, 2)
+        if kind != "cancel" or trigger == 1
+    ],
+)
+def test_poison_inside_tick_or_dispatch_hook_fences_management_and_answers(
+    rig, kind, source, trigger
+):
+    if kind == "forget":
+        operation_id, response = rig.begin("forget_prepare")
+        op = "forget_confirm"
+        fields = {"operation_id": operation_id, "confirmation_id": response["confirmation_id"]}
+    elif kind in ("answer", "cancel"):
+        operation_id = rig.begin("pair")[0]
+        rig.emit("challenge", operation_id, challenge=Challenge())
+        op = kind
+        fields = {"operation_id": operation_id}
+        if kind == "answer":
+            fields.update(challenge_id="challenge", answer={"pin": "x"})
+    else:
+        op, fields = kind, ({} if kind == "discover" else {"device_id": "device"})
+    with rig.manager._lock:
+        poison_from_hook(rig, source, trigger)
+        before = list(rig.transport.calls)
+        result = rig.request(op, **fields)
+        assert rig.transport.calls == before
+    assert_poisoned_cleanup(rig, result)
+
+
+@pytest.mark.parametrize("op", ["reset", "unmap"])
+@pytest.mark.parametrize(
+    "source,trigger", [("config", 1), ("config", 2), ("config", 3), ("snapshot", 1)]
+)
+def test_poison_inside_current_mapping_save_hooks_prevents_write(rig, op, source, trigger):
+    rig.settings.saved_remote()
+    revision = rig.state()["revision"]
+    original = copy.deepcopy(rig.settings.section)
+    with rig.manager._lock:
+        poison_from_hook(rig, source, trigger)
+        fields = {"key": "KEY_UP"} if op == "unmap" else {}
+        result = rig.request(op, revision=revision, **fields)
+    assert rig.settings.section == original
+    assert_poisoned_cleanup(rig, result)
+
+
+@pytest.mark.parametrize("source,trigger", [("config", 1), ("config", 2), ("snapshot", 1)])
+def test_poison_inside_forget_resolution_prevents_exact_identity_clear(rig, source, trigger):
+    rig.settings.saved_remote()
+    operation_id = confirm_forget(rig)
+    with rig.manager._lock:
+        rig.transport.state = replace(rig.transport.state, devices=())
+        rig.transport.emit("forgotten", operation_id)
+        rig.manager.tick()  # Retain proof; requires another sample before save.
+        assert rig.manager._operation.pending_observation == "forgotten"
+        poison_from_hook(rig, source, trigger)
+        rig.manager.tick()
+        assert rig.manager._failed
+    assert rig.settings.section["remote"] is not None
+    assert_poisoned_cleanup(rig)
+
+
+@pytest.mark.parametrize("private", ["challenge", "confirmation", "acquire"])
+@pytest.mark.parametrize("source", ["config", "snapshot"])
+def test_poison_during_owner_poll_tick_never_returns_secrets(rig, private, source):
+    if private == "challenge":
+        operation_id = rig.begin()[0]
+        rig.emit("challenge", operation_id, challenge=Challenge())
+    elif private == "confirmation":
+        rig.begin("forget_prepare")
+    else:
+        rig.request("release")
+    with rig.manager._lock:
+        poison_from_hook(rig, source, 1)
+        result = (
+            rig.manager.request(PHONE, {"op": "acquire"})
+            if private == "acquire"
+            else rig.request("poll")
+        )
+    assert_poisoned_cleanup(rig, result)
+
+
+def test_poison_while_draining_mailbox_drops_later_forget_effect(rig):
+    rig.settings.saved_remote()
+    operation_id = confirm_forget(rig)
+    handler = rig.manager._event
+    fired = False
+
+    def poison_during_drain(event, now):
+        nonlocal fired
+        handler(event, now)
+        if not fired:
+            fired = True
+            overflow(rig)
+
+    with rig.manager._lock:
+        rig.manager._event = poison_during_drain
+        rig.transport.state = replace(rig.transport.state, devices=())
+        rig.transport.emit("accepted", operation_id)
+        rig.transport.emit("forgotten", operation_id)
+        rig.manager.tick()
+        assert rig.manager._failed
+        assert rig.manager._operation.pending_observation is None
+    assert_poisoned_cleanup(rig)
+
+
+def test_known_poison_direct_command_save_and_private_response_guards(rig):
+    operation_id = rig.begin()[0]
+    rig.emit("challenge", operation_id, challenge=Challenge())
+    with rig.manager._lock:
+        before = list(rig.transport.calls)
+        overflow(rig)
+        assert not rig.manager._command("answer", operation_id, "challenge", {"pin": "x"})
+        assert not rig.manager._command("cancel", operation_id)
+        assert rig.manager._save({"remote": None}, 0) == "unavailable"
+        result = rig.manager._reply(private=True)
+        assert rig.transport.calls == before
+    assert_poisoned_cleanup(rig, result)
+
+
+@pytest.mark.parametrize("kind", ["pair", "connect", "disconnect", "forget"])
+@pytest.mark.parametrize("code", ["busy", "unavailable", "invalidated", "adapter_off", "expired"])
+def test_documented_predispatch_epoch_zero_rejections_terminate_promptly(rig, kind, code):
+    previous = rig.begin("pair")[0]
+    rig.request("cancel", operation_id=previous)
+    # Fake cleanup is still pending; new command bool is admission only.
+    operation_id = begin_command(rig, kind)
+    rig.emit("finished", operation_id, device_epoch=0, code=code)
+    operation = rig.manager._operation
+    assert operation.phase == "finished" and operation.error == code
+    assert not operation.observed
+    assert rig.clock.now == 100
+    assert not rig.settings.saves
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [{"operation_id": "old"}, {"controller_epoch": 2}, {"device_id": "other"}, {"device_epoch": 1}],
+)
+def test_epoch_zero_rejection_requires_exact_remaining_correlation(rig, changed):
+    operation_id = rig.begin()[0]
+    fields = {"operation_id": operation_id, "device_epoch": 0, **changed}
+    rig.emit("finished", code="busy", **fields)
+    assert rig.state()["operation"]["phase"] == "queued"
+
+
+@pytest.mark.parametrize("kind", _PHYSICAL)
+def test_epoch_zero_is_never_a_positive_observation_or_challenge_wildcard(rig, kind):
+    operation_id = begin_command(rig, kind)
+    event = physical_change(rig, kind)
+    rig.emit(event, operation_id, device_epoch=0)
+    rig.emit("challenge", operation_id, device_epoch=0, challenge=Challenge())
+    assert not rig.manager._operation.observed
+    assert rig.manager._operation.pending_observation is None
+    assert rig.manager._operation.challenge is None
+    assert not rig.settings.saves
+
+
+@pytest.mark.parametrize(
+    "code", ["uncertain", "observed", "denied", "failed", "cancelled", "rejected"]
+)
+def test_epoch_zero_does_not_relax_undocumented_terminal_codes(rig, code):
+    operation_id = rig.begin()[0]
+    rig.emit("finished", operation_id, device_epoch=0, code=code)
+    assert rig.state()["operation"]["phase"] == "queued"
+
+
+def test_placeholder_rejection_cannot_override_started_operation(rig):
+    operation_id = rig.begin()[0]
+    rig.emit("requested", operation_id)
+    rig.emit("finished", operation_id, device_epoch=0, code="busy")
+    assert rig.state()["operation"]["phase"] == "requested"
+
+
+@pytest.mark.parametrize("retirement", ["cancel", "expire", "release", "exact", "phones"])
+def test_prepared_forget_has_no_admission_or_dispatch_uncertainty(rig, retirement):
+    operation_id, _ = rig.begin("forget_prepare")
+    if retirement == "cancel":
+        rig.request("cancel", operation_id=operation_id)
+    elif retirement == "expire":
+        rig.advance(15)
+    elif retirement == "release":
+        rig.request("release")
+    elif retirement == "exact":
+        rig.manager.retire(PHONE)
+    else:
+        rig.manager.retire_phones()
+    assert not rig.manager._operation.admitted
+    expected = "expired" if retirement == "expire" else "cancelled"
+    assert rig.manager._operation.error == expected
+    rig.emit("requested", operation_id)
+    rig.emit("finished", operation_id, code="uncertain")
+    assert rig.manager._operation.error == expected
+    assert not rig.transport.calls
+    assert rig.manager._operation.confirmation is None
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [{"operation_id": "old"}, {"controller_epoch": 2}, {"device_id": "other"}, {"device_epoch": 0}],
+)
+def test_retained_observed_outcome_uncertainty_still_requires_exact_correlation(rig, changed):
+    operation_id = rig.begin()[0]
+    rig.emit("paired", operation_id)  # Contradictory sample cannot confirm it yet.
+    rig.transport.device(paired=True)
+    assert rig.state()["operation"]["phase"] == "observed"
+    rig.emit("finished", operation_id, code="observed")
+    rig.manager.retire(PHONE)
+    assert rig.manager._operation.error == ""
+    rig.emit("finished", code="uncertain", **{"operation_id": operation_id, **changed})
+    assert rig.manager._operation.error == ""
+    rig.emit("finished", operation_id, code="uncertain")
+    assert rig.manager._operation.error == "uncertain"
+    assert rig.manager._owner is None
+
+
+def test_discovery_terminal_uncertainty_is_not_lost_after_owner_retirement(rig):
+    operation_id = rig.begin("discover")[0]
+    fields = event_target("discover")
+    rig.emit("finished", operation_id, code="cancelled", **fields)
+    rig.manager.retire(PHONE)
+    assert rig.manager._operation.error == "cancelled"
+    rig.emit("finished", operation_id, code="uncertain", **fields)
+    assert rig.manager._operation.error == "uncertain"
+    assert rig.manager._owner is None
+    assert len(rig.transport.calls) == 1
+
+
+def test_late_uncertain_forget_does_not_rollback_or_clear_new_saved_config(rig):
+    rig.settings.saved_remote()
+    operation_id = confirm_forget(rig)
+    rig.emit(physical_change(rig, "forget"), operation_id)
+    assert rig.state()["operation"]["phase"] == "observed"
+    assert rig.settings.saves == [{"remote": None}]
+    rig.emit("finished", operation_id, code="observed")
+    rig.manager.retire_phones()
+    rig.settings.saved_remote(address="33:44:55:66:77:88")
+    rig.emit("finished", operation_id, code="uncertain")
+    rig.emit("forgotten", operation_id)
+    assert rig.state()["operation"]["phase"] == "observed"
+    assert rig.state()["operation"]["error"] == "uncertain"
+    assert rig.settings.section["remote"]["identity"]["address"] == "33:44:55:66:77:88"
+    assert rig.settings.saves == [{"remote": None}]
+    assert rig.manager._owner is None
+
+
+@pytest.mark.parametrize("kind", _PHYSICAL)
+def test_event_drain_cannot_validate_pending_observation_past_original_deadline(rig, kind):
+    rig.settings.saved_remote()
+    operation_id = begin_command(rig, kind)
+    with rig.manager._lock:
+        rig.transport.emit(_PHYSICAL[kind][0], operation_id)
+        rig.manager.tick()
+        physical_change(rig, kind)
+        handler = rig.manager._event
+
+        def cross_deadline(event, now):
+            handler(event, now)
+            rig.clock.now = rig.manager._operation.deadline
+
+        rig.manager._event = cross_deadline
+        rig.transport.emit("finished", operation_id, code="observed")
+        rig.manager.tick()
+        assert not rig.manager._operation.observed
+        assert rig.manager._operation.pending_observation is None
+        assert rig.manager._operation.error == "uncertain"
+    assert not rig.settings.saves

@@ -51,6 +51,14 @@ _FIELDS = {
     "reset": ("lease", "revision"),
 }
 _DURATIONS = {"discover": 30, "pair": 60, "connect": 60, "disconnect": 15, "forget": 15}
+# Only these documented admission rejections use a placeholder device epoch.
+_PRE_DISPATCH_REJECTIONS = frozenset("busy unavailable invalidated adapter_off expired".split())
+_OBSERVATIONS = {
+    "pair": "paired",
+    "connect": "connected",
+    "disconnect": "disconnected",
+    "forget": "forgotten",
+}
 
 
 @dataclass(frozen=True)
@@ -89,6 +97,12 @@ class _Operation:
     phase: str = "queued"
     error: str = ""
     dispatched: bool = False
+    admitted: bool = False
+    observed: bool = False
+    retired: bool = False
+    transport_result: str | None = None
+    pending_observation: str | None = None
+    pending_generation: int = 0
     challenge: dict | None = field(default=None, repr=False)
     confirmation: str | None = field(default=None, repr=False)
     retired_challenges: set = field(default_factory=set, repr=False)
@@ -194,6 +208,7 @@ class BluetoothManager:
         self._config_ok = False
         self._revision = 0
         self._inventory = None
+        self._inventory_generation = 0
 
     def start(self):
         with self._lock:
@@ -276,7 +291,19 @@ class BluetoothManager:
                 self._retire_owner("cancelled")
         self._wake.set()
 
+    def _history_ok(self):
+        if self._poison.is_set():
+            self._fail_closed()
+            self._wake.set()
+        return not self._failed
+
     def _command(self, method, *args):
+        if not self._history_ok():
+            return False
+        if method in _DURATIONS:
+            # Admission does not prove dispatch, but from here dispatch cannot be
+            # excluded merely because its notification is still in the mailbox.
+            self._operation.admitted = True
         try:
             queued = getattr(self._transport, method)(*args)
         except Exception:
@@ -286,44 +313,56 @@ class BluetoothManager:
             self._fail_closed()
             self._wake.set()
             return False
-        return True
+        return self._history_ok()
 
     def _fail_closed(self):
         self._failed = True
         self._poison.set()
         self._owner = self._lease = None
         self._lease_deadline = 0
-        if self._operation and self._operation.active:
-            self._finish("uncertain")
+        if self._operation:
+            self._finish("uncertain", retire=True)
 
-    def _finish(self, error="", *, observed=False):
+    def _finish(self, error="", *, observed=False, retire=False):
         operation = self._operation
-        operation.phase = "observed" if observed else "finished"
+        operation.observed |= observed
+        operation.phase = "observed" if operation.observed else "finished"
         operation.error = error if error in _ERRORS else ""
         operation.challenge = None
         operation.confirmation = None
+        operation.retired |= retire
+        if observed or retire:
+            operation.pending_observation = None
 
     def _cancel(self, reason):
         operation = self._operation
-        if operation is None or not operation.active:
+        if operation is None or not (operation.active or operation.pending_observation):
             return
-        if operation.phase != "confirm":
+        if operation.admitted and operation.transport_result is None:
             if not self._command("cancel", operation.id):
                 return
-        uncertain = operation.dispatched and operation.kind in ("connect", "disconnect", "forget")
-        self._finish("uncertain" if uncertain else reason)
+        # All admitted command types (including pair/discovery) can have an
+        # unconfirmed write. Local retirement cannot certify no physical effect.
+        self._finish("uncertain" if operation.admitted else reason, retire=True)
 
     def _retire_owner(self, reason):
         self._cancel(reason)
         self._owner = self._lease = None
         self._lease_deadline = 0
         if self._operation:
-            self._operation.challenge = None
-            self._operation.confirmation = None
+            operation = self._operation
+            if operation.admitted and operation.transport_result is None:
+                operation.error = "uncertain"
+            operation.retired = True
+            operation.pending_observation = None
+            operation.challenge = None
+            operation.confirmation = None
 
     def _load_config(self):
         try:
             latest = validate_bluetooth(self._get_config())
+            if not self._history_ok():
+                return
         except Exception:
             self._config_ok = False
             self._cancel("invalidated")
@@ -339,6 +378,8 @@ class BluetoothManager:
     def _refresh(self):
         try:
             inventory = self._transport.snapshot()
+            if not self._history_ok():
+                return
             if (
                 type(inventory.available) is not bool
                 or type(inventory.controller_epoch) is not int
@@ -348,6 +389,7 @@ class BluetoothManager:
             ):
                 raise ValueError
             self._inventory = inventory
+            self._inventory_generation += 1
         except Exception:
             self._inventory = None
             self._fail_closed()
@@ -441,7 +483,7 @@ class BluetoothManager:
         # processing. The transport independently fences its queued dispatch.
         self._load_config()
         self._refresh()
-        if self._failed:
+        if not self._history_ok():
             return 503, "unavailable"
         now = self._clock()
         if self._owner is None or now >= self._lease_deadline:
@@ -459,23 +501,35 @@ class BluetoothManager:
             return (503, "unavailable") if self._failed else (409, "invalidated")
         return None
 
+    def _expire(self, now):
+        if self._owner is not None and now >= self._lease_deadline:
+            self._retire_owner("expired")
+        operation = self._operation
+        if (
+            operation
+            and (operation.active or operation.pending_observation)
+            and now >= operation.deadline
+        ):
+            self._cancel("expired")
+
     def tick(self):
         """Drain at most64 events and service original deadlines even under a flood."""
         with self._lock:
             if not self._started or self._closed or self._failed:
                 return
-            if self._poison.is_set():
-                self._fail_closed()
+            if not self._history_ok():
                 return
             self._load_config()
+            if not self._history_ok():
+                return
             self._refresh()
+            if not self._history_ok():
+                return
             now = self._clock()
-            if self._owner is not None and now >= self._lease_deadline:
-                self._retire_owner("expired")
-            operation = self._operation
-            if operation and operation.active and now >= operation.deadline:
-                self._cancel("expired")
+            self._expire(now)
             for _ in range(64):
+                if not self._history_ok():
+                    return
                 try:
                     event = self._events.get_nowait()
                 except queue.Empty:
@@ -485,8 +539,13 @@ class BluetoothManager:
                 except Exception:
                     self._fail_closed()
                     break
+            if not self._history_ok():
+                return
+            now = self._clock()
+            self._expire(now)
+            self._resolve_observation(now)
             operation = self._operation
-            if operation and operation.active:
+            if operation and (operation.active or operation.pending_observation):
                 allow_missing = operation.kind == "forget" and operation.phase != "confirm"
                 if not self._current_target(operation, allow_missing=allow_missing):
                     self._cancel("invalidated")
@@ -496,59 +555,110 @@ class BluetoothManager:
     def _event(self, event, now):
         operation = self._operation
         if (
-            self._failed
+            not self._history_ok()
             or operation is None
-            or not operation.active
-            or self._owner is None
+            or not operation.admitted
             or event.operation_id != operation.id
             or event.controller_epoch != operation.controller_epoch
             or event.device_id != operation.device_id
-            or event.device_epoch != operation.device_epoch
+        ):
+            return
+        rejection = (
+            event.kind == "finished"
+            and event.code in _PRE_DISPATCH_REJECTIONS
+            and event.device_epoch == 0
+            and not operation.dispatched
+            and not operation.observed
+            and operation.pending_observation is None
+            and operation.transport_result is None
+        )
+        if event.device_epoch != operation.device_epoch and not rejection:
+            return
+        # Retain only CURRENT outcome correlation, even after ownership/target
+        # retirement. Terminal uncertainty needs no live target and authorizes no
+        # new command, secret delivery or settings effect.
+        if event.kind == "finished":
+            code = event.code if event.code in _ERRORS or event.code == "observed" else "uncertain"
+            if operation.transport_result == "uncertain":
+                return
+            operation.transport_result = code
+            if code == "uncertain":
+                self._finish(code)
+            elif operation.retired:
+                return
+            elif code != "observed":
+                self._finish(code, retire=operation.pending_observation is None)
+            # Successful termination alone is NOT physical proof. A correlated
+            # observation may still be waiting for a later snapshot publication.
+            return
+        if event.kind in ("requested", "accepted"):
+            operation.dispatched = True
+            if operation.active and not operation.retired:
+                if event.kind == "requested" and operation.phase == "queued":
+                    operation.phase = "requested"
+                elif event.kind == "accepted" and operation.phase in ("queued", "requested"):
+                    operation.phase = "accepted"
+            return
+        if (
+            not operation.active
+            or operation.retired
+            or self._owner is None
             or now >= operation.deadline
         ):
             return
-        allow_missing = operation.kind == "forget" and operation.phase != "confirm"
+        allow_missing = operation.kind == "forget"
         if not self._current_target(operation, allow_missing=allow_missing):
             return
-        if event.kind == "requested":
-            operation.dispatched = True
-            if operation.phase == "queued":
-                operation.phase = "requested"
-        elif event.kind == "accepted":
-            operation.dispatched = True
-            if operation.phase in ("queued", "requested"):
-                operation.phase = "accepted"
-        elif event.kind == "challenge" and operation.kind == "pair":
+        if event.kind == "challenge" and operation.kind == "pair":
             self._challenge(event.challenge, operation, now)
-        elif event.kind == "finished":
-            # Only the dedicated property event can assert observed truth.
-            code = event.code if event.code in _ERRORS else "uncertain"
-            self._finish(code)
-        elif event.kind == {
-            "pair": "paired",
-            "connect": "connected",
-            "disconnect": "disconnected",
-        }.get(operation.kind):
-            device = self._device(operation.device_id)
-            observed = {
-                "paired": device.paired,
-                "connected": device.connected,
-                "disconnected": not device.connected,
-            }[event.kind]
-            if observed:
-                self._finish(observed=True)
-        elif (
-            event.kind == "forgotten"
-            and operation.kind == "forget"
-            and operation.phase != "confirm"
+        elif event.kind == _OBSERVATIONS.get(operation.kind):
+            # One fixed-kind observation, not a history. Always require a sample
+            # taken AFTER consumption; snapshot() may have returned an older DTO
+            # while publishing this very callback. Duplicates cannot delay it.
+            if operation.pending_observation is None:
+                operation.pending_observation = event.kind
+                operation.pending_generation = self._inventory_generation
+
+    def _resolve_observation(self, now):
+        operation = self._operation
+        if (
+            not self._history_ok()
+            or operation is None
+            or operation.pending_observation is None
+            or operation.retired
+            or self._owner is None
+            or now >= self._lease_deadline
+            or now >= operation.deadline
+            or self._inventory_generation <= operation.pending_generation
+            or not self._current_target(operation, allow_missing=operation.kind == "forget")
         ):
-            # Interface removal is proof; method acceptance or missing inventory is not.
-            if self._device(operation.device_id) is not None:
-                return
-            self._finish(observed=True)
+            return
+        device = self._device(operation.device_id)
+        if operation.kind == "forget":
+            proven = device is None
+        else:
+            proven = (
+                device is not None
+                and {
+                    "pair": device.paired,
+                    "connect": device.connected,
+                    "disconnect": not device.connected,
+                }[operation.kind]
+            )
+        if not proven:
+            return
+        error = operation.transport_result if operation.transport_result in _ERRORS else ""
+        self._finish(error, observed=True)
+        if operation.kind == "forget":
+            # Both the exact removal EVENT and later matching snapshot are
+            # necessary. Retirement clears the pending proof; absence alone is
+            # never enough, and a later uncertain reply cannot undo physical truth.
             remote = self._config["remote"] if self._config_ok else None
             if remote and remote["identity"] == operation.identity:
-                if self._save({"remote": None}, operation.revision) is not None:
+                if (
+                    self._save({"remote": None}, operation.revision) is not None
+                    and not self._failed
+                ):
                     operation.error = "save_failed"
 
     def _challenge(self, challenge, operation, now):
@@ -595,7 +705,11 @@ class BluetoothManager:
             operation.challenge["entered"] = entered
 
     def _save(self, section, revision):
+        if not self._history_ok():
+            return "unavailable"
         self._load_config()
+        if not self._history_ok():
+            return "unavailable"
         if not self._config_ok:
             return "save_failed"
         if revision != self._revision:
@@ -603,8 +717,11 @@ class BluetoothManager:
         if self._owner is None or self._clock() >= self._lease_deadline:
             self._retire_owner("expired")
             return "unavailable" if self._failed else "expired"
+        candidate = validate_bluetooth(section)
+        if not self._history_ok():
+            return "unavailable"
         try:
-            self._save_config(validate_bluetooth(section))
+            self._save_config(candidate)
         except Exception:
             return "save_failed"
         self._load_config()
@@ -625,6 +742,7 @@ class BluetoothManager:
         return ""
 
     def _state(self):
+        self._history_ok()
         adapter = self._adapter()
         remote = self._config["remote"] if self._config else None
         devices = [d for d in self._devices() if adapter and d.adapter_id == adapter.id]
@@ -697,11 +815,19 @@ class BluetoothManager:
             return self._state()
 
     def _reply(self, status=200, error=None, *, private=False):
+        if not self._history_ok():
+            status, error, private = 503, "unavailable", False
         envelope = {"state": self._state()}
         if error:
             envelope["error"] = error
         operation = self._operation
-        if private and operation and operation.active:
+        if (
+            private
+            and self._history_ok()
+            and self._owner is not None
+            and operation
+            and operation.active
+        ):
             if operation.challenge:
                 challenge = dict(operation.challenge)
                 deadline = challenge.pop("deadline")
@@ -709,6 +835,8 @@ class BluetoothManager:
                 envelope["challenge"] = challenge
             if operation.confirmation:
                 envelope["confirmation_id"] = operation.confirmation
+        if not self._history_ok():
+            return 503, {"state": self._state(), "error": "unavailable"}
         return status, envelope
 
     def request(self, principal, dto):
@@ -728,8 +856,10 @@ class BluetoothManager:
                 self._lease = uuid.uuid4().hex
                 self._lease_deadline = self._clock() + 15
                 status, result = self._reply()
-                result["lease"] = self._lease
-                return status, result
+                if status == 200 and self._history_ok():
+                    result["lease"] = self._lease
+                    return status, result
+                return self._reply(503, "unavailable")
             if self._owner is None or dto["lease"] != self._lease:
                 return self._reply(409, "stale")
             if principal != self._owner:
