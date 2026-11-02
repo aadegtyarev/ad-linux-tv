@@ -1,6 +1,6 @@
 # Bluetooth devices and remote key settings
 
-Status: scope approved by the operator on 2026-11-02; runtime baseline qualified, implementation pending.
+Status: scope approved by the operator on 2026-11-02; runtime baseline qualified, implementation in progress. Privileged input implementation/provisioning remains gated on independent design/source review.
 
 ## Goal and visible behavior
 
