@@ -45,3 +45,37 @@ test("phone actions share one ordered socket and do not replay after disconnect"
     global.WebSocket = previous;
   }
 });
+
+test("optional onClose fires once only for an opened connection after pending cleanup, never first empty close", async () => {
+  const previous = global.WebSocket;
+  const sockets = [];
+  class FakeSocket {
+    static OPEN = 1;
+    constructor() { this.readyState = 0; sockets.push(this); }
+    close() { this.readyState = 3; this.onclose?.(); }
+    send() {}
+    open() { this.readyState = 1; this.onopen(); }
+  }
+  global.WebSocket = FakeSocket;
+  try {
+    const notices = [];
+    const transport = new RemoteTransport({href:"http://127.0.0.1:8765/remote"}, {onClose() {
+      notices.push({pending:transport.pending.size,socket:transport.socket});
+    }});
+    transport.close(); transport.close();
+    assert.deepEqual(notices, []);
+    const request = transport.request("csrf", "POST", "/api/bluetooth", {op:"acquire"});
+    sockets[0].open(); await new Promise(resolve => setImmediate(resolve));
+    sockets[0].close();
+    await assert.rejects(request, /closed/);
+    assert.deepEqual(notices, [{pending:0,socket:null}]);
+    transport.close(); sockets[0].onclose(); sockets[0].onerror();
+    assert.equal(notices.length, 1);
+    const failedConnect = transport.connect("csrf"); sockets[1].close();
+    await assert.rejects(failedConnect, /closed/);
+    assert.equal(notices.length, 1, "a never-opened attempt has no privileged lifetime");
+    const connected = transport.connect("csrf"); sockets[2].open(); await connected;
+    assert.equal(sockets.length, 3, "no callback creates reconnect or replay");
+    transport.close(); assert.equal(notices.length, 2);
+  } finally { global.WebSocket = previous; }
+});

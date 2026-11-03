@@ -9,6 +9,7 @@ from pathlib import Path
 import yaml
 
 from .audio import OUTPUT_ID
+from .bluetooth_schema import validate_bluetooth
 from .browser_locale import validate_browser
 from .config_errors import ConfigurationError
 from .discovery import validate_discovery
@@ -39,6 +40,7 @@ def load_config(path):
                 "magnifier",
                 "view",
                 "browser",
+                "bluetooth",
             }
         ):
             raise ConfigurationError("expected bind, port, page_size, auth and services")
@@ -99,6 +101,11 @@ def load_config(path):
                 data["view"] = validate_view(data["view"])
             except ValueError as exc:
                 raise ConfigurationError(str(exc)) from None
+        if "bluetooth" in data:
+            try:
+                data["bluetooth"] = validate_bluetooth(data["bluetooth"])
+            except ValueError:
+                raise ConfigurationError("invalid Bluetooth configuration") from None
         if "browser" in data:
             try:
                 data["browser"] = validate_browser(data["browser"])

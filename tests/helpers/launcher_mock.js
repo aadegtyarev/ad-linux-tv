@@ -45,6 +45,12 @@ function launcher({hostname = "192.168.1.4", pinRequired = true} = {}) {
     button.dataset.timer = String(minutes);
     return button;
   });
+  elements["#settings"].querySelectorAll = () => [
+    elements["#settings-back"], elements["#audio-output"], elements["#audio-volume"],
+    elements["#audio-mute"], elements["#audio-refresh"], elements["#audio-test"],
+    elements["#tv-browser-volume"], elements["#tv-browser-mute"], elements["#tv-player-volume"],
+    ...timerButtons, elements["#open-kde"],
+  ];
   elements["#settings"].hidden = true;
   elements["#tv-browser-mute"].disabled = true;
   elements["#confirm-kde"].hidden = true;

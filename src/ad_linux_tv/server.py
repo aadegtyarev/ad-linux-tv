@@ -12,6 +12,9 @@ from urllib.parse import parse_qs, urlparse
 from . import security
 from .apk_download import APK_ROUTE, ApkDownload
 from .auth_state import RateLimiter, Sessions
+from .bluetooth_bluez import BluezTransport
+from .bluetooth_manager import BluetoothManager
+from .bluetooth_routes import handle_bluetooth
 from .control import CommandQueue
 from .discovery import device_identity
 from .host_power import HostPowerControl
@@ -46,12 +49,19 @@ def make_handler(config, config_path=None):
         pin_file=pin_file,
         capabilities=queue.browser_media.capabilities,
     )
+    bluetooth = BluetoothManager(
+        transport=BluezTransport(),
+        get_config=settings.bluetooth_config,
+        save_config=settings.set_bluetooth,
+        enabled=os.environ.get("AD_LINUX_TV_KIOSK") == "1",
+    )
     failures = RateLimiter()
     static = Path(__file__).parent / "static"
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         host_power = power_control
+        bluetooth_manager = bluetooth
 
         def setup(self):
             super().setup()
@@ -134,6 +144,8 @@ def make_handler(config, config_path=None):
                 raise BodyTimeout from exc
 
         def do_GET(self):
+            if self.path == "/api/bluetooth":
+                return handle_bluetooth(self, sessions, "GET")
             if self.path == APK_ROUTE:
                 return apk_download.serve(self)
             if urlparse(self.path).path == "/api/device":

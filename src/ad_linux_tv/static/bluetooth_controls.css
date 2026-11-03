@@ -1,0 +1,81 @@
+.bluetooth-controls {
+  --bt-border: #496079;
+  --bt-panel: #172738;
+  color: #f1f6fc;
+  background: #101d2b;
+  border: 1px solid var(--bt-border);
+  border-radius: 16px;
+  padding: clamp(16px, 2vw, 28px);
+  font-size: clamp(17px, 1.6vw, 23px);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.bluetooth-controls h3,
+.bluetooth-controls h4 { margin: 0.8em 0 0.5em; line-height: 1.25; }
+.bluetooth-controls h3:first-child { margin-top: 0; }
+.bluetooth-controls p { margin: 0.55em 0 0.85em; }
+.bluetooth-controls .bt-feedback { color: #ffe0a0; }
+.bluetooth-controls .bt-feedback:empty:not(.bt-focus-anchor) { display: none; }
+/* Programmatic focus must survive pending renders even with empty feedback. */
+.bluetooth-controls .bt-focus-anchor { min-height: 1px; }
+.bluetooth-controls .bt-devices { display: grid; gap: 10px; margin-block: 16px; }
+.bluetooth-controls .bt-device,
+.bluetooth-controls .bt-binding {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 12px;
+  background: var(--bt-panel);
+  border: 1px solid var(--bt-border);
+  border-radius: 12px;
+  margin-block: 8px;
+}
+.bluetooth-controls .bt-device > span,
+.bluetooth-controls .bt-binding > span { flex: 1 1 180px; }
+.bluetooth-controls .bt-device > button { flex: 1 1 220px; text-align: start; }
+.bluetooth-controls .bt-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.bluetooth-controls button,
+.bluetooth-controls select,
+.bluetooth-controls input {
+  box-sizing: border-box;
+  min-height: 48px;
+  max-width: 100%;
+  border: 2px solid #708ba6;
+  border-radius: 9px;
+  padding: 10px 14px;
+  color: #f1f6fc;
+  background: #243d55;
+  font: inherit;
+  line-height: 1.25;
+}
+.bluetooth-controls button { white-space: normal; cursor: pointer; margin: 4px 6px 4px 0; }
+.bluetooth-controls button[aria-pressed="true"] { border-color: #a7dcff; background: #275c80; }
+.bluetooth-controls button:enabled:hover { background: #315979; }
+.bluetooth-controls button:enabled:active { background: #406e90; }
+.bluetooth-controls button:focus-visible,
+.bluetooth-controls select:focus-visible,
+.bluetooth-controls input:focus-visible { outline: 4px solid #ffd16c; outline-offset: 3px; }
+.bluetooth-controls :disabled { opacity: 0.55; cursor: default; }
+.bluetooth-controls label { display: grid; gap: 8px; margin-block: 14px; }
+.bluetooth-controls select { width: 100%; }
+.bluetooth-controls input { width: min(100%, 360px); }
+.bluetooth-controls .bt-challenge,
+.bluetooth-controls .bt-confirm {
+  border: 2px solid #d8b368;
+  background: #2a2d32;
+  border-radius: 12px;
+  padding: 16px;
+  margin-block: 18px;
+}
+.bluetooth-controls .bt-passkey { display: block; font-size: 1.8em; letter-spacing: 0.15em; }
+.bluetooth-controls [hidden] { display: none !important; }
+@media (max-width: 540px) {
+  .bluetooth-controls { padding: 14px; }
+  .bluetooth-controls .bt-buttons > button { flex: 1 1 150px; }
+  .bluetooth-controls .bt-binding > button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bluetooth-controls * { scroll-behavior: auto; }
+}

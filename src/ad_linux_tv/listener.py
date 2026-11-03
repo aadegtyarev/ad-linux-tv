@@ -64,13 +64,15 @@ def serve(config, config_path=None):
     handler = make_handler(config, config_path)
     worker_slots = Semaphore(32)
     servers, background = [], []
-    discovery = DiscoveryAnnouncer(config)
+    discovery = None
     try:
+        discovery = DiscoveryAnnouncer(config)
         servers.append(make_server(str(address), config["port"], handler, worker_slots))
         if str(address) != "127.0.0.1" and not (address.version == 4 and address.is_unspecified):
             servers.append(make_server("127.0.0.1", config["port"], handler, worker_slots))
         for listener in servers:
             listener.discovery = discovery
+        handler.bluetooth_manager.start()
         for listener in servers[1:]:
             Thread(target=listener.serve_forever, daemon=True).start()
             background.append(listener)
@@ -92,9 +94,15 @@ def serve(config, config_path=None):
         servers[0].serve_forever()
     finally:
         try:
-            discovery.close()
+            handler.bluetooth_manager.close()
         finally:
-            for listener in background:
-                listener.shutdown()
-            for listener in servers:
-                listener.server_close()
+            try:
+                if discovery is not None:
+                    discovery.close()
+            finally:
+                try:
+                    for listener in background:
+                        listener.shutdown()
+                finally:
+                    for listener in servers:
+                        listener.server_close()

@@ -6,6 +6,7 @@ import subprocess
 from urllib.parse import urlparse
 
 from . import audio
+from .bluetooth_routes import handle_bluetooth
 from .config import verify_pin
 from .control import QueueFullError
 from .host_power import PowerError
@@ -16,6 +17,8 @@ from .settings import SettingsError, kde_available
 
 def handle_post(handler, config, queue, sessions, failures, display_timer, settings=None):
     path = urlparse(handler.path).path
+    if handler.path == "/api/bluetooth":
+        return handle_bluetooth(handler, sessions, "POST")
     if path == "/extension/ack":
         return handle_ack(handler, queue)
     if path == "/extension/media":
@@ -137,7 +140,28 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
         ):
             return handler.send(403, "{}")
         try:
-            return handler.send(200, json.dumps(settings.update(handler.read_payload())))
+            action = handler.read_payload()
+            invalidated = False
+            try:
+                # Sample this update only, not a concurrent PIN change while reading
+                # the body or waiting for the existing reentrant settings lock.
+                with settings.lock:
+                    auth_tag = sessions.auth_tag
+                    try:
+                        state = settings.update(action)
+                    finally:
+                        invalidated = (
+                            isinstance(action, dict)
+                            and action.get("setting") == "pin"
+                            and sessions.auth_tag != auth_tag
+                        )
+            finally:
+                # Never invert settings -> manager -> settings lock ordering.
+                if invalidated:
+                    manager = getattr(handler, "bluetooth_manager", None)
+                    if manager is not None:
+                        manager.retire_phones()
+            return handler.send(200, json.dumps(state))
         except OverflowError:
             return handler.send(413, "{}")
         except BodyTimeout:

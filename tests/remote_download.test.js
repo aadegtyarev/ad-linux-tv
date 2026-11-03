@@ -39,7 +39,7 @@ function fixture({fragment = "", session = false, appInfo, navigator} = {}) {
     setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},
     window:{location:{href:`http://192.168.1.111:8765/remote${fragment}`,replace(){throw Error("redirect");}},
       adLinuxTvAppInfo:appInfo,addEventListener(){},scrollTo(){}},
-    document:{querySelector:s=>s==="#phone-settings-controls" ? null : one(s),querySelectorAll:all,
+    document:{querySelector:s=>["#phone-settings-controls", "#phone-bluetooth-controls"].includes(s) ? null : one(s),querySelectorAll:all,
       addEventListener(name,fn){ (events[name] ||= []).push(fn); },createElement:()=>({})},
     fetch:async(path,options)=>{ bootstrap.push({path,options}); return {ok:session,status:session?200:401,json:async()=>({csrf:"fixture-only"})}; },
     // These collaborators are inert: assertions target actual remote orchestration,
