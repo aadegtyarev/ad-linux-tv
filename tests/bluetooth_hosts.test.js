@@ -36,6 +36,21 @@ for (const kind of ["tv", "phone"]) test(`${kind}: shared Bluetooth panel shows 
   assert.ok(ui.root.textContent.includes("Remote (псевдоним: Nickname)"));
 });
 
+for (const kind of ["tv", "phone"]) test(`${kind}: Bluetooth management remains without remote mapping controls`, async () => {
+  const ui = host(kind); await settle();
+  ui.state.remote = {device_id:"device", connected:true, input_available:false, reason:"helper_unavailable", bindings:{KEY_ENTER:"ok"}};
+  ui.state.devices[0].selected = true;
+  ui.run(kind === "tv" ? "openSettings()" : 'showPage("settings")'); ui.toggle(true); await settle();
+  const keys = ui.root.querySelectorAll("button, input, select").map(n => n.dataset.btKey);
+  for (const removed of ["select_remote", "action", "learn", "test", "bind", "reset", "unmap:KEY_ENTER"])
+    assert.ok(!keys.includes(removed), removed);
+  assert.ok(keys.includes("discover"));
+  assert.ok(keys.includes("disconnect"));
+  assert.ok(keys.includes("forget_prepare"));
+  assert.deepEqual(ui.ops(), ["acquire"]);
+  assert.deepEqual(ui.state.remote.bindings, {KEY_ENTER:"ok"});
+});
+
 test("TV: dynamic rendered actions exclude detached, disabled, closed and hidden nodes", async () => {
   const ui = host("tv"); await settle(); ui.run("openSettings()");
   const summary = ui.details.querySelector("summary");
@@ -66,7 +81,7 @@ test("TV: text/password caret, up/down navigation, Back/F8 and reserved F9/F12 s
   for (const role of ["pin", "proxy-host"]) {
     const field = ui.one(`[data-role="${role}"]`); field.focus();
     assert.equal(ui.document.activeElement, field);
-    for (const key of ["ArrowLeft", "ArrowRight"]) {
+    for (const key of ["ArrowLeft", "ArrowRight", "Home", "BrowserHome"]) {
       assert.ok(!ui.event("keydown", {key}).prevented);
       assert.equal(ui.document.activeElement, field);
     }

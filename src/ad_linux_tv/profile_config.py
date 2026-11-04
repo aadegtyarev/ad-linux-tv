@@ -1,4 +1,4 @@
-"""Derived view and language preferences in the dedicated TV Firefox profile only."""
+"""Derived view, language and homepage preferences for the dedicated TV profile."""
 
 import sys
 from pathlib import Path
@@ -10,6 +10,8 @@ from .view_config import view_fingerprint
 
 BEGIN = "// BEGIN AD-LINUX-TV VIEW"
 END = "// END AD-LINUX-TV VIEW"
+HOME_BEGIN = "// BEGIN AD-LINUX-TV HOME"
+HOME_END = "// END AD-LINUX-TV HOME"
 
 
 def prepare_view_profile(config, path):
@@ -35,6 +37,16 @@ def prepare_locale_profile(config, path):
         atomic_write(path, text)
 
 
+def prepare_home_profile(path):
+    """Set Firefox's browser-home destination in the dedicated profile only."""
+    path = Path(path)
+    old = path.read_text() if path.exists() else ""
+    body = 'user_pref("browser.startup.homepage", "http://127.0.0.1:8765/");\n'
+    text = replace_block(old, HOME_BEGIN, HOME_END, body)
+    if text != old:
+        atomic_write(path, text)
+
+
 def main():
     try:
         if len(sys.argv) != 3:
@@ -42,6 +54,7 @@ def main():
         config = load_config(sys.argv[1])
         prepare_view_profile(config, sys.argv[2])
         prepare_locale_profile(config, sys.argv[2])
+        prepare_home_profile(sys.argv[2])
         print(view_fingerprint(config))
     except (OSError, ValueError):
         print("Cannot prepare dedicated TV profile preferences", file=sys.stderr)

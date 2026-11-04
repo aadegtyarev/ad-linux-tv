@@ -39,10 +39,12 @@ TV **System** and phone **Menu → Settings** contain PIN, proxy, browser langua
 
 ### Bluetooth adapter
 
-Open **Bluetooth и кнопки пульта** in TV or phone settings. Choose a detected adapter by its BlueZ name and address suffix; names may be missing or identical, and list numbers can change. To identify a USB stick when names are ambiguous, compare the list before and after plugging it in. If the chosen adapter is off, use **Включить выбранный адаптер** and wait for its observed state. The system may deny the request.
+Open **Bluetooth** in TV or phone settings. Choose a detected adapter by its BlueZ name and address suffix; names may be missing or identical, and list numbers can change. To identify a USB stick when names are ambiguous, compare the list before and after plugging it in. If the chosen adapter is off, use **Включить выбранный адаптер** and wait for its observed state. The system may deny the request.
 
 A chosen adapter is remembered. If it disappears, the panel reports it missing rather than silently using another; it becomes available again when that adapter returns. **Автоматически** restores the former automatic behavior. Finish or cancel discovery or pairing before switching. The device list shows the Bluetooth name and, when different, its alias; either may appear later during discovery. An alias can look like an address and does not establish device identity. Selection does not disable another adapter, disconnect devices, remove or transfer Bluetooth pairings, or change other applications' controller choice. Devices paired through another adapter may require separate pairing; do not forget an existing bond just to switch adapters.
 
-The management interface does **not** yet provide working physical remote-button mapping or input capture. Adapter switching and pairing with actual hardware still need verification; a displayed name does not prove whether an adapter is USB or built in.
+The Bluetooth panel does not configure or intercept physical remote buttons. Existing saved mappings are not automatically deleted; explicitly forgetting their associated device can remove its saved mappings. Adapter switching and pairing with actual hardware still need verification; a displayed name does not prove whether an adapter is USB or built in.
+
+The dedicated TV Firefox profile prepares the media-center launcher as its browser homepage at startup. Firefox's own Home action (including Alt+Home) can then open it from a site; this may navigate the current tab and does not invoke the bridge's separate Home command. Ordinary text-editing Home is not intercepted. Whether the physical remote button reaches Firefox's browser-home action depends on the system and focus and remains untested.
 
 Site playback, login and DRM depend on Firefox and the site.

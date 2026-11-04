@@ -131,12 +131,6 @@ function panel(state = snapshot()) {
   ui.poll = async (nextState, extras = {}, status = 200) => { if (nextState) ui.reply(nextState, extras, status); await clock.tick(5000); };
   return ui;
 }
-async function learning(extras = {}) {
-  const ui = await panel().start();
-  const state = snapshot({operation: operation("learn")});
-  ui.reply(state, {observation: {id: "observation", key: "KEY_PLAYPAUSE", action: "ok", complete: true, tested: false, ...extras}});
-  await ui.click("learn"); return ui;
-}
 async function pairing(kind, extras = {}) {
   const ui = await panel().start();
   const state = snapshot({operation: operation("pair")});
@@ -167,7 +161,6 @@ test("BluetoothControls catalogues match parent-owned schema exactly", () => {
 for (const [key, op, deviceChanges] of [
   ["pair", "pair", {paired: false, connected: false}],
   ["connect", "connect", {connected: false}], ["disconnect", "disconnect", {}],
-  ["select_remote", "select_remote", {selected: false}],
 ]) test(`BluetoothControls ${op} sends only frozen selected-device DTO`, async () => {
   const state = snapshot(); Object.assign(state.devices[0], deviceChanges);
   const ui = await panel(state).start(); await ui.click("device:device");
@@ -181,7 +174,7 @@ test("BluetoothControls discover and cancel are explicit bounded operation DTOs"
   ui.reply(snapshot({operation: operation("discover"), adapter: {id: "adapter", powered: true, discovering: true}}), {}, 202);
   await ui.click("discover"); assert.deepEqual(lastBody(ui), {op: "discover", lease});
   assert.match(ui.root.textContent, /Поиск устройств идёт/);
-  assert.equal(ui.find("learn").disabled, true);
+  assert.equal(ui.find("learn"), undefined);
   await ui.click("cancel");
   assert.deepEqual(lastBody(ui), {op: "cancel", lease, operation_id: "operation"});
 });
@@ -285,53 +278,14 @@ test("BluetoothControls replacement operation cannot retain challenge draft or o
   assert.equal(lastBody(ui).operation_id, "replacement"); assert.equal(lastBody(ui).challenge_id, "new-challenge");
 });
 
-// Staged observations are server-owned; no printable-key textbox or inferred ACK success.
-test("BluetoothControls learn selects a fixed action and uses server observation for once-only test and bind", async () => {
-  const ui = await panel().start(); const selector = ui.find("action"); selector.value = "play_pause"; selector.onchange();
-  const state = snapshot({operation: operation("learn")});
-  const observation = {id: "observation", key: "KEY_PLAYPAUSE", action: "play_pause", complete: true, tested: false};
-  ui.reply(state, {observation}); await ui.click("learn");
-  assert.deepEqual(lastBody(ui), {op: "learn", lease, action: "play_pause"});
-  assert.equal(ui.calls.filter(call => call.body?.op === "test").length, 0);
-  ui.reply(state, {observation}, 202); await ui.click("test");
-  assert.deepEqual(lastBody(ui), {op: "test", lease, operation_id: "operation", observation_id: "observation"});
-  assert.equal(ui.find("test").disabled, true);
-  await ui.poll(state, {observation}); assert.equal(ui.find("test").disabled, true);
-  ui.reply(snapshot({revision: 8})); await ui.click("bind");
-  assert.deepEqual(lastBody(ui), {op: "bind", lease, operation_id: "operation", observation_id: "observation"});
-  assert.equal(ui.controls.state.revision, 8); assert.equal(ui.find("bind"), undefined);
-});
-test("BluetoothControls incomplete learning cannot test or save", async () => {
-  const ui = await learning({complete: false}); assert.equal(ui.find("test").disabled, true);
-  assert.equal(ui.find("bind").disabled, true); assert.match(ui.root.textContent, /Отпустите кнопку/);
-});
-test("BluetoothControls already-tested observation cannot test again", async () => {
-  const ui = await learning({tested: true}); assert.equal(ui.find("test").disabled, true);
-});
-for (const changes of [{key: "KEY_A"}, {action: "shutdown"}, {key: "<script>"}, {complete: "true"}])
-  test(`BluetoothControls rejects unsafe observation ${JSON.stringify(changes)}`, async () => {
-    const ui = await learning(changes); assert.equal(ui.controls.observation, null); assert.equal(ui.find("test"), undefined);
-    assert.equal(ui.root.querySelector("input"), null);
-  });
-test("BluetoothControls bind attempt does not replay when server keeps the old observation", async () => {
-  const ui = await learning(); const state = snapshot({operation: operation("learn")});
-  const observation = clone(ui.controls.observation); delete observation.operation_id;
-  ui.reply(state, {observation}, 202); await ui.click("bind");
-  assert.equal(ui.find("bind").disabled, true);
-  await ui.poll(state, {observation}); assert.equal(ui.find("bind").disabled, true);
-});
-test("BluetoothControls reset and unmap carry current saved revision and no arbitrary key", async () => {
+test("BluetoothControls preserves saved mappings without exposing or mutating them", async () => {
   const ui = await panel().start();
-  ui.reply(snapshot({revision: 8})); await ui.click("unmap:KEY_ENTER");
-  assert.deepEqual(lastBody(ui), {op: "unmap", lease, key: "KEY_ENTER", revision: 7});
-  await ui.click("reset"); assert.deepEqual(lastBody(ui), {op: "reset", lease, revision: 8});
-});
-test("BluetoothControls revision mismatch displays current bindings without retry", async () => {
-  const ui = await panel().start(); const state = snapshot({revision: 9}); state.remote.bindings = {KEY_BACK: "back"};
-  ui.reply(state, {error: "revision_mismatch"}, 409); await ui.click("reset");
-  assert.equal(ui.find("unmap:KEY_ENTER"), undefined); assert.ok(ui.find("unmap:KEY_BACK"));
-  assert.match(ui.root.textContent, /Назначения изменились/);
-  await ui.poll(); assert.equal(ui.calls.filter(call => call.body?.op === "reset").length, 1);
+  for (const key of ["action", "learn", "test", "bind", "reset", "unmap:KEY_ENTER", "select_remote"])
+    assert.equal(ui.find(key), undefined);
+  assert.deepEqual(clone(ui.controls.state.remote.bindings), {KEY_ENTER: "ok"});
+  await ui.poll();
+  assert.deepEqual(clone(ui.controls.state.remote.bindings), {KEY_ENTER: "ok"});
+  assert.ok(!ui.calls.some(call => ["select_remote", "learn", "bind", "unmap", "reset"].includes(call.body?.op)));
 });
 
 // Lease, sequencing, auth and lifecycle failure matrix.
@@ -427,23 +381,17 @@ test("BluetoothControls renders hostile names as text and translates unknown err
 for (const [changes, message] of [
   [{available: false, reason: "helper_unavailable"}, /администратору/],
   [{adapter: null}, /недоступен/], [{adapter: {id: "adapter", powered: false, discovering: false}}, /выключен/],
-  [{remote: {device_id: null, connected: false, input_available: false, reason: "unsupported", bindings: {}}}, /не поддерживается/],
 ]) test(`BluetoothControls truthful availability ${JSON.stringify(changes)}`, async () => {
   const ui = await panel(snapshot(changes)).start(); assert.match(ui.root.textContent, message);
-  assert.equal(ui.find("learn").disabled, true);
+  assert.equal(ui.find("learn"), undefined);
   if (changes.adapter !== undefined || changes.available === false) assert.equal(ui.find("discover").disabled, true);
 });
-test("BluetoothControls candidate selection initiates attachment validation, but learning needs verified input", async () => {
-  const state = snapshot(); state.devices[0].selected = false; state.devices[0].input_available = false;
-  state.remote.input_available = false;
+test("BluetoothControls never offers physical remote selection", async () => {
+  const state = snapshot(); state.devices[0].selected = false;
   const ui = await panel(state).start(); await ui.click("device:device");
-  assert.equal(ui.find("select_remote").disabled, false); assert.equal(ui.find("learn").disabled, true);
-  ui.reply({...state, operation: operation("select_remote", {phase: "accepted"})}, {}, 202);
-  await ui.click("select_remote");
-  assert.deepEqual(lastBody(ui), {op: "select_remote", lease, device_id: "device"});
-  assert.equal(ui.controls.state.devices[0].selected, false);
-  assert.match(ui.root.textContent, /Запрос принят/);
-  assert.equal(ui.find("learn").disabled, true);
+  assert.equal(ui.find("select_remote"), undefined);
+  assert.equal(ui.find("learn"), undefined);
+  assert.equal(ui.calls.filter(call => call.body?.op === "select_remote").length, 0);
 });
 test("BluetoothControls actions are visible enabled display order, update callback and semantic focus", async () => {
   const ui = await panel().start(); const external = ui.document.createElement("button"); ui.document.body.append(external); external.focus();
@@ -527,21 +475,6 @@ for (const change of [state => { state.devices[0].connected = "true"; }, state =
     assert.equal(ui.calls.length, 1);
   });
 
-for (const change of [
-  state => { state.devices = []; state.remote.device_id = null; },
-  state => { state.remote.input_available = false; },
-  state => { state.remote.connected = false; },
-  state => { state.remote.device_id = "replacement"; },
-  state => { state.devices[0].input_available = false; },
-]) test("BluetoothControls learning retires on selected-device loss or attachment replacement", async () => {
-  const ui = await learning(); const state = snapshot({operation: operation("learn")}); change(state);
-  const observation = {id: "observation", key: "KEY_PLAYPAUSE", action: "ok", complete: true, tested: false};
-  const oldTest = ui.find("test"); await ui.poll(state, {observation});
-  assert.equal(ui.controls.observation, null); assert.equal(ui.find("test"), undefined);
-  const count = ui.calls.length; oldTest.onclick(); await settle(); assert.equal(ui.calls.length, count);
-  await ui.poll(snapshot({operation: operation("learn")}), {observation});
-  assert.equal(ui.find("test"), undefined, "same retired operation cannot recover private ownership");
-});
 test("BluetoothControls pairing target replacement within the same operation fences old secrets", async () => {
   const ui = await pairing("pin"); const old = ui.root.querySelector("input"); old.value = "SECRET";
   const state = snapshot({operation: operation("pair", {device_id: "replacement"})});
@@ -558,31 +491,6 @@ test("BluetoothControls owns descendants only, leaving mount attributes and outs
   assert.ok(ui.document.listeners.has(external)); assert.equal(ui.document.listeners.size, 1);
 });
 
-for (const error of ["unsupported", "helper_unavailable", "identity_unproven"])
-  test(`BluetoothControls rejected candidate ${error} preserves observed saved selection and bindings`, async () => {
-    const state = snapshot(); state.devices.push({id: "candidate", name: "Другой пульт", paired: true, connected: true,
-      selected: false, input_available: false});
-    const ui = await panel(state).start(); await ui.click("device:candidate");
-    ui.reply(state, {error}, 503); await ui.click("select_remote");
-    assert.deepEqual(lastBody(ui), {op: "select_remote", lease, device_id: "candidate"});
-    assert.equal(ui.controls.state.devices[0].selected, true);
-    assert.equal(ui.controls.state.devices[1].selected, false);
-    assert.equal(ui.controls.state.remote.device_id, "device");
-    assert.deepEqual(clone(ui.controls.state.remote.bindings), {KEY_ENTER: "ok"});
-    assert.ok(ui.root.textContent.includes(ui.controls.text(error)));
-  });
-for (const changes of [{paired: false}, {connected: false}, {selected: true}])
-  test(`BluetoothControls candidate selection is gated for ${JSON.stringify(changes)}`, async () => {
-    const state = snapshot(); Object.assign(state.devices[0], {selected: false, input_available: false}, changes);
-    const ui = await panel(state).start(); await ui.click("device:device");
-    assert.equal(ui.find("select_remote").disabled, true);
-  });
-for (const error of ["busy", "stale"])
-  test(`BluetoothControls lease ${error} disables even a paired connected eligible candidate`, async () => {
-    const state = snapshot(); state.devices[0].selected = false; state.devices[0].input_available = false;
-    const ui = panel(state); ui.reply(state); ui.reply(state, {error}, 409); await ui.start(); await ui.click("device:device");
-    assert.equal(ui.find("select_remote").disabled, true);
-  });
 
 // Review P1: authority is checked at actual invocation, not one microtask earlier.
 for (const cleanup of ["retire", "deactivate", "reactivate"]) {
@@ -683,7 +591,7 @@ test("BluetoothControls mutations at4/8/12s never debounce poll deadlines or ren
   const state = snapshot(); state.remote.bindings = {KEY_ENTER: "ok", KEY_UP: "up", KEY_DOWN: "down"};
   const ui = panel(state); const server = leaseServer(ui); await ui.start();
   for (const key of ["KEY_ENTER", "KEY_UP", "KEY_DOWN"]) {
-    await ui.clock.tick(4000); await ui.click(`unmap:${key}`);
+    await ui.clock.tick(4000); void ui.controls.mutate("unmap", {key, revision:ui.state.revision}); await settle();
   }
   await ui.clock.tick(4000);
   assert.deepEqual(server.log.filter(call => call.op === "unmap").map(call => call.at), [4000, 8000, 12000]);
@@ -694,7 +602,7 @@ test("BluetoothControls mutations at4/8/12s never debounce poll deadlines or ren
 });
 test("BluetoothControls seven-second mutation overlapping heartbeat is followed immediately by owner poll", async () => {
   const ui = panel(); const server = leaseServer(ui, {unmap: 7000}); await ui.start();
-  await ui.clock.tick(4000); await ui.click("unmap:KEY_ENTER");
+  await ui.clock.tick(4000); void ui.controls.mutate("unmap", {key:"KEY_ENTER", revision:7}); await settle();
   await ui.clock.tick(6999); assert.equal(server.log.filter(call => call.op === "poll").length, 0);
   assert.equal(server.expiresAt, 15000); assert.equal(ui.controls.pending, true);
   await ui.clock.tick(1);
@@ -717,13 +625,13 @@ for (const queued of [false, true]) test(`BluetoothControls overdue heartbeat ha
 });
 for (const status of [200, 202, 409, 503]) test(`BluetoothControls mutation HTTP${status} retaining ownership cannot postpone heartbeat`, async () => {
   const ui = await panel().start(); await ui.clock.tick(4000);
-  ui.reply(snapshot(), status >= 400 ? {error: "failed"} : {}, status); await ui.click("reset");
+  ui.reply(snapshot(), status >= 400 ? {error: "failed"} : {}, status); void ui.controls.mutate("reset", {revision:7}); await settle();
   await ui.clock.tick(1000);
   assert.equal(lastBody(ui).op, "poll"); assert.equal(ui.invocations.at(-1).at, 5000);
 });
 test("BluetoothControls priority poll revalidates queued revision rather than silently retrying mutation", async () => {
   const ui = await panel().start(); ui.clock.time = 6000;
-  ui.reply(snapshot({revision: 8})); await ui.click("reset");
+  ui.reply(snapshot({revision: 8})); void ui.controls.mutate("reset", {revision:7}); await settle();
   assert.equal(lastBody(ui).op, "poll"); assert.equal(ui.calls.filter(call => call.body?.op === "reset").length, 0);
   assert.match(ui.root.textContent, /Назначения изменились/);
 });
@@ -738,7 +646,7 @@ test("BluetoothControls priority poll cannot send an answer for a replacement ch
 });
 test("BluetoothControls priority poll stale lease suppresses queued mutation without reacquisition", async () => {
   const ui = await panel().start(); ui.clock.time = 6000;
-  ui.reply(snapshot(), {error: "stale"}, 409); await ui.click("reset");
+  ui.reply(snapshot(), {error: "stale"}, 409); void ui.controls.mutate("reset", {revision:7}); await settle();
   assert.equal(ui.controls.lease, null); assert.equal(lastBody(ui).op, "poll");
   assert.equal(ui.calls.filter(call => call.body?.op === "reset").length, 0);
   assert.equal(ui.calls.filter(call => call.body?.op === "acquire").length, 1);
@@ -765,7 +673,7 @@ test("BluetoothControls fake focus rejects CSS-hidden, disconnected, disabled an
   const plain = ui.document.createElement("p"); ui.document.body.append(plain); plain.focus(); assert.equal(ui.document.activeElement, outside);
   outside.disabled = true; ui.document.activeElement = ui.document.body; outside.focus(); assert.equal(ui.document.activeElement, ui.document.body);
 });
-for (const key of ["disconnect", "action", "answer:challenge"]) test(`BluetoothControls empty-feedback poll keeps rendered pending focus and restores ${key}`, async () => {
+for (const key of ["disconnect", "answer:challenge"]) test(`BluetoothControls empty-feedback poll keeps rendered pending focus and restores ${key}`, async () => {
   const ui = key.startsWith("answer") ? await pairing("pin") : await panel().start();
   const element = ui.find(key); element.focus(); assert.equal(ui.controls.message, "");
   if (element.tagName === "INPUT") element.value = "1234";
@@ -785,7 +693,7 @@ test("BluetoothControls successful blank response preserves pending focus after 
   assert.equal(ui.document.activeElement, ui.find("disconnect")); assert.equal(ui.controls.message, "");
 });
 test("BluetoothControls external focus acquired during a pending poll is not stolen by its reply", async () => {
-  const ui = await panel().start(); ui.find("action").focus();
+  const ui = await panel().start(); ui.find("disconnect").focus();
   const held = deferred(); ui.replies.push(() => held.promise); await ui.clock.tick(5000);
   const external = ui.document.createElement("button"); ui.document.body.append(external); external.focus();
   held.resolve(response(snapshot())); await settle(); assert.equal(ui.document.activeElement, external);
@@ -817,14 +725,14 @@ test("BluetoothControls actual dispatch rechecks authority after an integration 
   assert.equal(ui.calls.filter(call => call.body?.op === "select_remote").length, 0);
 });
 test("BluetoothControls focus remains on rendered anchor until the full Response body completes", async () => {
-  const ui = await panel().start(); ui.find("action").focus(); const body = deferred();
+  const ui = await panel().start(); ui.find("disconnect").focus(); const body = deferred();
   ui.replies.push(() => ({ok: true, status: 200, json: () => body.promise})); await ui.clock.tick(5000);
   assert.equal(ui.controls.pending, true); assert.equal(ui.document.activeElement.rendered(), true);
-  assert.equal(ui.document.activeElement.dataset.btKey, "action"); assert.equal(ui.document.activeElement.tagName, "P");
+  assert.equal(ui.document.activeElement.dataset.btKey, "disconnect"); assert.equal(ui.document.activeElement.tagName, "P");
   // A real browser Response.json() may require an event-loop turn, unlike a
   // resolved-Promise-only fixture wait. Restore only after the body is ready.
   await ui.clock.tick(1); body.resolve({state: snapshot()}); await settle();
-  assert.equal(ui.controls.pending, false); assert.equal(ui.document.activeElement, ui.find("action"));
+  assert.equal(ui.controls.pending, false); assert.equal(ui.document.activeElement, ui.find("disconnect"));
 });
 
 for (const kind of ["pair", "connect", "disconnect", "forget"]) test(`finished ${kind} with pending proof stays exclusive and cancellable without reviving private controls`, async () => {
