@@ -166,7 +166,7 @@ test("fullscreen container is eligible but fullscreen video and changed fullscre
   h.page.fullscreenElement=null;h.page.fire("fullscreenchange");assert.equal(h.active(),false);
 });
 
-test("clipping, padding, transform and closed shadow-root targets fail closed",async()=>{
+test("clipping, padding, transform and inaccessible roots fail closed",async()=>{
   for(const change of [h=>h.parentStyle.overflowX="hidden",h=>h.parentStyle.clipPath="inset(1px)",
     h=>h.videoStyle.paddingTop="2px",h=>h.parentStyle.clip="rect(0px, 200px, 200px, 0px)",
     h=>h.videoStyle.clip="rect(0px, 200px, 200px, 0px)",h=>h.parentStyle.transform="matrix(2,0,0,2,0,0)",
@@ -178,9 +178,10 @@ test("clipping, padding, transform and closed shadow-root targets fail closed",a
   }
 });
 
-test("embedded frames are rejected when outer geometry cannot be verified",async()=>{
+test("an accessible embedded frame can change only its selected video",async()=>{
   const h=makeHarness();h.view.top={};
-  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"4:3",true)).outcome,"unsupported");
+  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"4:3",true)).outcome,"applied");
+  assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"restored");
   assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
 });
 
@@ -189,6 +190,14 @@ test("open shadow player uses its own style layer and supports fullscreen hosts"
   root.appendChild=node=>{appended=true;h.page.head.appendChild(node);};
   h.video.getRootNode=()=>root;h.parent.parentElement=null;h.parent.getRootNode=()=>root;
   h.page.fullscreenElement=h.page.body;
+  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
+  assert.equal(appended,true);assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"restored");
+});
+
+test("an accessible closed shadow root can use its own style layer",async()=>{
+  const h=makeHarness(),root={mode:"closed",host:h.page.body};let appended=false;
+  root.appendChild=node=>{appended=true;h.page.head.appendChild(node);};
+  h.video.getRootNode=()=>root;h.parent.parentElement=null;h.parent.getRootNode=()=>root;
   assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
   assert.equal(appended,true);assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"restored");
 });

@@ -11,20 +11,24 @@ class VideoGeometryControls {
     this.mode = root.querySelector('[data-video="mode"]');
     this.mirror = root.querySelector('[data-video="mirror"]');
     this.applyButton = root.querySelector('[data-video="apply"]');
+    this.refreshButton = root.querySelector('[data-video="refresh"]');
     this.note = root.querySelector('[data-video="status"]');
     this.active = false;
     this.busy = false;
     this.epoch = 0;
     this.mediaId = null;
+    this.targetId = null;
     this.applyButton.onclick = () => void this.apply();
+    if (this.refreshButton) this.refreshButton.onclick = () => this.activate();
     this.render();
   }
 
   render() {
-    const disabled = !this.active || this.busy || !this.mediaId;
+    const disabled = !this.active || this.busy;
     this.mode.disabled = disabled;
     this.mirror.disabled = disabled;
-    this.applyButton.disabled = disabled;
+    this.applyButton.disabled = disabled || !this.mediaId;
+    if (this.refreshButton) this.refreshButton.disabled = disabled;
     this.root.setAttribute("aria-busy", String(this.busy));
   }
 
@@ -54,8 +58,13 @@ class VideoGeometryControls {
     void this.state(epoch).then(state => {
       if (!state || !this.current(epoch)) return;
       this.mediaId = state.available ? state.media_id : null;
+      if (this.mediaId !== this.targetId) {
+        this.targetId = this.mediaId;
+        this.mode.value = "original";
+        this.mirror.checked = false;
+      }
       this.note.textContent = this.mediaId ? "Выберите формат и зеркало, затем нажмите «Применить»." :
-        "Нет доступного видео или расширение нужно обновить.";
+        "Видео не найдено. Откройте ролик и нажмите «Обновить видео».";
       this.render();
     }).catch(() => {
       if (!this.current(epoch)) return;
@@ -83,7 +92,10 @@ class VideoGeometryControls {
     try {
       const state = await this.state(epoch);
       if (!state || !this.current(epoch)) return;
-      if (!state.available || state.media_id !== expected) throw new Error("changed");
+      if (!state.available || state.media_id !== expected) {
+        this.mediaId = null; this.targetId = null; this.mode.value = "original"; this.mirror.checked = false;
+        throw new Error("changed");
+      }
       const response = await this.request("POST", "/api/video-geometry", {
         action:"apply", media_id:expected, mode, mirror,
       });
@@ -104,19 +116,27 @@ class VideoGeometryControls {
           if (receipt?.id !== id || receipt.outcome !== "completed") throw new Error("unavailable");
           const latest = await this.state(epoch);
           if (!latest || !this.current(epoch)) return;
-          if (!latest.available || latest.media_id !== expected) throw new Error("changed");
-          this.note.textContent = "Настройка применена.";
-          this.notify("Настройка видео применена.", false);
+          if (!latest.available || latest.media_id !== expected) {
+            this.mediaId = null; this.targetId = null; this.mode.value = "original"; this.mirror.checked = false;
+            throw new Error("changed");
+          }
+          this.note.textContent = "Настройка применена в плеере. Проверьте изображение.";
+          this.notify("Настройка отправлена плееру. Проверьте изображение.", false);
           return;
         }
         if (result.status !== 202) throw new Error("unavailable");
         await new Promise(resolve => setTimeout(resolve, 350));
       }
       throw new Error("unconfirmed");
-    } catch (_) {
+    } catch (error) {
       if (!this.current(epoch)) return;
-      this.note.textContent = "Плеер не поддерживается или результат не подтверждён.";
-      this.notify("Не удалось изменить видео на этом плеере.", true);
+      if (error?.message === "changed") {
+        this.note.textContent = "Видео сменилось. Обновите видео и выберите настройки заново.";
+        this.notify("Видео сменилось; настройка не перенесена.", true);
+      } else {
+        this.note.textContent = "Плеер не поддерживается или результат не подтверждён.";
+        this.notify("Не удалось изменить видео на этом плеере.", true);
+      }
     } finally {
       if (this.current(epoch)) { this.busy = false; this.render(); }
     }

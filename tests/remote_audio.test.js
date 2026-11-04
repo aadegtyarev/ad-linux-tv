@@ -34,7 +34,7 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
     blur() {}
   }
   const ids = ["#close-text", "#remote-power", "#power-dialog", "#power-confirm", "#power-cancel", "#power-note", "#message", "#connecting", "#login-error", "#login", "#login-panel", "#controls", "#status", "#command-status", "#remote-touchpad", "#touch-indicator", "#touch-indicator-2", "#pin", "#pin-visibility",
-    "#history-back", "#remote-face", "#remote-keyboard-page", "#remote-timer-page", "#remote-menu-page", "#remote-settings-page", "#show-keyboard", "#show-timer", "#remote-timer-badge", "#show-menu", "#show-settings", "#back-to-menu", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
+    "#history-back", "#remote-face", "#remote-keyboard-page", "#remote-timer-page", "#remote-menu-page", "#remote-video-page", "#show-video", "#remote-settings-page", "#show-keyboard", "#show-timer", "#remote-timer-badge", "#show-menu", "#show-settings", "#back-to-menu", "#audio-output", "#audio-volume", "#audio-volume-value", "#audio-status",
     "#audio-mute", "#audio-refresh", "#audio-test", "#phone-output-volume", "#phone-output-value", "#phone-output-mute", "#phone-browser-volume", "#phone-browser-value", "#phone-browser-hint", "#phone-browser-mute", "#phone-player-volume", "#phone-player-value", "#phone-player-hint", "#media-panel", "#media-title", "#media-elapsed", "#media-duration", "#media-position", "#media-previous", "#media-play", "#media-next", "#text-form", "#remote-text", "#key-backspace", "#key-enter", "#key-tab", "#key-shift-tab", "#key-address", "#phone-timer-status", "#remote-share-page", "#show-share", "#share-qr", "#share-status", "#share-url", "#pad-tab", "#pad-shift-tab", "#pad-enter", "#touch-action-text", '[data-c="home"]'];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   elements["#remote-timer-badge"].hidden = true;
@@ -123,7 +123,11 @@ test("paired phone remote loads audio and sends bounded volume with CSRF", async
   assert.equal(elements["#controls"].hidden, false);
   assert.equal(elements["#login-panel"].hidden, true);
   const commandsBeforeTimer = calls.filter(call => call.url === "/api/command").length;
+  elements["#show-video"].onclick();
+  assert.equal(elements["#remote-video-page"].hidden, false);
+  assert.equal(elements["#remote-menu-page"].hidden, true);
   elements["#show-timer"].onclick();
+  assert.equal(elements["#remote-video-page"].hidden, true);
   assert.equal(elements["#remote-timer-page"].hidden, false);
   assert.equal(elements["#remote-face"].hidden, true);
   assert.equal(calls.filter(call => call.url === "/api/command").length, commandsBeforeTimer);

@@ -107,6 +107,10 @@ test("media follows Firefox capabilities and uses consistent vector controls", a
   assert.equal(isPlay(e["#media-play"]),true);
   const html = fs.readFileSync("src/ad_linux_tv/static/remote.html","utf8");
   assert.match(html, /id="media-play"[^>]*><svg/);
+  const panel=html.slice(html.indexOf('id="media-panel"'),html.indexOf('</section>',html.indexOf('id="media-panel"')));
+  assert.match(panel,/id="show-video"[^>]*aria-label="Настройки экрана текущего видео"/);
+  const menu=html.slice(html.indexOf('id="remote-menu-page"'),html.indexOf('id="remote-settings-page"'));
+  assert.doesNotMatch(menu,/phone-video-geometry|data-video=/);
   assert.doesNotMatch(html, /[⏸⏮⏭]/u);
   const css = fs.readFileSync("src/ad_linux_tv/static/style.css","utf8");
   assert.match(css, /@keyframes media-confirm-pulse/);

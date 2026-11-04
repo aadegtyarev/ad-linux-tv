@@ -29,9 +29,9 @@ function createVideoGeometryController(env) {
   function eligible(video, identity, isCurrent) {
     try {
       const root = video?.getRootNode();
-      if ((view.top && view.top !== view) || !video?.isConnected || video.tagName !== "VIDEO" ||
-          page.hidden || video.ownerDocument !== page ||
-          !(root === page || root?.mode === "open") || !video.currentSrc || !video.videoWidth || !video.videoHeight ||
+      if (!video?.isConnected || video.tagName !== "VIDEO" || page.hidden || video.ownerDocument !== page ||
+          !(root === page || root?.mode === "open" || root?.mode === "closed") ||
+          !video.currentSrc || !video.videoWidth || !video.videoHeight ||
           video.srcObject || video.mediaKeys || video.controls || page.fullscreenElement === video ||
           Array.from(video.textTracks || []).some(track => track.mode === "showing") ||
           !isCurrent(video, identity)) return false;

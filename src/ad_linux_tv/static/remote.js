@@ -502,6 +502,7 @@ const remoteFace = document.querySelector("#remote-face");
 const keyboardPage = document.querySelector("#remote-keyboard-page");
 const timerPage = document.querySelector("#remote-timer-page");
 const menuPage = document.querySelector("#remote-menu-page");
+const videoPage = document.querySelector("#remote-video-page");
 const sharePage = document.querySelector("#remote-share-page");
 const settingsPage = document.querySelector("#remote-settings-page");
 function showPage(page) {
@@ -510,9 +511,10 @@ function showPage(page) {
   if (page !== "remote") setTextEditor(false);
   timerPage.hidden = page !== "timer";
   menuPage.hidden = page !== "menu";
+  videoPage.hidden = page !== "video";
   sharePage.hidden = page !== "share";
   settingsPage.hidden = page !== "settings";
-  if (page === "menu" && csrf && !remoteSuspended && !document.hidden) videoGeometry?.activate();
+  if (page === "video" && csrf && !remoteSuspended && !document.hidden) videoGeometry?.activate();
   else videoGeometry?.deactivate();
   syncPhoneBluetooth();
   window.scrollTo(0, 0);
@@ -530,6 +532,8 @@ document.querySelector("#show-timer").onclick = () => {
   showPage("timer");
   void refreshDisplayTimer();
 };
+const showVideo = document.querySelector("#show-video");
+if (showVideo) showVideo.onclick = () => showPage("video");
 document.querySelector("#show-menu").onclick = () => {
   showPage("menu");
   void refreshAudio();
@@ -598,7 +602,7 @@ window.addEventListener("pageshow", reconcileMediaOnReturn);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     reconcileMediaOnReturn();
-    if (!menuPage.hidden && csrf && !remoteSuspended) videoGeometry?.activate();
+    if (!videoPage.hidden && csrf && !remoteSuspended) videoGeometry?.activate();
   } else {
     videoGeometry?.deactivate();
     syncPhoneBluetooth();
