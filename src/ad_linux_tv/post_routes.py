@@ -501,6 +501,7 @@ def handle_ack(handler, queue):
             "interrupted",
             "operation",
             "no_media",
+            "unsupported",
         }
         if outcome not in {"completed", "failed", "uncertain"}:
             raise ValueError("invalid acknowledgement outcome")

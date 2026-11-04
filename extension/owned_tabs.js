@@ -15,6 +15,20 @@ const mediaPulse = typeof module !== "undefined"
 const fullscreenVideo = typeof module !== "undefined"
   ? require("./player_media.js").videoFullscreen : videoFullscreen;
 class PermanentCommandError extends Error {}
+
+// Serialized into the previously validated owned frame; the injected file
+// installs this fixed function in Firefox's extension-isolated world.
+async function invokeVideoGeometry(mediaId, mode, mirror, deadline) {
+  const command = globalThis.__adLinuxTvVideoGeometry;
+  if (typeof command !== "function") return {outcome:"unsupported"};
+  return command(mediaId, mode, mirror, deadline);
+}
+
+function cancelVideoGeometry(mediaId, token) {
+  const command = globalThis.__adLinuxTvVideoGeometry;
+  return typeof command?.cancel === "function" ? command.cancel(mediaId, token) : {outcome:"uncertain"};
+}
+
 function createOwnedTabs(api, fetcher = fetch) {
   const state = storageFactory(api);
   const viewPolicy = viewFactory(api, tab => state.owns(tab));
@@ -37,7 +51,23 @@ function createOwnedTabs(api, fetcher = fetch) {
   }
   const managed = () => state.managed();
   let lastMedia = null;
+  let activeGeometry = null;
   let snapshotRead = 0;
+  async function retireGeometry(tabId, frameId, mediaId) {
+    const old = activeGeometry;
+    if (!old || (!old.retiring && old.tabId === tabId && old.frameId === frameId && old.mediaId === mediaId)) return;
+    old.retiring = true;
+    activeGeometry = null;
+    try {
+      const [reply] = await api.scripting.executeScript({target:{tabId:old.tabId,frameIds:[old.frameId]},
+        func:cancelVideoGeometry,args:[old.mediaId,old.token]});
+      if (!["restored", "unchanged"].includes(reply?.result?.outcome)) throw new Error("uncertain");
+    } catch (_) {
+      // Preserve the token for the next report, but never replace a newer layer.
+      if (Object.values(managed()).some(entry => entry.tabId === old.tabId) && !activeGeometry)
+        activeGeometry = old;
+    }
+  }
   const findLauncher = () => state.findLauncher();
   const prepare = async item => {
     if (item.command === "open") {
@@ -64,6 +94,16 @@ function createOwnedTabs(api, fetcher = fetch) {
           item.media_id !== lastMedia.media_id || !["play", "pause", "seek"].includes(item.action) ||
           !Number.isSafeInteger(item.deadline) || Date.now() > item.deadline ||
           (item.action === "seek" ? !Number.isInteger(item.position) || item.position < 0 || item.position > 86400 : item.position !== null))
+        throw new PermanentCommandError("no_media");
+      return {active, media:{...lastMedia}};
+    }
+    if (item.command === "video_geometry") {
+      const active = await state.activeTab();
+      if (!state.owns(active) || !/^https?:\/\//i.test(active?.url || "") ||
+          !lastMedia || lastMedia.tabId !== active.id || lastMedia.url !== active.url ||
+          item.media_id !== lastMedia.media_id ||
+          !["original", "4:3", "16:9"].includes(item.mode) || typeof item.mirror !== "boolean" ||
+          !Number.isSafeInteger(item.deadline) || Date.now() > item.deadline)
         throw new PermanentCommandError("no_media");
       return {active, media:{...lastMedia}};
     }
@@ -160,6 +200,51 @@ function createOwnedTabs(api, fetcher = fetch) {
         throw new PermanentCommandError("no_media");
       return;
     }
+    if (command === "video_geometry") {
+      let active = await state.activeTab();
+      if (!state.owns(active) || active?.id !== prepared.active.id || active.url !== prepared.active.url ||
+          Date.now() > item.deadline) throw new PermanentCommandError("no_media");
+      const selected = async (retire = true) => {
+        const snapshot = await mediaSnapshot(retire).catch(() => null);
+        return snapshot?.media_id === item.media_id && lastMedia?.tabId === prepared.active.id &&
+          lastMedia.frameId === prepared.media.frameId && Date.now() <= item.deadline;
+      };
+      if (!await selected()) throw new PermanentCommandError("no_media");
+      const target = {tabId:active.id, frameIds:[prepared.media.frameId]};
+      const loaded = await api.scripting.executeScript({target, files:["video_geometry.js"]});
+      if (!loaded.length || loaded.some(frame => frame.error)) throw new PermanentCommandError("unsupported");
+      active = await state.activeTab();
+      if (!state.owns(active) || active?.id !== prepared.active.id || active.url !== prepared.active.url ||
+          Date.now() > item.deadline) throw new PermanentCommandError("no_media");
+      const [reply] = await api.scripting.executeScript({target, func:invokeVideoGeometry,
+        args:[item.media_id,item.mode,item.mirror,item.deadline]});
+      if (reply?.result?.outcome === "uncertain") {
+        const error = new Error("geometry outcome uncertain"); error.uncertain = true; throw error;
+      }
+      if (!["applied", "restored", "unchanged"].includes(reply?.result?.outcome))
+        throw new PermanentCommandError("unsupported");
+      const applied = reply.result.outcome === "applied";
+      const token = reply.result.token;
+      if (applied && !/^[0-9a-f]{32}$/.test(token || "")) {
+        const error = new Error("geometry ownership uncertain"); error.uncertain = true; throw error;
+      }
+      if (applied) activeGeometry = {tabId:active.id,frameId:prepared.media.frameId,mediaId:item.media_id,token};
+      else activeGeometry = null;
+      if (!await selected(false)) {
+        if (applied) {
+          try {
+            const [cancelled] = await api.scripting.executeScript({target, func:cancelVideoGeometry,
+              args:[item.media_id,token]});
+            if (!["restored", "unchanged"].includes(cancelled?.result?.outcome)) throw new Error("uncertain");
+            if (activeGeometry?.token === token) activeGeometry = null;
+          } catch (_) {
+            const error = new Error("geometry cleanup uncertain"); error.uncertain = true; throw error;
+          }
+        }
+        throw new PermanentCommandError("no_media");
+      }
+      return;
+    }
     if (command === "fullscreen") return toggleFullscreen(prepared.active);
     if (["player_get", "player_set", "player_pause"].includes(command)) {
       const active = await state.activeTab();
@@ -236,25 +321,38 @@ function createOwnedTabs(api, fetcher = fetch) {
       await api.scripting.executeScript({target:{tabId:active.id}, func:mediaPulse});
   }
 
-  async function mediaSnapshot() {
+  async function mediaSnapshot(retire = true) {
     const generation = ++snapshotRead;
     const deadline = Date.now() + 1000;
     const active = await state.activeTab();
-    if (!state.owns(active) || !/^https?:\/\//i.test(active?.url || "")) { lastMedia = null; return null; }
+    if (!state.owns(active) || !/^https?:\/\//i.test(active?.url || "")) {
+      lastMedia = null; if (retire) await retireGeometry(); return null;
+    }
     const frames = await api.scripting.executeScript({
       target:{tabId:active.id, allFrames:true}, func:timingMedia, args:["status"],
     });
     const current = await state.activeTab();
     if (generation !== snapshotRead || Date.now() > deadline) return null;
     if (!state.owns(current) || current?.id !== active.id || current.url !== active.url) {
-      lastMedia = null; return null;
+      lastMedia = null; if (retire) await retireGeometry(); return null;
+    }
+    if (frames.some(frame => frame.result?.ambiguous === true)) {
+      lastMedia = null; if (retire) await retireGeometry(); return null;
     }
     const found = frames.filter(frame => /^[0-9a-f]{32}$/.test(frame.result?.media_id || ""));
     const playing = found.filter(frame => frame.result.playing === true);
     const chosen = playing.length === 1 ? playing[0] : playing.length > 1 ? null :
       found.find(frame => frame.result.media_id === lastMedia?.media_id && active.id === lastMedia?.tabId) ||
       (found.length === 1 ? found[0] : null);
-    if (!chosen || !Number.isInteger(chosen.frameId)) { lastMedia = null; return null; }
+    if (!chosen || !Number.isInteger(chosen.frameId)) {
+      lastMedia = null; if (retire) await retireGeometry(); return null;
+    }
+    if (retire) await retireGeometry(active.id,chosen.frameId,chosen.result.media_id);
+    const after = await state.activeTab();
+    if (generation !== snapshotRead || Date.now() > deadline) return null;
+    if (!state.owns(after) || after?.id !== active.id || after.url !== active.url) {
+      lastMedia = null; if (retire) await retireGeometry(); return null;
+    }
     lastMedia = {tabId:active.id, url:active.url, frameId:chosen.frameId, media_id:chosen.result.media_id};
     return chosen.result;
   }
@@ -265,12 +363,13 @@ function createOwnedTabs(api, fetcher = fetch) {
   }
 
   async function onRemoved(tabId) {
+    if (activeGeometry?.tabId === tabId) activeGeometry = null;
     try { viewPolicy.forget(tabId); }
     finally { await state.onRemoved(tabId); }
   }
   return {restore, ensureLauncher:state.ensureLauncher, prepare, execute, openService,
     onRemoved, normalizeMedia, normalizeActiveMedia, mediaSnapshot, isOwned:state.owns,
-    capabilities:() => ["html_media_v1", "video_fullscreen_v1",
+    capabilities:() => ["html_media_v1", "video_fullscreen_v1", "video_geometry_v1",
       ...(viewReady && viewPolicy.supported() ? ["tab_view_v1"] : [])],
     getState:state.getState};
 }

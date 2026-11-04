@@ -39,6 +39,7 @@ class CommandQueue:
         self.lease_until = 0
         self.lease_seconds = 15
         self.last_command_failure = None
+        self.geometry_notice_until = 0.0
         self.results = OrderedDict()
         self.browser_media = BrowserMedia()
 
@@ -94,6 +95,38 @@ class CommandQueue:
             )
             return command_id
 
+    def push_geometry(self, media_id, mode, mirror):
+        """Queue one fixed geometry request for the currently observed HTML video.
+
+        This is an internal admission boundary, not an HTTP endpoint. The
+        bridge must still revalidate the target and confirm the visual effect.
+        """
+        state = self.browser_media.status()
+        if (
+            state is None
+            or state["media_id"] != media_id
+            or "video_geometry_v1" not in self.browser_media.capabilities()
+            or mode not in ("original", "4:3", "16:9")
+            or type(mirror) is not bool
+        ):
+            raise ValueError("HTML video unavailable or changed")
+        with self.lock:
+            if len(self.items) == self.items.maxlen:
+                raise QueueFullError("browser command queue is full")
+            command_id = secrets.token_urlsafe(12)
+            self.items.append(
+                {
+                    "id": command_id,
+                    "command": "video_geometry",
+                    "service_id": None,
+                    "media_id": media_id,
+                    "mode": mode,
+                    "mirror": mirror,
+                    "deadline": int((time.time() + 5) * 1000),
+                }
+            )
+            return command_id
+
     def poll(self, now=None):
         now = time.monotonic() if now is None else now
         with self.lock:
@@ -114,16 +147,20 @@ class CommandQueue:
             self.items.popleft()
             self.lease_until = 0
             self.last_seen = time.time()
-            if player:
+            if player or item["command"] == "video_geometry":
                 self.results[command_id] = {
                     "id": command_id,
                     "outcome": outcome,
                     "reason": reason,
                     "volume": volume,
+                    "kind": item["command"],
+                    "media_id": item.get("media_id"),
                     "recorded_at": time.monotonic(),
                 }
                 while len(self.results) > MAX_RESULTS:
                     self.results.popitem(last=False)
+            if item["command"] == "video_geometry" and outcome != "completed":
+                self.geometry_notice_until = time.monotonic() + 5
             # No playing media is a normal discovery result, not a global remote failure.
             if outcome != "completed" and not (player and reason == "no_media"):
                 self.last_command_failure = {
@@ -142,6 +179,30 @@ class CommandQueue:
                 del self.results[command_id]
                 return None
             return {key: value[key] for key in ("id", "outcome", "reason", "volume")}
+
+    def geometry_notice(self):
+        with self.lock:
+            return time.monotonic() < self.geometry_notice_until
+
+    def geometry_result(self, command_id):
+        """Expose only geometry receipts, not unrelated internal queue results."""
+        with self.lock:
+            value = self.results.get(command_id)
+            if not value or value["kind"] != "video_geometry":
+                return None
+            if time.monotonic() - value["recorded_at"] >= RESULT_TTL_SECONDS:
+                del self.results[command_id]
+                return None
+            if value["outcome"] == "completed":
+                ready, observed_id = self.browser_media.geometry_observation_after(
+                    value["recorded_at"]
+                )
+                if not ready:
+                    return None
+                if observed_id != value["media_id"]:
+                    value["outcome"], value["reason"] = "failed", "no_media"
+                    self.geometry_notice_until = time.monotonic() + 5
+            return {key: value[key] for key in ("id", "outcome", "reason")}
 
     def status(self):
         with self.lock:

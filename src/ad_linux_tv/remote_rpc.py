@@ -1,6 +1,7 @@
 """Phone RPC adapter for the existing, separately maintained HTTP actions."""
 
 import json
+import re
 from http.client import HTTPMessage
 
 from .bluetooth_routes import handle_bluetooth
@@ -124,6 +125,39 @@ class RemoteDispatcher:
             handle_bluetooth(request, self.sessions, method)
             status, payload = request.response
             return status, json.loads(payload)
+        if path == "/api/video-geometry":
+            # The dispatcher is only reached after the socket session, Origin,
+            # source and CSRF have been checked. No CSS or scripts come from
+            # the client; acknowledgement is distinct from queue admission.
+            if method == "GET" and body is None:
+                store = self.queue.browser_media
+                media = store.status()
+                available = media is not None and "video_geometry_v1" in store.capabilities()
+                return 200, {
+                    "available": available,
+                    "media_id": media["media_id"] if available else None,
+                }
+            if method != "POST" or not isinstance(body, dict):
+                return 400, {}
+            if set(body) == {"action", "id"} and body["action"] == "result":
+                command_id = body["id"]
+                if not isinstance(command_id, str) or not re.fullmatch(
+                    r"[A-Za-z0-9_-]{16,64}", command_id
+                ):
+                    return 400, {}
+                result = self.queue.geometry_result(command_id)
+                return (200, result) if result else (202, {})
+            if set(body) != {"action", "media_id", "mode", "mirror"} or body["action"] != "apply":
+                return 400, {}
+            try:
+                command_id = self.queue.push_geometry(
+                    body["media_id"], body["mode"], body["mirror"]
+                )
+            except ValueError:
+                return 409, {}
+            except QueueFullError:
+                return 503, {}
+            return 202, {"id": command_id}
         if path == "/api/media":
             if method == "GET" and body is None:
                 try:

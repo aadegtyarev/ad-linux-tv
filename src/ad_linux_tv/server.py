@@ -198,7 +198,10 @@ def make_handler(config, config_path=None):
                     or not (local or self.authorized())
                 ):
                     return self.send(403, "{}")
-                return self.send(200, json.dumps(display_timer.status()))
+                status = display_timer.status()
+                if local and queue.geometry_notice():
+                    status["video_notice"] = True
+                return self.send(200, json.dumps(status))
             if urlparse(self.path).path == "/api/command-result":
                 host = self.headers.get("Host", "")
                 local = security.loopback_source(self.client_address[0]) and host == (

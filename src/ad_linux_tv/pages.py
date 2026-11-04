@@ -147,6 +147,7 @@ def get_response(handler, config, queue, static):
         "/": ("index.html", "text/html; charset=utf-8"),
         "/remote": ("remote.html", "text/html; charset=utf-8"),
         "/bluetooth_controls.js": ("bluetooth_controls.js", "text/javascript"),
+        "/video_geometry_controls.js": ("video_geometry_controls.js", "text/javascript"),
         "/bluetooth_controls.css": ("bluetooth_controls.css", "text/css"),
         "/app.js": ("app.js", "text/javascript"),
         "/layout.js": ("layout.js", "text/javascript"),

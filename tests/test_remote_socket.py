@@ -4,9 +4,12 @@ import base64
 import json
 import socket
 import struct
+import time
 from subprocess import CompletedProcess
 
-from conftest import login
+from conftest import login, request
+
+from ad_linux_tv.security import BRIDGE_HEADER, BRIDGE_VALUE
 
 
 def connect(port, cookie, csrf, origin=None):
@@ -131,6 +134,93 @@ def test_remote_socket_rejects_unmasked_frame(endpoint, monkeypatch):
         sock.sendall(b"\x81\x02{}")
         assert stream.read(2) == b"\x88\x02"
         assert stream.read(2) == struct.pack("!H", 1002)
+    finally:
+        stream.close()
+        sock.close()
+
+
+def test_video_geometry_through_socket_and_bridge_requires_capability(endpoint, monkeypatch):
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    connection, port = endpoint
+    _, session, cookie = login(connection, port)
+    bridge = {
+        "Host": f"127.0.0.1:{port}",
+        BRIDGE_HEADER: BRIDGE_VALUE,
+        "Content-Type": "application/json",
+    }
+    now = int(time.time() * 1000)
+    media_id = "a" * 32
+    report = {
+        "protocol": 1,
+        "sequence": now,
+        "sent_at": now,
+        "capabilities": ["html_media_v1"],
+        "media": {
+            "media_id": media_id,
+            "playing": True,
+            "position": 12,
+            "duration": 900,
+            "can_seek": True,
+        },
+    }
+    assert (
+        request(connection, "POST", "/extension/media", json.dumps(report), bridge)[0].status == 200
+    )
+    sock, stream, status = connect(port, cookie, session["csrf"])
+    assert " 101 " in status
+
+    def rpc(number, method, body):
+        send_message(
+            sock, {"id": number, "method": method, "path": "/api/video-geometry", "body": body}
+        )
+        reply = receive_message(stream)
+        assert reply["id"] == number
+        return reply
+
+    try:
+        command = {"action": "apply", "media_id": media_id, "mode": "4:3", "mirror": True}
+        assert rpc(1, "GET", None)["body"] == {"available": False, "media_id": None}
+        assert rpc(2, "POST", command)["status"] == 409
+        assert json.loads(request(connection, "GET", "/extension/poll", headers=bridge)[1]) == []
+        report["sequence"] += 1
+        report["sent_at"] = int(time.time() * 1000)
+        report["capabilities"].append("video_geometry_v1")
+        assert (
+            request(connection, "POST", "/extension/media", json.dumps(report), bridge)[0].status
+            == 200
+        )
+        assert rpc(3, "GET", None)["body"] == {"available": True, "media_id": media_id}
+        reply = rpc(4, "POST", command)
+        assert reply["status"] == 202
+        command_id = reply["body"]["id"]
+        assert rpc(5, "POST", {"action": "result", "id": command_id})["status"] == 202
+        item = json.loads(request(connection, "GET", "/extension/poll", headers=bridge)[1])[0]
+        assert item["id"] == command_id and item["command"] == "video_geometry"
+        assert item["mode"] == "4:3" and item["mirror"] is True
+        ack = json.dumps({"id": command_id, "outcome": "failed", "reason": "unsupported"})
+        assert request(connection, "POST", "/extension/ack", ack)[0].status == 403
+        assert request(connection, "POST", "/extension/ack", ack, bridge)[0].status == 200
+        assert request(connection, "POST", "/extension/ack", ack, bridge)[0].status == 409
+        result = rpc(6, "POST", {"action": "result", "id": command_id})
+        assert result["status"] == 200 and result["body"]["outcome"] == "failed"
+        second = rpc(7, "POST", command)["body"]["id"]
+        item = json.loads(request(connection, "GET", "/extension/poll", headers=bridge)[1])[0]
+        assert item["id"] == second
+        ack = json.dumps({"id": second, "outcome": "completed", "reason": None})
+        assert request(connection, "POST", "/extension/ack", ack, bridge)[0].status == 200
+        assert rpc(8, "POST", {"action": "result", "id": second})["status"] == 202
+        report["sequence"] += 1
+        report["sent_at"] = int(time.time() * 1000)
+        assert (
+            request(connection, "POST", "/extension/media", json.dumps(report), bridge)[0].status
+            == 200
+        )
+        result = rpc(9, "POST", {"action": "result", "id": second})
+        assert result["status"] == 200 and result["body"]["outcome"] == "completed"
+        response, body = request(
+            connection, "GET", "/api/display-timer", headers={"Host": f"127.0.0.1:{port}"}
+        )
+        assert response.status == 200 and json.loads(body)["video_notice"] is True
     finally:
         stream.close()
         sock.close()

@@ -26,7 +26,8 @@ function createTabController(api, fetcher = fetch) {
     try { prepared = await owned.prepare(item); }
     catch (error) {
       if (error instanceof PermanentError)
-        return failed(item.id, error.message === "no_media" ? "no_media" : "invalid_command");
+        return failed(item.id, error.message === "no_media" ? "no_media" :
+          error.message === "unsupported" ? "unsupported" : "invalid_command");
       try { return await ledger.retry(item.id, "preparation"); }
       catch (_) { return {outcome:"failed", reason:"operation"}; }
     }
@@ -36,7 +37,7 @@ function createTabController(api, fetcher = fetch) {
       let result;
       try {
         const execution = owned.execute(item, prepared);
-        result = item.command === "media" ? await Promise.race([execution,
+        result = ["media", "video_geometry"].includes(item.command) ? await Promise.race([execution,
           new Promise((_, reject) => { timer = setTimeout(() => reject(new ExecutionUncertain()),
             Math.max(0, Math.min(5000, item.deadline - Date.now()))); })]) : await execution;
       } finally { clearTimeout(timer); }
@@ -48,7 +49,8 @@ function createTabController(api, fetcher = fetch) {
       if (error instanceof ExecutionUncertain || error?.uncertain === true)
         return {outcome:"uncertain", reason:"interrupted"};
       return failed(item.id, error instanceof PermanentError && error.message === "no_media" ?
-        "no_media" : "operation");
+        "no_media" : error instanceof PermanentError && error.message === "unsupported" ?
+          "unsupported" : "operation");
     }
   }
   async function restore() {

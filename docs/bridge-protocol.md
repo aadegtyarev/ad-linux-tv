@@ -15,7 +15,7 @@ The bridge sends `POST /extension/media`:
 | `protocol` | `1` |
 | `sequence` | Increasing integer; older reports rejected |
 | `sent_at` | Epoch ms, within 3 s of server time |
-| `capabilities` | Up to 16 names: `html_media_v1`, `tab_view_v1`, `video_fullscreen_v1` |
+| `capabilities` | Up to 16 names: `html_media_v1`, `tab_view_v1`, `video_fullscreen_v1`, `video_geometry_v1` |
 | `media` | `null` or the HTML media snapshot |
 
 Reports expire after 3 s. Without a fresh report the server queues no HTML-media operations. `/api/status` shows supported capabilities.
@@ -31,6 +31,12 @@ The bridge applies the effective `view` (`desktop`/`mobile`, zoom 50–300) from
 ## Video fullscreen (`video_fullscreen_v1`, bridge 0.4.2+)
 
 Queue command `fullscreen` toggles: if any frame of the active owned tab is fullscreen, the bridge leaves fullscreen; otherwise it fullscreens the largest visible video (a playing one wins), using the site's player box of the same size so its controls stay. From 0.4.3 the search also enters shadow roots (VK Video keeps its `<video>` there) and climbs out through the shadow host; managed-HTML media status does the same. No video means `no_media`. `POST /api/command` answers 409 while the bridge does not report the capability. The dedicated profile sets `full-screen-api.allow-trusted-requests-only=false` because a bridge call is not a user gesture.
+
+## Video geometry (`video_geometry_v1`, bridge 0.4.4)
+
+The authenticated phone sends a fixed `video_geometry` command for the current HTML media ID: mode `original`, `4:3` or `16:9`, and a separate boolean horizontal mirror. The latter two formats stretch or squeeze the video; `original` restores the site's appearance. A 202 response means the server queued the command, not that the picture changed. The phone polls for its receipt; an unsupported or uncertain result is not success and is never automatically retried. A fresh capability report and media ID are required, so an older bridge cannot receive this command.
+
+The extension targets the selected video in an owned tab, verifies computed geometry and uses a removable style layer rather than changing the site's inline styles. The layer ends with that playback or when its target or geometry becomes unsafe. A failed bridge receipt also requests a short, fixed message in the existing TV timer overlay. The implementation does not verify decoded pixels or the physical display, and does not promise support for every site, fullscreen mode or protected video. Embedded frames are currently unsupported because their outer geometry cannot be verified; directly fullscreening the video element is also unsupported. Version 0.4.4 is development code; an AMO-signed update and physical TV verification are still required.
 
 ## Outside the bridge
 

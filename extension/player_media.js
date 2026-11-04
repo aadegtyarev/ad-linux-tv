@@ -14,8 +14,11 @@ async function playerMedia(action = "status", expected = null, position = null, 
     }
   };
   collect(document);
-  if (elements.length > 64) return null;
   const registry = document.__adLinuxTvTiming ||= {items:new WeakMap(), last:null};
+  if (elements.length > 64) {
+    if (action === "status") { registry.last = null; return {ambiguous:true}; }
+    return null;
+  }
   const candidates = elements.filter(element => !element.ended &&
     typeof element.currentSrc === "string" && element.currentSrc.length <= 8192 &&
     Number.isFinite(element.duration) && element.duration > 0 && element.duration <= 86400 &&
@@ -34,7 +37,7 @@ async function playerMedia(action = "status", expected = null, position = null, 
   let element;
   if (action === "status") {
     if (playing.length === 1) element = playing[0];
-    else if (playing.length > 1) return null;
+    else if (playing.length > 1) { registry.last = null; return {ambiguous:true}; }
     else if (candidates.includes(registry.last)) element = registry.last;
     else if (candidates.length === 1) element = candidates[0];
   } else {
@@ -42,7 +45,13 @@ async function playerMedia(action = "status", expected = null, position = null, 
         Date.now() > deadline || deadline > Date.now() + 6000) return null;
     element = candidates.find(value => identity(value) === expected);
   }
-  if (!element) return null;
+  if (!element) {
+    if (action === "status") {
+      registry.last = null;
+      if (candidates.length > 1) return {ambiguous:true};
+    }
+    return null;
+  }
   const id = identity(element);
   const ranges = element.seekable;
   const canSeek = Number.isInteger(ranges?.length) && ranges.length > 0 && ranges.length <= 16;

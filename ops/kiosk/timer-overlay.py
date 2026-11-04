@@ -51,6 +51,9 @@ def timer_request(minutes=None):
 class TimerOverlay:
     def __init__(self):
         self.notice = TimerNotice()
+        self.video_notice = False
+        self.rendered_video_notice = False
+        self.rendered_timer_visible = False
         self.window = Gtk.Window()
         self.window.set_decorated(False)
         self.window.set_resizable(False)
@@ -78,6 +81,7 @@ class TimerOverlay:
         self.expanded = None
         panel.get_style_context().add_class("timer-notice")
         header = self.button("", lambda: self.render(self.notice.toggle()))
+        self.header = header
         header.get_style_context().remove_class("timer-action")
         header.get_style_context().add_class("timer-header")
         header.set_tooltip_text("Таймер экрана: изменить или отменить")
@@ -97,6 +101,10 @@ class TimerOverlay:
         self.warning.set_xalign(0)
         self.warning.get_style_context().add_class("timer-warning")
         panel.pack_start(self.warning, False, False, 0)
+        self.video_warning = Gtk.Label(label="Не удалось настроить видео в этом плеере")
+        self.video_warning.set_xalign(0)
+        self.video_warning.get_style_context().add_class("timer-warning")
+        panel.pack_start(self.video_warning, False, False, 0)
 
         self.actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
         for label, callback in (
@@ -142,13 +150,17 @@ class TimerOverlay:
         return button
 
     def render(self, state):
-        if not state["visible"]:
+        if not state["visible"] and not self.video_notice:
             self.window.hide()
+            self.rendered_video_notice = False
+            self.rendered_timer_visible = False
             return
         if self.count.get_text() != state["remaining"]:
             self.count.set_text(state["remaining"])
         if not self.window.get_visible():
             self.window.show_all()
+        self.header.set_visible(state["visible"])
+        self.video_warning.set_visible(self.video_notice)
         self.warning.set_visible(state["warning"])
         self.actions.set_visible(state["expanded"])
         self.dismiss_button.set_visible(state["warning"])
@@ -160,6 +172,13 @@ class TimerOverlay:
                 context.add_class("expanded")
             else:
                 context.remove_class("expanded")
+            self.window.resize(1, 1)
+        if (
+            self.rendered_video_notice != self.video_notice
+            or self.rendered_timer_visible != state["visible"]
+        ):
+            self.rendered_video_notice = self.video_notice
+            self.rendered_timer_visible = state["visible"]
             self.window.resize(1, 1)
 
     def hover(self, event, active):
@@ -181,8 +200,11 @@ class TimerOverlay:
 
     def poll(self):
         try:
-            state = self.notice.update(timer_request())
+            reply = timer_request()
+            self.video_notice = reply.get("video_notice") is True
+            state = self.notice.update(reply)
         except (OSError, ValueError):
+            self.video_notice = False
             state = self.notice.update(None)
         self.render(state)
         return True

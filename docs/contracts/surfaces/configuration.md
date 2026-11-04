@@ -26,6 +26,10 @@ Saving is targeted, atomic/private, preserves unrelated fields/auth/sessions/oth
 
 The [2026-10-27 deployment](../../verification/settings-versions-2026-10-27.md) installed S01/S02: six services inherit the saved common desktop125, with no override or pending restart. This supersedes the earlier power-scope mobile200 omission/reset default without rewriting the historical approval. Power/CEC adds no client-supplied command, device path, secret or settings file; private config/auth/profile isolation remains unchanged. Physical acceptance is separate.
 
+## Temporary video geometry
+
+The phone's video format and mirror are temporary playback operations, not configuration. They add no saved setting, alter no pairing and do not assign physical remote buttons. See the [phone remote](phone-remote.md).
+
 ## Bluetooth adapter preference
 
 The optional private `bluetooth` section retains `remote` and may include an explicit canonical adapter address. Omission preserves the previous automatic policy, including a saved remote's adapter. A targeted atomic update preserves the saved remote and unrelated settings. An explicitly selected adapter that is missing or ambiguous is not replaced automatically; choosing automatic removes only the preference. The setting does not contain bond keys, names, D-Bus paths or pairing secrets. Previously stored remote bindings are retained even though their editing controls are no longer shown; an explicit confirmed forget retains its existing associated-remote cleanup. Selection and adapter power-on use the existing private Bluetooth authority and lease; power-on is explicit and its result requires an observed state. No other controller is powered off, disconnected or unpaired by selection. Physical adapter and pairing behavior remains unverified. See the [adapter feature](../features/bluetooth-adapter-selection.md).
