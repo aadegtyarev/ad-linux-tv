@@ -453,7 +453,7 @@ class BluetoothControls {
     ++this.view;
     this.content = this.element("section", undefined, this.root);
     this.content.className = "bluetooth-controls";
-    this.element("h3", "Bluetooth и кнопки пульта", this.content);
+    this.element("h3", "Bluetooth", this.content);
     const status = this.element("p", this.message, this.content);
     status.className = localFocus ? "bt-feedback bt-focus-anchor" : "bt-feedback";
     status.setAttribute("role", "status");
@@ -541,7 +541,7 @@ class BluetoothControls {
       });
       button.setAttribute("aria-pressed", String(this.selected === device.id));
       this.element("span", `${device.connected ? "Подключено" : "Не подключено"} · ` +
-        `${device.paired ? "Сопряжено" : "Не сопряжено"}${device.selected ? " · Ваш пульт" : ""}`, row);
+        `${device.paired ? "Сопряжено" : "Не сопряжено"}`, row);
     }
     const device = state.devices.find(item => item.id === this.selected);
     if (device) {
@@ -553,9 +553,7 @@ class BluetoothControls {
         ["connect", "Подключить", device.paired && !device.connected],
         ["disconnect", "Отключить", device.connected],
         ["forget_prepare", "Забыть устройство…", device.paired],
-        ["select_remote", "Использовать как пульт", device.paired && device.connected && !device.selected],
       ]) this.button(commands, op, label, free && allowed, () => this.mutate(op, {device_id: device.id}));
-      if (!device.input_available) this.element("p", "Кнопки этого устройства сейчас недоступны. Сопряжение не означает поддержку кнопок.", this.content);
     }
     if (this.challenge) this.renderChallenge(draft);
     if (this.confirmation) {
@@ -569,7 +567,6 @@ class BluetoothControls {
       this.button(group, "forget-cancel", "Сохранить устройство", !!this.lease, () =>
         this.mutate("cancel", {operation_id: confirmation.operation_id}));
     }
-    this.renderRemote(free);
   }
 
   renderChallenge(draft) {
@@ -621,53 +618,4 @@ class BluetoothControls {
     }
   }
 
-  renderRemote(free) {
-    const remote = this.state.remote;
-    this.element("h4", "Кнопки выбранного пульта", this.content);
-    this.element("p", !remote ? "Выберите подключённое устройство и нажмите «Использовать как пульт»." :
-      remote.input_available ? "Выберите действие и нажмите кнопку на вашем пульте. Поддерживаются только кнопки навигации и медиа." :
-      this.text(remote.reason || "helper_unavailable"), this.content);
-    const label = this.element("label", "Действие кнопки", this.content);
-    const selector = this.element("select", undefined, label, "action");
-    for (const [id, name] of Object.entries(BluetoothControls.actions)) {
-      const option = this.element("option", name, selector);
-      option.value = id;
-    }
-    selector.value = this.action;
-    selector.disabled = this.pending || !free || !remote?.connected || !remote?.input_available || !remote.device_id;
-    const view = this.view;
-    selector.onchange = () => {
-      if (this.view === view && !selector.disabled && Object.hasOwn(BluetoothControls.actions, selector.value))
-        this.action = selector.value;
-    };
-    this.button(this.content, "learn", "Назначить кнопку (20 с)", !selector.disabled,
-      () => this.mutate("learn", {action: this.action}));
-    const observation = this.observation;
-    if (observation) {
-      this.element("p", `Кнопка: ${observation.key} → ${BluetoothControls.actions[observation.action]}. ` +
-        (observation.complete ? "Нажатие завершено." : "Отпустите кнопку на пульте."), this.content);
-      this.element("p", "Тест выполнит действие один раз без сохранения. Воспроизведение зависит от текущего сайта.", this.content);
-      const fields = {operation_id: observation.operation_id, observation_id: observation.id};
-      this.button(this.content, "test", observation.tested || this.testAttempt === observation.id ? "Тест уже запрошен" : "Проверить один раз",
-        observation.complete && !observation.tested && this.testAttempt !== observation.id, () => {
-          this.testAttempt = observation.id;
-          return this.mutate("test", fields);
-        });
-      this.button(this.content, "bind", "Сохранить назначение", observation.complete && this.bindAttempt !== observation.id, () => {
-        this.bindAttempt = observation.id;
-        return this.mutate("bind", fields);
-      });
-    }
-    const bindings = Object.entries(remote?.bindings || {}).filter(([key, action]) =>
-      BluetoothControls.keys.includes(key) && Object.hasOwn(BluetoothControls.actions, action)).slice(0, 32);
-    for (const [key, action] of bindings) {
-      const row = this.element("div", undefined, this.content);
-      row.className = "bt-binding";
-      this.element("span", `${key} → ${BluetoothControls.actions[action]}`, row);
-      this.button(row, `unmap:${key}`, "Убрать назначение", free, () =>
-        this.mutate("unmap", {key, revision: this.state.revision}));
-    }
-    this.button(this.content, "reset", "Сбросить назначения", free && bindings.length > 0, () =>
-      this.mutate("reset", {revision: this.state.revision}));
-  }
 }

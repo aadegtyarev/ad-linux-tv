@@ -1,6 +1,6 @@
 # Bluetooth devices and remote key settings
 
-Status: scope approved on 2026-11-02; management UI installed on the reference TV on 2026-11-03. Physical pairing and selected-remote input remain unverified/incomplete. Privileged input implementation/provisioning remains gated on independent design/source review.
+Status: historical scope approved on 2026-11-02; management UI installed on the reference TV on 2026-11-03. The owner subsequently withdrew physical-key selection and learning from the Bluetooth screen: those UI portions of the historical scope below are superseded. Existing saved mappings are not automatically removed; explicit confirmed forgetting retains its existing behavior. No privileged input helper is introduced. The separate browser-home change is described by the [Home cleanup feature](bluetooth-home-cleanup.md).
 
 ## Goal and visible behavior
 

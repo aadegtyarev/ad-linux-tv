@@ -34,6 +34,25 @@ test("session ownership separates same-origin services and protects unrelated ta
   assert.equal(mock.storage.session.managedTabs.two, undefined);
 });
 
+test("browser homepage navigation from managed service leaves ownership safe", async () => {
+  const mock = browserMock([
+    {id:1, windowId:1, url:LAUNCHER},
+    {id:2, windowId:1, url:"https://personal.example/", active:true},
+  ]);
+  const controller = createTabController(mock.api, mock.fetcher);
+  await controller.restore();
+  await command(controller, "open", {service_id:"one"});
+  const managed = controller.getState().managed.one.tabId;
+  // Model Firefox's own homepage navigation, not the bridge Home command.
+  await mock.api.tabs.update(managed, {url:LAUNCHER, active:true});
+  assert.equal(mock.tabs.get(managed).url, LAUNCHER);
+  assert.ok(mock.tabs.has(2));
+  await command(controller, "open", {service_id:"two"});
+  assert.ok(mock.tabs.has(2));
+  assert.ok(!mock.tabs.has(managed));
+  assert.ok(mock.tabs.has(controller.getState().managed.two.tabId));
+});
+
 test("switching and Home close every managed service tab", async () => {
   const catalog = ["kinopoisk", "kion", "youtube", "vk", "music", "browser"]
     .map(id => ({id, url:`https://service.example/${id}`}));

@@ -28,7 +28,7 @@ Display sleep is separate: managed pause and verified silence precede output-off
 
 ## Bluetooth adapter operation
 
-The Bluetooth selector uses the existing user-session BlueZ D-Bus boundary; it does not install drivers, helpers, services or new privileges. Selection does not switch the system default for other applications or migrate bonds. Only a user's explicit power-on request targets the selected controller, and BlueZ may deny it. Hardware behavior and physical remote-button input remain unverified or unavailable; see the [adapter feature](../features/bluetooth-adapter-selection.md).
+The Bluetooth selector uses the existing user-session BlueZ D-Bus boundary; it does not install drivers, helpers, services or new privileges. Selection does not switch the system default for other applications or migrate bonds. Only a user's explicit power-on request targets the selected controller, and BlueZ may deny it. The dedicated profile's managed `user.js` homepage is the local launcher on Firefox startup; ordinary Home editing is not intercepted. Firefox browser-home navigation may navigate the current tab, not run the bridge's managed Home command. Physical shortcut and button behavior remain unverified; see the [adapter feature](../features/bluetooth-adapter-selection.md).
 
 ## Safety, failures, and recovery
 Never put PIN/secrets in command arguments or logs; review dry-run before mutation. No silent sudo. Installed CLI validates config; troubleshoot server output, matching bridge localhost port 8765, and shared private LAN. Uninstall retains user configuration.
