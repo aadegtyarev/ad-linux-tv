@@ -19,7 +19,7 @@ Scan the TV QR code with a phone on the same home network. No PIN is needed by d
 - **Magnifier:** button next to the volume.
 - **⛶ Экран:** puts the video on the current page into fullscreen; press again to return. Only on press, never automatically.
 - **Media panel:** appears when the site exposes playback (title, play/pause, position, previous/next where supported).
-- **Menu → Видео:** choose **Исходный**, **4:3** or **16:9**, optionally enable horizontal mirror, then press **Применить**. The change affects only the current eligible video; 4:3 and 16:9 stretch or squeeze it. Some players, embedded frames and protected video are unsupported. Assigning a physical remote button is not yet available.
+- **Screen settings on the playback panel:** choose **Исходный**, **4:3** or **16:9**, optionally enable horizontal mirror, then press **Применить**. The change affects only the current eligible video; 4:3 and 16:9 stretch or squeeze it. Accessible embedded players are attempted, but some sites and protected video may not support the operation. Assigning a physical remote button is not yet available.
 
 ## Touch panel
 

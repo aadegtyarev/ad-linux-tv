@@ -7,18 +7,19 @@ const id="a".repeat(32), commandId="AbCdEf0123456789";
 const response=(status,body)=>({status,ok:status>=200&&status<300,json:async()=>body});
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function harness(request){
-  const elements={mode:{value:"original"},mirror:{checked:false},apply:{},status:{textContent:""}};
+  const elements={mode:{value:"original"},mirror:{checked:false},apply:{},refresh:{},status:{textContent:""}};
   const root={querySelector:selector=>elements[selector.match(/"([^"]+)"/)[1]],setAttribute(){}};
   const notices=[];let auth=0;
   const controls=new VideoGeometryControls(root,request,()=>{auth++;},(...args)=>notices.push(args));
   return {controls,elements,notices,auth:()=>auth};
 }
 
-test("an old bridge or no video keeps controls unavailable",async()=>{
+test("when no current video is found, choices remain visible but cannot apply to a future video",async()=>{
   const h=harness(async()=>response(200,{available:false,media_id:null}));
   h.controls.activate();await settle();
-  assert.equal(h.elements.apply.disabled,true);
-  assert.match(h.elements.status.textContent,/Нет доступного видео/);
+  assert.equal(h.elements.mode.disabled,false);assert.equal(h.elements.mirror.disabled,false);
+  assert.equal(h.elements.apply.disabled,true);assert.equal(h.elements.refresh.disabled,false);
+  assert.match(h.elements.status.textContent,/Видео не найдено/);
 });
 
 test("invalid or inconsistent media identifiers stay unavailable",async()=>{
@@ -43,7 +44,7 @@ test("only a completed matching bridge receipt reports success",async()=>{
   await h.controls.apply();
   assert.deepEqual(requests.find(([, ,body])=>body?.action==="apply")[2],
     {action:"apply",media_id:id,mode:"4:3",mirror:true});
-  assert.deepEqual(h.notices,[["Настройка видео применена.",false]]);
+  assert.deepEqual(h.notices,[["Настройка отправлена плееру. Проверьте изображение.",false]]);
   assert.equal(h.elements.apply.disabled,false);
 });
 
@@ -83,7 +84,31 @@ test("a completed receipt for a replaced video is not reported as current succes
   });
   h.controls.activate();await settle();await h.controls.apply();
   assert.equal(h.notices.length,1);assert.equal(h.notices[0][1],true);
-  assert.match(h.elements.status.textContent,/не подтверждён/);
+  assert.match(h.elements.status.textContent,/Видео сменилось/);
+});
+
+test("choosing a format without a current video never carries it to the next video",async()=>{
+  let current=null,writes=0;
+  const h=harness(async(method)=>{
+    if(method!=="GET"){writes++;throw Error("must not apply automatically");}
+    return response(200,{available:current!==null,media_id:current});
+  });
+  h.controls.activate();await settle();
+  h.elements.mode.value="4:3";h.elements.mirror.checked=true;
+  await h.controls.apply();assert.equal(writes,0);
+  current=id;h.elements.refresh.onclick();await settle();
+  assert.equal(h.elements.mode.value,"original");assert.equal(h.elements.mirror.checked,false);
+  assert.equal(h.elements.apply.disabled,false);assert.equal(writes,0);
+});
+
+test("the same video retains the selected draft; a different one resets it",async()=>{
+  let current=id;
+  const h=harness(async()=>response(200,{available:true,media_id:current}));
+  h.controls.activate();await settle();h.elements.mode.value="16:9";h.elements.mirror.checked=true;
+  h.controls.deactivate();h.controls.activate();await settle();
+  assert.equal(h.elements.mode.value,"16:9");assert.equal(h.elements.mirror.checked,true);
+  current="b".repeat(32);h.controls.deactivate();h.controls.activate();await settle();
+  assert.equal(h.elements.mode.value,"original");assert.equal(h.elements.mirror.checked,false);
 });
 
 test("duplicate taps cannot dispatch a second geometry request",async()=>{

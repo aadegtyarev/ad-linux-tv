@@ -23,7 +23,7 @@ The [Android shell](android-remote.md) uses server-hosted UI and isolated profil
 
 ## Video geometry and UR02 OK
 
-The video-geometry operation requires the separately signed bridge 0.4.4 and the current server; an older bridge leaves it unavailable. Its TV failure message uses the existing layer-shell timer script, which must also be updated by the deployment procedure. Source and synthetic-browser tests do not establish real-site or physical-TV acceptance. No physical remote button is assigned by this feature.
+The video-geometry operation requires a separately signed bridge 0.4.4 or later and the current server; an older bridge leaves it unavailable. Bridge 0.4.5 also attempts accessible embedded frames and shadow roots. Its TV failure message uses the existing layer-shell timer script, which must also be updated by the deployment procedure. Source and synthetic-browser tests do not establish real-site or physical-TV acceptance. No physical remote button is assigned by this feature.
 
 On the reference TV, a locally administered hwdb rule maps the verified UR02 Keyboard OK scan from `KEY_SELECT` to `KEY_ENTER`; the owner confirmed that OK opens a tile. The rule matches all devices with the same bus/vendor/product IDs, not a Bluetooth address, and is not managed by the app. Verify a target and existing rules before applying it; rollback has not been physically tested. See [troubleshooting](../../troubleshooting.md#ur02-ok-does-not-activate-a-tile).
 
