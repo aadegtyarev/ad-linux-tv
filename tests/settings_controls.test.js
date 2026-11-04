@@ -11,7 +11,7 @@ function panel() {
     "pointer-acceleration-value", "magnifier-scale", "magnifier-scale-value", "magnifier-hint",
     "view-form", "view-scope", "view-inherited", "view-mode", "view-zoom", "view-zoom-value", "view-default", "view-hint",
     "about", "server-version", "server-build", "app-info", "app-version", "app-build",
-    "locale-form", "browser-locale", "locale-hint"];
+    "locale-form", "browser-locale", "locale-hint", "search-form", "search-provider", "search-save", "search-hint"];
   const fields = Object.fromEntries(roles.map(role => [role, {value:"", hidden:false, disabled:false, dataset:{},
     textContent:"", setAttribute() {}}]));
   fields["view-scope"].options = [{value:"common", textContent:"Все сайты"}];
@@ -39,7 +39,8 @@ function panel() {
       {id:"kinopoisk",name:"Кино <b>Поиск",view:null,effective_view:{mode:"desktop",zoom:125}},
       {id:"youtube",name:"YouTube",view:{mode:"mobile",zoom:180},effective_view:{mode:"mobile",zoom:180}},
     ], view_profile_ready:true, view_bridge_ready:true, view_restart_required:false,
-    browser_locale:"ru", browser_locales_installed:["ru", "en"], browser_locale_restart_required:false};
+    browser_locale:"ru", browser_locales_installed:["ru", "en"], browser_locale_restart_required:false,
+    browser_search:null, browser_search_available:true, browser_search_custom:false};
   const controls = new context.SettingsControls(root, async (method, action) => {
     calls.push({method, action});
     if (method === "POST" && action.setting === "view") {
@@ -60,6 +61,7 @@ function panel() {
       state.browser_locale = action.value;
       state.browser_locale_restart_required = state.restart_required = true;
     }
+    if (method === "POST" && action.setting === "browser_search") state.browser_search = action.value;
     if (method === "POST" && action.setting === "pointer_acceleration")
       state.pointer_acceleration = action.value;
     return {ok:true, json:async () => state};
@@ -707,6 +709,148 @@ test("out-of-order GET bodies cannot restore older cache; a fresh GET can update
   assert.equal(ui.controls.state.view.zoom,185);
   ui.controls.request = async () => reply({...latest,view:{mode:"desktop",zoom:195}});
   await ui.controls.refresh(); assert.equal(ui.controls.state.view.zoom,195);
+});
+
+test("custom browser destination is accurately labelled and provider selection is explicit and reversible", async () => {
+  const ui = panel();
+  ui.state.browser_search_custom = true;
+  await ui.controls.refresh();
+  assert.equal(ui.fields["search-provider"].value, "");
+  assert.match(ui.fields["search-hint"].textContent, /ваш адрес из конфигурации/);
+  ui.fields["search-provider"].value = "google";
+  ui.fields["search-provider"].onchange();
+  assert.equal(ui.calls.length, 1);
+  assert.match(ui.fields["search-hint"].textContent, /не сохранены/);
+  await ui.controls.saveSearch();
+  assert.deepEqual(JSON.parse(JSON.stringify(ui.calls.at(-1).action)), {setting:"browser_search",value:"google"});
+  assert.equal(ui.state.browser_search, "google");
+  ui.fields["search-provider"].value = "";
+  ui.fields["search-provider"].onchange();
+  await ui.controls.saveSearch();
+  assert.equal(ui.calls.at(-1).action.value, null);
+  assert.equal(ui.fields["search-provider"].value, "");
+  assert.match(ui.fields["search-hint"].textContent, /ваш адрес из конфигурации/);
+});
+
+test("missing browser and old server disable search action", async () => {
+  const ui = panel(); ui.state.browser_search_available = false;
+  await ui.controls.refresh();
+  assert.equal(ui.fields["search-provider"].disabled, true);
+  assert.equal(ui.fields["search-save"].disabled, true);
+  await ui.controls.saveSearch();
+  assert.equal(ui.calls.length, 1);
+  delete ui.state.browser_search_available;
+  await ui.controls.refresh();
+  assert.equal(ui.fields["search-save"].disabled, true);
+});
+
+test("search draft survives refresh and delayed save acknowledgements", async () => {
+  const ui = panel(); await ui.controls.refresh();
+  ui.fields["search-provider"].value = "google"; ui.fields["search-provider"].onchange();
+  await ui.controls.refresh();
+  assert.equal(ui.fields["search-provider"].value, "google");
+  const old = clone(ui.state), late = deferred();
+  ui.controls.request = async () => late.promise;
+  const saving = ui.controls.saveSearch(); await tick();
+  ui.fields["search-provider"].value = "duckduckgo"; ui.fields["search-provider"].onchange();
+  late.resolve(reply({...old,browser_search:"google"})); await saving;
+  assert.equal(ui.fields["search-provider"].value, "duckduckgo");
+  assert.equal(ui.controls.state.browser_search, "google");
+  assert.match(ui.fields["settings-status"].textContent, /Новые изменения ещё не сохранены/);
+});
+
+test("stale unrelated reply cannot roll back an acknowledged search selection", async () => {
+  const ui = panel(); await ui.controls.refresh();
+  const old = clone(ui.state), late = deferred();
+  ui.controls.request = async (method, action) => action.setting === "pointer_acceleration"
+    ? late.promise : reply({...old,browser_search:"google"});
+  const other = ui.controls.change("pointer_acceleration", 60);
+  ui.fields["search-provider"].value = "google"; ui.fields["search-provider"].onchange();
+  await ui.controls.saveSearch(); late.resolve(reply(old)); await other;
+  assert.equal(ui.controls.state.browser_search, "google");
+  assert.equal(ui.fields["search-provider"].value, "google");
+});
+
+test("older GET cannot replace search state observed by newer unrelated POST", async () => {
+  const ui = panel(); await ui.controls.refresh();
+  const old = clone(ui.state), late = deferred();
+  ui.controls.request = async method => method === "GET" ? late.promise : reply({...old,browser_search:"google"});
+  const reading = ui.controls.refresh(); await tick();
+  await ui.controls.change("pointer_acceleration", 70);
+  late.resolve(reply(old)); await reading;
+  assert.equal(ui.controls.state.browser_search, "google");
+  assert.equal(ui.fields["search-provider"].value, "google");
+});
+
+test("older unrelated POST cannot replace search state observed by newer POST", async () => {
+  const ui = panel(); await ui.controls.refresh();
+  const old = clone(ui.state), late = deferred();
+  ui.controls.request = async (_method, action) => action.setting === "pointer_acceleration"
+    ? late.promise : reply({...old,browser_search:"duckduckgo"});
+  const earlier = ui.controls.change("pointer_acceleration", 70); await tick();
+  await ui.controls.change("magnifier", true);
+  late.resolve(reply(old)); await earlier;
+  assert.equal(ui.controls.state.browser_search, "duckduckgo");
+  assert.equal(ui.fields["search-provider"].value, "duckduckgo");
+});
+
+for (const scope of ["common", "kinopoisk"]) for (const reset of [false, true]) {
+  test(`view ${scope} ${reset ? "reset" : "save"} fences older search snapshot`, async () => {
+    const ui = panel(); await ui.controls.refresh();
+    if (scope !== "common") {
+      ui.fields["view-scope"].value = scope;
+      ui.fields["view-scope"].onchange();
+    }
+    const old = clone(ui.state), late = deferred();
+    ui.controls.request = async (_method, action) => action.setting === "pointer_acceleration"
+      ? late.promise : reply({...clone(old),browser_search:"google"});
+    const earlier = ui.controls.change("pointer_acceleration", 70); await tick();
+    if (reset) await ui.controls.resetView();
+    else { editZoom(ui, 170); await ui.controls.saveView(); }
+    late.resolve(reply(old)); await earlier;
+    assert.equal(ui.controls.state.browser_search, "google");
+    assert.equal(ui.fields["search-provider"].value, "google");
+  });
+}
+
+test("delayed view ACK preserves new scope while accepting eligible search snapshot", async () => {
+  const ui = panel(); await ui.controls.refresh();
+  const state = clone(ui.state), late = deferred();
+  ui.controls.request = async () => late.promise;
+  editZoom(ui, 170);
+  const saving = ui.controls.saveView(); await tick();
+  ui.fields["view-scope"].value = "kinopoisk"; ui.fields["view-scope"].onchange();
+  late.resolve(reply({...state,browser_search:"google",view:{mode:"desktop",zoom:170}}));
+  await saving;
+  assert.equal(ui.controls.viewScope, "kinopoisk");
+  assert.equal(ui.fields["view-scope"].value, "kinopoisk");
+  assert.equal(ui.controls.state.view.zoom, 125);
+  assert.equal(ui.controls.state.browser_search, "google");
+  assert.equal(ui.fields["search-provider"].value, "google");
+});
+
+test("delayed view ACK cannot replace a newer search draft", async () => {
+  const ui = panel(); await ui.controls.refresh();
+  const state = clone(ui.state), late = deferred();
+  ui.controls.request = async () => late.promise;
+  editZoom(ui, 170);
+  const saving = ui.controls.saveView(); await tick();
+  ui.fields["search-provider"].value = "duckduckgo"; ui.fields["search-provider"].onchange();
+  late.resolve(reply({...state,browser_search:"google",view:{mode:"desktop",zoom:170}}));
+  await saving;
+  assert.equal(ui.controls.state.browser_search, null);
+  assert.equal(ui.fields["search-provider"].value, "duckduckgo");
+  assert.equal(ui.controls.searchDirty, true);
+});
+
+test("failed search save does not claim success", async () => {
+  const ui = panel(); await ui.controls.refresh();
+  ui.fields["search-provider"].value = "google"; ui.fields["search-provider"].onchange();
+  ui.controls.request = async () => ({ok:false});
+  await ui.controls.saveSearch();
+  assert.equal(ui.controls.state.browser_search, null);
+  assert.equal(ui.fields["search-provider"].value, "google");
+  assert.equal(ui.fields["settings-status"].dataset.error, "true");
 });
 
 for (const failure of ["auth", "json", "transport"]) {

@@ -34,6 +34,22 @@ test("session ownership separates same-origin services and protects unrelated ta
   assert.equal(mock.storage.session.managedTabs.two, undefined);
 });
 
+test("browser search catalogue destination opens as a managed tab and Home remains unchanged", async () => {
+  for (const url of ["https://ya.ru/", "https://www.google.com/", "https://duckduckgo.com/", "https://custom.example/"]) {
+    const mock = browserMock([{id:1,windowId:1,url:LAUNCHER},
+      {id:2,windowId:1,url:"https://personal.example/"}], [{id:"browser",url}]);
+    const controller = createTabController(mock.api, mock.fetcher);
+    await controller.restore();
+    await command(controller,"open",{service_id:"browser"});
+    const id = controller.getState().managed.browser.tabId;
+    assert.equal(mock.tabs.get(id).url, url);
+    await command(controller,"home");
+    assert.ok(!mock.tabs.has(id));
+    assert.ok(mock.tabs.has(2));
+    assert.deepEqual(controller.getState().managed, {});
+  }
+});
+
 test("browser homepage navigation from managed service leaves ownership safe", async () => {
   const mock = browserMock([
     {id:1, windowId:1, url:LAUNCHER},

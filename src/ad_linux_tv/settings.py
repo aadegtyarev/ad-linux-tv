@@ -21,6 +21,7 @@ from .browser_locale import (
     locale_profile_text,
     validate_browser,
 )
+from .browser_search import browser_tile, search_state, validate_search_provider
 from .build_info import server_info
 from .magnifier import validate_magnifier
 from .view_config import common_view, service_views, validate_view, view_fingerprint
@@ -197,6 +198,7 @@ class SettingsManager:
                 "proxy": dict(self.proxy()),
                 "proxy_restart_required": self.proxy_restart_required,
                 "pointer_acceleration": self.config.get("pointer", {}).get("acceleration", 50),
+                **search_state(self.config),
                 "browser_locale": browser_locale(self.config),
                 "browser_locales_installed": installed_locales(self.profile),
                 "browser_locale_restart_required": self.locale_restart_required,
@@ -338,6 +340,19 @@ class SettingsManager:
                             atomic_write(profile_path, old_prefs)
                         raise
                     self.proxy_restart_required = True
+            elif setting == "browser_search":
+                if browser_tile(self.config) is None:
+                    raise SettingsError("browser tile unavailable")
+                candidate = dict(self.config)
+                if value is None:
+                    candidate.pop("browser_search", None)
+                else:
+                    try:
+                        candidate["browser_search"] = validate_search_provider(value)
+                    except ValueError:
+                        raise SettingsError("invalid browser search provider") from None
+                if candidate != self.config:
+                    self._save_config(candidate)
             elif setting == "browser_locale":
                 try:
                     browser = validate_browser({"locale": value})

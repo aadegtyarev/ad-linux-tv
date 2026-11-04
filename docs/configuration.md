@@ -7,6 +7,7 @@ Most settings are in TV **System** and phone **Menu → Settings**. They are sto
 | Phone PIN | `auth.require_pin` | Off by default. Changing it ends phone sessions. |
 | Proxy | `proxy` | Applies after restart. |
 | Язык браузера | `browser: {locale: ru}` | `ru` (default) or `en`. Applies after restart. |
+| Поиск в браузере | `browser_search` | Optional `yandex`, `google` or `duckduckgo`; affects the Browser tile on its next open. |
 | Cursor acceleration | `pointer` | 0–100. |
 | Magnifier scale | `magnifier: {scale: 2.5}` | 1.25–5 in 0.25 steps. Applies after restart. |
 | Site view | `view`, `services[].view` | See below. |
@@ -33,6 +34,8 @@ Firefox needs the language pack for `ru`; the [kiosk setup](kiosk.md) installs i
 ## Services and site view
 
 `services` lists tiles: `id`, `name`, HTTPS `url`, optional color and `view`. Defaults: VK Видео, КиноПоиск, Яндекс Музыка, YouTube, KION and Browser (`https://ya.ru/`).
+
+In **Поиск в браузере**, choose Яндекс, Google or DuckDuckGo and select **Сохранить**. The next Browser-tile open uses that provider. Without a saved choice, the tile uses its configured URL (Yandex by default); existing custom URLs remain unchanged. Choose **Текущий адрес из конфигурации** and save to restore that URL. The choice is unavailable without a `browser` service. It does not change Firefox Home, the media-center Home command or Firefox's search settings. Search-page availability and focus depend on the provider.
 
 In **Вид сайтов** choose **Все сайты** or one site, then mode (**Мобильный / Обычный**) and zoom. A site without its own setting follows the common one; the default is desktop at 125%.
 
