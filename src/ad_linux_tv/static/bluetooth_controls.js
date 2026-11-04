@@ -330,10 +330,13 @@ class BluetoothControls {
   validState(state) {
     const boolean = value => typeof value === "boolean";
     const deviceId = value => value === null || this.handle(value);
+    const name = value => typeof value === "string" && Array.from(value).length <= 80;
     return state && boolean(state.available) && typeof state.reason === "string" && Number.isSafeInteger(state.revision) &&
       state.revision >= 0 && Array.isArray(state.devices) && state.devices.length <= 64 &&
-      state.devices.every(device => device && this.handle(device.id) && typeof device.name === "string" &&
-        Array.from(device.name).length <= 80 && [device.paired, device.connected, device.selected, device.input_available].every(boolean)) &&
+      state.devices.every(device => device && this.handle(device.id) && name(device.name) &&
+        ((device.bluez_name === undefined && device.alias === undefined) ||
+          (name(device.bluez_name) && name(device.alias))) &&
+        [device.paired, device.connected, device.selected, device.input_available].every(boolean)) &&
       (state.adapter === null || (state.adapter && this.handle(state.adapter.id) &&
         boolean(state.adapter.powered) && boolean(state.adapter.discovering))) &&
       (state.adapters === undefined || (Array.isArray(state.adapters) && state.adapters.length <= 8 &&
@@ -350,6 +353,16 @@ class BluetoothControls {
         boolean(state.remote.connected) && boolean(state.remote.input_available) && typeof state.remote.reason === "string" &&
         state.remote.bindings && typeof state.remote.bindings === "object" && !Array.isArray(state.remote.bindings) &&
         Object.keys(state.remote.bindings).length <= 32));
+  }
+
+  deviceName(device) {
+    if (!device) return "Без имени";
+    // A legacy server has only `name`; do not infer its origin.
+    if (device.bluez_name === undefined) return device.name || "Без имени";
+    const name = device.bluez_name;
+    const alias = device.alias;
+    if (name && alias && name !== alias) return `${name} (псевдоним: ${alias})`;
+    return name || alias || "Без имени";
   }
 
   operation() {
@@ -521,7 +534,7 @@ class BluetoothControls {
     for (const device of state.devices) {
       const row = this.element("div", undefined, devices);
       row.className = "bt-device";
-      const button = this.button(row, `device:${device.id}`, device.name || "Без имени", !operation, () => {
+      const button = this.button(row, `device:${device.id}`, this.deviceName(device), !operation, () => {
         this.selected = device.id;
         this.clearPrivate();
         this.render();
@@ -532,7 +545,7 @@ class BluetoothControls {
     }
     const device = state.devices.find(item => item.id === this.selected);
     if (device) {
-      this.element("h4", `Устройство: ${device.name || "Без имени"}`, this.content);
+      this.element("h4", `Устройство: ${this.deviceName(device)}`, this.content);
       const commands = this.element("div", undefined, this.content);
       commands.className = "bt-buttons";
       for (const [op, label, allowed] of [
@@ -549,7 +562,7 @@ class BluetoothControls {
       const target = state.devices.find(item => item.id === operation.device_id);
       const group = this.element("section", undefined, this.content);
       group.className = "bt-confirm";
-      this.element("p", `Забыть устройство «${target?.name || "Без имени"}»? Сопряжение и его назначения будут удалены.`, group);
+      this.element("p", `Забыть устройство «${this.deviceName(target)}»? Сопряжение и его назначения будут удалены.`, group);
       const confirmation = this.confirmation;
       this.button(group, "forget-confirm", "Да, забыть устройство", !!this.lease, () =>
         this.mutate("forget_confirm", {operation_id: confirmation.operation_id, confirmation_id: confirmation.id}));

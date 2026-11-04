@@ -812,7 +812,11 @@ class BluetoothManager:
             "devices": [
                 {
                     "id": d.id,
+                    # `name` remains a string for older clients. Separate
+                    # fields are untrusted BlueZ display text, never identity.
                     "name": _name(d.name),
+                    "bluez_name": _name(getattr(d, "bluez_name", d.name)),
+                    "alias": _name(getattr(d, "alias", "")),
                     "paired": d.paired,
                     "connected": d.connected,
                     "selected": d is selected,

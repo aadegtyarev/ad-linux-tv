@@ -880,6 +880,40 @@ test("external discovery disables adapter changes", async () => {
   assert.equal(off.find("adapter:power").disabled, true);
 });
 
+for (const [label, fields, expected] of [
+  ["both", {name:"Actual", bluez_name:"Actual", alias:"Nickname"}, "Actual (псевдоним: Nickname)"],
+  ["same", {name:"Same", bluez_name:"Same", alias:"Same"}, "Same"],
+  ["only alias", {name:"Alias", bluez_name:"", alias:"Alias"}, "Alias"],
+  ["only name", {name:"Real", bluez_name:"Real", alias:""}, "Real"],
+  ["neither", {name:"", bluez_name:"", alias:""}, "Без имени"],
+  ["old server", {name:"Legacy"}, "Legacy"],
+]) test(`device names ${label} remain compatible and are displayed as text`, async () => {
+  const state = snapshot(); Object.assign(state.devices[0], fields);
+  const ui = await panel(state).start();
+  assert.equal(ui.find("device:device").textContent, expected);
+});
+
+test("late real name appears during discovery alongside an address-like alias", async () => {
+  const initial = snapshot({operation:operation("discover", {device_id:null})});
+  Object.assign(initial.devices[0], {name:"22:33:44:55:66:77", bluez_name:"", alias:"22:33:44:55:66:77"});
+  const ui = await panel(initial).start();
+  assert.equal(ui.find("device:device").textContent, "22:33:44:55:66:77");
+  const next = structuredClone(initial);
+  Object.assign(next.devices[0], {name:"<Real>", bluez_name:"<Real>"});
+  await ui.poll(next);
+  assert.equal(ui.find("device:device").textContent, "<Real> (псевдоним: 22:33:44:55:66:77)");
+  assert.equal(ui.find("device:device").disabled, true);
+});
+
+test("malformed separate name fields fail closed", async () => {
+  for (const fields of [{bluez_name:"only"}, {bluez_name:"x", alias:42},
+    {bluez_name:"x", alias:"я".repeat(81)}]) {
+    const state = snapshot(); Object.assign(state.devices[0], fields);
+    const ui = await panel(state).start();
+    assert.equal(ui.controls.state, null);
+  }
+});
+
 test("off adapter needs explicit power; missing preference never selects fallback", async () => {
   const adapters = [{id:"usb", name:"", label:"…33:44:55:61", powered:false, discovering:false, selectable:true}];
   const state = snapshot({adapters, adapter_preference:true, adapter:{id:"usb", powered:false, discovering:false}});

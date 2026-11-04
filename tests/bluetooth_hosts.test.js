@@ -28,6 +28,14 @@ for (const kind of ["tv", "phone"]) test(`${kind}: collapsed Bluetooth acquires 
   assert.equal(ui.ops().filter(op => op === "release").length, 2, "no double release");
 });
 
+for (const kind of ["tv", "phone"]) test(`${kind}: shared Bluetooth panel shows Name and Alias`, async () => {
+  const ui = host(kind); await settle();
+  Object.assign(ui.state.devices[0], {name:"Remote", bluez_name:"Remote", alias:"Nickname"});
+  ui.run(kind === "tv" ? "openSettings()" : 'showPage("settings")');
+  ui.toggle(true); await settle();
+  assert.ok(ui.root.textContent.includes("Remote (псевдоним: Nickname)"));
+});
+
 test("TV: dynamic rendered actions exclude detached, disabled, closed and hidden nodes", async () => {
   const ui = host("tv"); await settle(); ui.run("openSettings()");
   const summary = ui.details.querySelector("summary");

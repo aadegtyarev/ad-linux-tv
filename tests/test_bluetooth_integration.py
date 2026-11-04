@@ -344,6 +344,36 @@ def ws_request(sock, stream, body=None, method="POST", path="/api/bluetooth", nu
     return receive_message(stream)
 
 
+def test_device_name_and_alias_stay_private_and_reach_http_and_phone_socket(integrated):
+    rig = integrated
+    device = replace(
+        rig.transport.state.devices[0], name="Actual", bluez_name="Actual", alias="Nickname"
+    )
+    rig.transport.state = replace(rig.transport.state, devices=(device,))
+    status, local = rig.api(method="GET")
+    assert status == 200
+    visible = local["state"]["devices"][0]
+    assert (visible["name"], visible["bluez_name"], visible["alias"]) == (
+        "Actual",
+        "Actual",
+        "Nickname",
+    )
+    assert "address" not in visible  # Names are display data, not an identity field.
+    headers = dict(rig.headers, Host=f"localhost:{rig.port}", Origin=f"http://localhost:{rig.port}")
+    status, phone = rig.api(method="GET", headers=headers)
+    assert status == 200 and phone["state"]["devices"][0] == visible
+    headers.pop("Cookie")
+    assert rig.api(method="GET", headers=headers) == (403, {})
+    sock, stream, status = connect(rig.port, rig.cookie, rig.csrf)
+    assert " 101 " in status
+    try:
+        reply = ws_request(sock, stream, method="GET")
+        assert reply["status"] == 200 and reply["body"]["state"]["devices"][0] == visible
+    finally:
+        stream.close()
+        sock.close()
+
+
 def test_ordered_socket_principal_is_unique_stable_and_retired_exactly(integrated):
     rig = integrated
     first, stream, status = connect(rig.port, rig.cookie, rig.csrf)

@@ -610,9 +610,11 @@ def test_inventory_names_identity_bounds_and_multiple_adapter_pinning(lane):
     assert lane.transport.discover("off", off.id, 120)
     eventually(lambda: any(e.code == "adapter_off" for e in lane.events))
     lane.properties(Name="<b>\x00\n" + "🙂" * 1000, Alias="<x>\u202e" + "🙂" * 1000)
-    name = lane.transport.snapshot().devices[0].name
-    assert name.startswith("<x>") and "\u202e" not in name
-    assert len(name) <= 80 and len(name.encode()) <= 160
+    device = lane.transport.snapshot().devices[0]
+    assert device.name.startswith("<b>") and device.bluez_name == device.name
+    assert device.alias.startswith("<x>") and "\u202e" not in device.alias
+    for name in (device.name, device.bluez_name, device.alias):
+        assert len(name) <= 80 and len(name.encode()) <= 160
     assert len(lane.invoke(lambda: lane.transport._devices[DP].props["Alias"]).encode()) <= 160
     for i in range(140):
         lane.signal(
