@@ -17,6 +17,11 @@ class SettingsControls {
     this.refreshRevision = 0;
     this.viewSnapshotRevision = 0;
     this.viewAppliedSnapshot = 0;
+    this.searchDirty = false;
+    this.searchEditRevision = 0;
+    this.searchWriteRevision = 0;
+    this.searchWritePending = false;
+    this.searchAppliedSnapshot = 0;
     this.field = name => root.querySelector(`[data-role="${name}"]`);
     this.fields = name => Array.from(root.querySelectorAll(`[data-role="${name}"]`));
     this.field("pin-mode").onchange = () => this.renderFields();
@@ -27,6 +32,14 @@ class SettingsControls {
       event.preventDefault();
       void this.change("browser_locale", this.field("browser-locale").value);
     };
+    if (this.field("search-form")) {
+      this.field("search-form").onsubmit = event => { event.preventDefault(); void this.saveSearch(); };
+      this.field("search-provider").onchange = () => {
+        this.searchDirty = true;
+        this.searchEditRevision++;
+        this.field("search-hint").textContent = "Изменения ещё не сохранены.";
+      };
+    }
     if (this.field("magnifier")) this.field("magnifier").onclick = () =>
       void this.change("magnifier", !this.state?.magnifier);
     this.field("restart").onclick = () => void this.change("restart", true);
@@ -117,7 +130,8 @@ class SettingsControls {
 
   viewSnapshot() {
     return {sequence:++this.viewSnapshotRevision, write:this.viewWriteRevision,
-      pending:this.viewWritePending, scope:this.viewRevision, edit:this.viewEditRevision};
+      pending:this.viewWritePending, scope:this.viewRevision, edit:this.viewEditRevision,
+      searchWrite:this.searchWriteRevision, searchPending:this.searchWritePending};
   }
 
   mergeViewState(state, snapshot) {
@@ -147,6 +161,10 @@ class SettingsControls {
 
   render(state, snapshot = this.viewSnapshot()) {
     state = this.mergeViewState(state, snapshot);
+    if (this.state && (this.searchDirty || this.searchWritePending || snapshot.searchPending ||
+        snapshot.searchWrite !== this.searchWriteRevision || snapshot.sequence < this.searchAppliedSnapshot))
+      state = this.withSearchState(state, this.state);
+    else this.searchAppliedSnapshot = snapshot.sequence;
     this.state = state;
     this.renderAbout();
     this.onState(state);
@@ -208,6 +226,7 @@ class SettingsControls {
         ? "Язык применится после перезапуска ТВ-режима."
         : installed.includes(locale) ? "" : "Языковой пакет не установлен: Firefox останется на английском.";
     }
+    this.renderSearch();
     this.renderRestart();
     this.field("pin").value = "";
     this.field("pin-confirm").value = "";
@@ -255,6 +274,54 @@ class SettingsControls {
       if (setting === "pin") this.onPinChange();
     } catch (_) {
       this.notice("Не удалось сохранить. Проверьте данные и повторите.", true);
+    }
+  }
+
+  withSearchState(state, source) {
+    const merged = {...state};
+    for (const key of ["browser_search", "browser_search_available", "browser_search_custom"]) {
+      if (Object.hasOwn(source, key)) merged[key] = source[key];
+      else delete merged[key];
+    }
+    return merged;
+  }
+
+  renderSearch() {
+    if (!this.field("search-form") || !this.state) return;
+    const available = this.state.browser_search_available === true;
+    this.field("search-provider").disabled = !available;
+    this.field("search-save").disabled = !available || this.searchWritePending;
+    if (!this.searchDirty) this.field("search-provider").value = this.state.browser_search || "";
+    if (!available) this.field("search-hint").textContent = "Плитка «Браузер» недоступна или требуется обновление медиацентра.";
+    else if (!this.searchDirty) this.field("search-hint").textContent = this.state.browser_search
+      ? "Применится при следующем открытии плитки. Адрес из конфигурации сохранён."
+      : this.state.browser_search_custom ? "Используется ваш адрес из конфигурации."
+        : "Используется адрес из конфигурации (по умолчанию Яндекс).";
+  }
+
+  async saveSearch() {
+    if (this.searchWritePending || this.state?.browser_search_available !== true) return;
+    const edit = this.searchEditRevision;
+    const value = this.field("search-provider").value || null;
+    this.searchWritePending = true;
+    this.searchWriteRevision++;
+    this.renderSearch();
+    try {
+      const response = await this.request("POST", {setting:"browser_search", value});
+      if (!response.ok) throw new Error("rejected");
+      const state = await response.json();
+      if (state.browser_search_available !== true || state.browser_search !== value ||
+          typeof state.browser_search_custom !== "boolean") throw new Error("invalid acknowledgement");
+      this.state = this.withSearchState(this.state, state);
+      this.searchAppliedSnapshot = this.viewSnapshot().sequence;
+      this.searchDirty = edit !== this.searchEditRevision;
+      this.notice(this.searchDirty ? "Поиск сохранён. Новые изменения ещё не сохранены." : "Поиск сохранён. Откройте плитку заново.");
+    } catch (_) {
+      this.notice("Не удалось подтвердить выбор поиска. Проверьте настройки и повторите.", true);
+    } finally {
+      this.searchWriteRevision++;
+      this.searchWritePending = false;
+      this.renderSearch();
     }
   }
 
@@ -311,6 +378,7 @@ class SettingsControls {
     const scope = this.viewScope;
     const revision = this.viewRevision;
     const editRevision = this.viewEditRevision;
+    const searchSnapshot = this.viewSnapshot();
     const current = () => scope === this.viewScope && revision === this.viewRevision;
     this.viewWritePending = true;
     this.viewWriteRevision++;
@@ -321,6 +389,13 @@ class SettingsControls {
         : {setting:"service_view", value:{id:scope, view}});
       if (!response.ok) throw new Error("rejected");
       const state = await response.json();
+      if (!this.searchDirty && !this.searchWritePending && !searchSnapshot.searchPending &&
+          searchSnapshot.searchWrite === this.searchWriteRevision &&
+          searchSnapshot.sequence >= this.searchAppliedSnapshot) {
+        this.state = this.withSearchState(this.state, state);
+        this.searchAppliedSnapshot = searchSnapshot.sequence;
+        this.renderSearch();
+      }
       if (!current()) return;
       // A view write changes only the view slice. A delayed full ACK must not
       // roll back newer unrelated settings accepted while this write was pending.

@@ -11,6 +11,7 @@ import yaml
 from .audio import OUTPUT_ID
 from .bluetooth_schema import validate_bluetooth
 from .browser_locale import validate_browser
+from .browser_search import validate_search_provider
 from .config_errors import ConfigurationError
 from .discovery import validate_discovery
 from .magnifier import validate_magnifier
@@ -40,6 +41,7 @@ def load_config(path):
                 "magnifier",
                 "view",
                 "browser",
+                "browser_search",
                 "bluetooth",
             }
         ):
@@ -106,6 +108,11 @@ def load_config(path):
                 data["bluetooth"] = validate_bluetooth(data["bluetooth"])
             except ValueError:
                 raise ConfigurationError("invalid Bluetooth configuration") from None
+        if "browser_search" in data:
+            try:
+                validate_search_provider(data["browser_search"])
+            except ValueError:
+                raise ConfigurationError("invalid browser search provider") from None
         if "browser" in data:
             try:
                 data["browser"] = validate_browser(data["browser"])

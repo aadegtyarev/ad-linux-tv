@@ -3,6 +3,8 @@
 import hashlib
 import json
 
+from .browser_search import SEARCH_URLS
+
 DEFAULT_VIEW = {"mode": "desktop", "zoom": 125}
 
 
@@ -26,8 +28,15 @@ def common_view(config):
 
 def service_catalogue(config):
     default = common_view(config)
+    selected = config.get("browser_search")
     return [
-        dict(service, view=validate_view(service.get("view", default)))
+        dict(
+            service,
+            url=(
+                SEARCH_URLS[selected] if service["id"] == "browser" and selected else service["url"]
+            ),
+            view=validate_view(service.get("view", default)),
+        )
         for service in config["services"]
     ]
 
@@ -48,7 +57,9 @@ def service_views(config):
 
 
 def view_fingerprint(config):
+    default = common_view(config)
     values = [
-        {"id": service["id"], "view": service["view"]} for service in service_catalogue(config)
+        {"id": service["id"], "view": validate_view(service.get("view", default))}
+        for service in config["services"]
     ]
     return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()

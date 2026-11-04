@@ -35,7 +35,7 @@ Choose Off, 15, 30, 60, 90 or 120 minutes. The TV shows a small clock in the upp
 
 ## Settings
 
-TV **System** and phone **Menu → Settings** contain PIN, proxy, browser language, cursor acceleration, magnifier scale, site view and sound. **О программе** shows versions. Details: [Settings](configuration.md).
+TV **System** and phone **Menu → Settings** contain PIN, proxy, browser language, Browser-tile search, cursor acceleration, magnifier scale, site view and sound. In **Поиск в браузере**, save Яндекс, Google or DuckDuckGo for the next Browser-tile open. **Текущий адрес из конфигурации** restores the existing configured address; saving a provider does not overwrite it. **О программе** shows versions. Details: [Settings](configuration.md).
 
 ### Bluetooth adapter
 
