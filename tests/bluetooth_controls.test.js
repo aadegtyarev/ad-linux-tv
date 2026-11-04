@@ -851,3 +851,42 @@ for (const kind of ["pair", "connect", "disconnect", "forget"]) test(`finished $
   assert.equal(ui.find("discover").disabled, false);
   assert.equal(ui.controls.challenge, null);
 });
+
+test("adapter names are text, selection is explicit and the identifier is revalidated", async () => {
+  const adapters = [
+    {id:"adapter", name:"<USB>", label:"…33:44:55:60", powered:true, discovering:false, selectable:true},
+    {id:"usb", name:"<USB>", label:"…33:44:55:61", powered:false, discovering:false, selectable:true},
+  ];
+  const state = snapshot({adapters, adapter_preference:false});
+  const ui = await panel(state).start();
+  assert.match(ui.root.textContent, /названия|Названия/);
+  assert.match(ui.find("adapter:usb").textContent, /<USB>.*…33:44:55:61/);
+  await ui.click("adapter:usb");
+  assert.deepEqual(lastBody(ui), {op:"select_adapter", lease, adapter_id:"usb", revision:7});
+});
+
+test("external discovery disables adapter changes", async () => {
+  const adapters = [
+    {id:"adapter", name:"Built-in", label:"…33:44:55:60", powered:true, discovering:true, selectable:true},
+    {id:"usb", name:"USB", label:"…33:44:55:61", powered:false, discovering:false, selectable:true},
+  ];
+  const ui = await panel(snapshot({adapters, adapter_preference:true})).start();
+  assert.equal(ui.find("adapter:usb").disabled, true);
+  assert.equal(ui.find("adapter:auto").disabled, true);
+  assert.match(ui.root.textContent, /Поиск Bluetooth уже идёт/);
+  const offState = snapshot({adapters, adapter_preference:true,
+    adapter:{id:"usb", powered:false, discovering:false}});
+  const off = await panel(offState).start();
+  assert.equal(off.find("adapter:power").disabled, true);
+});
+
+test("off adapter needs explicit power; missing preference never selects fallback", async () => {
+  const adapters = [{id:"usb", name:"", label:"…33:44:55:61", powered:false, discovering:false, selectable:true}];
+  const state = snapshot({adapters, adapter_preference:true, adapter:{id:"usb", powered:false, discovering:false}});
+  const ui = await panel(state).start();
+  await ui.click("adapter:power");
+  assert.deepEqual(lastBody(ui), {op:"power_on", lease, adapter_id:"usb"});
+  const missing = await panel(snapshot({adapters:[], adapter_preference:true, adapter:null, available:false})).start();
+  assert.match(missing.root.textContent, /Выбранный адаптер недоступен/);
+  assert.equal(missing.find("adapter:power"), undefined);
+});

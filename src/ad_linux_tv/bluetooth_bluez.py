@@ -89,6 +89,7 @@ class Adapter:
     address: str
     powered: bool
     discovering: bool
+    name: str = ""
 
 
 @dataclass(frozen=True)
@@ -241,6 +242,10 @@ def _agent_service(transport):
     return Agent()
 
 
+class _InvalidatedBeforeWrite(Exception):
+    text = "invalidated"
+
+
 class BluezTransport:
     def __init__(self, *, bus_factory=None, clock: Callable[[], float] = time.monotonic):
         self._factory = bus_factory
@@ -297,6 +302,9 @@ class BluezTransport:
     def stop_discovery(self, operation_id: str) -> bool:
         return self._submit("stop_discovery", operation_id)
 
+    def power_on(self, operation_id: str, adapter_id: str, deadline: float) -> bool:
+        return self._submit("power_on", operation_id, adapter_id, deadline)
+
     def pair(self, operation_id: str, device_id: str, deadline: float) -> bool:
         return self._submit("pair", operation_id, device_id, deadline)
 
@@ -332,7 +340,7 @@ class BluezTransport:
     def _submit(self, kind, operation_id, *args):
         if not isinstance(operation_id, str) or not _ID.fullmatch(operation_id):
             return False
-        if kind in {"discover", "pair", "connect", "disconnect", "forget"}:
+        if kind in {"discover", "pair", "connect", "disconnect", "forget", "power_on"}:
             target, deadline = args
             if not isinstance(target, str) or not _ID.fullmatch(target):
                 return False
@@ -479,9 +487,23 @@ class BluezTransport:
         if self._failed_closed or len(self._writes) >= 8:
             self._fail_closed("bus_unavailable")
             raise ConnectionError("unavailable")
-        # No await between this operation fence and dbus-fast buffering bytes.
+        # No await between the identity fence and dbus-fast buffering bytes.
         if agent_reply and not self._agent_reply_current(agent_reply):
+            retired = agent_reply.operation
+            if retired is not None and retired is self._op and not self._unique_adapter(retired):
+                self._retire("invalidated")
             return
+        if op:
+            if (
+                not self._current(op)
+                or not self._target_matches(op)
+                or not self._unique_adapter(op)
+                or (
+                    op.kind == "power_on"
+                    and any(a.props.get("Discovering") is True for a in self._adapters.values())
+                )
+            ):
+                raise _InvalidatedBeforeWrite()
         try:
             write = asyncio.ensure_future(self._bus.send(msg))
         except Exception:
@@ -610,6 +632,7 @@ class BluezTransport:
                 obj.props["Address"],
                 obj.props.get("Powered") is True,
                 obj.props.get("Discovering") is True,
+                _name(obj.props.get("Alias") or obj.props.get("Name")),
             )
             for obj in self._adapters.values()
         )
@@ -853,13 +876,13 @@ class BluezTransport:
 
     def _observe(self, path, obj, changes):
         if path in self._adapters:
-            if (
-                "Powered" in changes
-                and changes["Powered"] is not True
-                and self._op
-                and self._op.adapter_path == path
-            ):
-                self._retire("invalidated")
+            op = self._op
+            if "Powered" in changes and op and op.adapter_path == path:
+                if op.kind == "power_on" and op.dispatched and changes["Powered"] is True:
+                    self._emit("powered", op)
+                    self._retire("observed", cleanup=False)
+                elif changes["Powered"] is not True and op.kind != "power_on":
+                    self._retire("invalidated")
             return
         for prop, kind in (("Paired", "paired"), ("Connected", "connected")):
             if prop not in changes:
@@ -891,7 +914,7 @@ class BluezTransport:
             if op and op.id == op_id and (kind == "cancel" or op.kind == "discover"):
                 self._retire(
                     "uncertain"
-                    if op.dispatched and op.kind in {"connect", "disconnect", "forget"}
+                    if op.dispatched and op.kind in {"connect", "disconnect", "forget", "power_on"}
                     else "cancelled"
                 )
             return
@@ -912,7 +935,14 @@ class BluezTransport:
             return
         target, deadline = args
         dummy = _Operation(
-            op_id, kind, "", None, target if kind != "discover" else None, 0, self._epoch, deadline
+            op_id,
+            kind,
+            "",
+            None,
+            target if kind not in {"discover", "power_on"} else None,
+            0,
+            self._epoch,
+            deadline,
         )
         if (
             op
@@ -926,18 +956,28 @@ class BluezTransport:
         if not self._registered or not self._owner:
             self._emit("finished", dummy, code="unavailable")
             return
-        objects = self._adapters if kind == "discover" else self._devices
+        objects = self._adapters if kind in {"discover", "power_on"} else self._devices
         path = next((p for p, obj in objects.items() if obj.id == target), None)
         if path is None:
             self._emit("finished", dummy, code="invalidated")
             return
         obj = objects[path]
-        adapter_path = path if kind == "discover" else obj.props["Adapter"]
+        adapter_path = path if kind in {"discover", "power_on"} else obj.props["Adapter"]
         adapter = self._adapters.get(adapter_path)
-        if not adapter or adapter.props.get("Powered") is not True:
+        if not adapter or (kind != "power_on" and adapter.props.get("Powered") is not True):
             self._emit("finished", dummy, code="adapter_off")
             return
-        duration = {"discover": 30, "pair": 60, "connect": 60, "disconnect": 15, "forget": 15}[kind]
+        if kind == "power_on" and adapter.props.get("Powered") is not False:
+            self._emit("finished", dummy, code="invalidated")
+            return
+        duration = {
+            "discover": 30,
+            "pair": 60,
+            "connect": 60,
+            "disconnect": 15,
+            "forget": 15,
+            "power_on": 15,
+        }[kind]
         deadline = min(deadline, self._clock() + duration)
         if deadline <= self._clock():
             self._emit("finished", dummy, code="expired")
@@ -946,9 +986,9 @@ class BluezTransport:
             op_id,
             kind,
             adapter_path,
-            None if kind == "discover" else path,
-            None if kind == "discover" else obj.id,
-            0 if kind == "discover" else obj.epoch,
+            None if kind in {"discover", "power_on"} else path,
+            None if kind in {"discover", "power_on"} else obj.id,
+            0 if kind in {"discover", "power_on"} else obj.epoch,
             self._epoch,
             deadline,
             adapter_id=adapter.id,
@@ -969,6 +1009,26 @@ class BluezTransport:
     async def _dispatch(self, op):
         try:
             if not self._current(op):
+                return
+            if op.kind == "power_on":
+                from dbus_fast import Variant
+
+                op.dispatched = True
+                self._emit("requested", op)
+                if not self._current(op) or not self._target_matches(op):
+                    return
+                await self._call(
+                    self._owner,
+                    op.adapter_path,
+                    _PROPS,
+                    "Set",
+                    "ssv",
+                    [_ADAPTER, "Powered", Variant("b", True)],
+                    timeout=max(0.001, op.deadline - self._clock()),
+                    op=op,
+                )
+                if self._current(op):
+                    self._emit("accepted", op)
                 return
             member = {
                 "discover": "StartDiscovery",
@@ -1000,7 +1060,18 @@ class BluezTransport:
         except Exception as exc:
             if self._op is op:
                 code = getattr(exc, "text", "uncertain")
-                self._retire(code if code in {"denied", "failed"} else "uncertain")
+                self._retire(code if code in {"denied", "failed", "invalidated"} else "uncertain")
+
+    def _unique_adapter(self, op):
+        adapter = self._adapters.get(op.adapter_path)
+        return (
+            bool(adapter)
+            and sum(
+                a.props.get("Address") == adapter.props.get("Address")
+                for a in self._adapters.values()
+            )
+            == 1
+        )
 
     def _target_matches(self, op):
         adapter = self._adapters.get(op.adapter_path)
@@ -1164,6 +1235,7 @@ class BluezTransport:
         return op is None or (
             self._current(op)
             and self._target_matches(op)
+            and self._unique_adapter(op)
             and op.id == entry.operation_id
             and self._epoch == entry.controller_epoch
             and op.device_id == entry.device_id

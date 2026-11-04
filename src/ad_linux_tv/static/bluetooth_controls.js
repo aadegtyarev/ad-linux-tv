@@ -56,7 +56,7 @@ class BluetoothControls {
     invalid_lease: "Срок управления истёк. Нажмите «Повторить управление».",
     revision_mismatch: "Назначения изменились. Проверьте текущий список перед новым действием.",
     unavailable: "Bluetooth недоступен. Проверьте адаптер.",
-    adapter_off: "Адаптер Bluetooth выключен. Включите его в системе.",
+    adapter_off: "Адаптер Bluetooth выключен. Вы можете включить его здесь.",
     helper_unavailable: "Управление кнопками недоступно. Обратитесь к администратору.",
     unsupported: "Это действие или кнопка не поддерживается.",
     identity_unproven: "Не удалось подтвердить устройство как пульт. Выберите другое устройство.",
@@ -336,6 +336,12 @@ class BluetoothControls {
         Array.from(device.name).length <= 80 && [device.paired, device.connected, device.selected, device.input_available].every(boolean)) &&
       (state.adapter === null || (state.adapter && this.handle(state.adapter.id) &&
         boolean(state.adapter.powered) && boolean(state.adapter.discovering))) &&
+      (state.adapters === undefined || (Array.isArray(state.adapters) && state.adapters.length <= 8 &&
+        state.adapters.every(a => a && this.handle(a.id) && typeof a.name === "string" &&
+          Array.from(a.name).length <= 80 && typeof a.label === "string" &&
+          /^…(?:[0-9A-F]{2}:){3}[0-9A-F]{2}$/.test(a.label) &&
+          [a.powered, a.discovering, a.selectable].every(boolean)))) &&
+      (state.adapter_preference === undefined || boolean(state.adapter_preference)) &&
       (state.operation === null || (state.operation && this.handle(state.operation.id) &&
         typeof state.operation.kind === "string" && typeof state.operation.phase === "string" &&
         deviceId(state.operation.device_id) && typeof state.operation.error === "string" &&
@@ -372,6 +378,7 @@ class BluetoothControls {
       if (!this.current(generation)) return false;
       const valid = (!fields.operation_id || fields.operation_id === this.operation()?.id) &&
         (!fields.device_id || this.state.devices.some(device => device.id === fields.device_id)) &&
+        (!fields.adapter_id || (this.state.adapters || []).some(adapter => adapter.id === fields.adapter_id && adapter.selectable)) &&
         (fields.revision === undefined || fields.revision === this.state.revision) &&
         (op !== "answer" || fields.challenge_id === this.challenge?.id) &&
         (op !== "forget_confirm" || fields.confirmation_id === this.confirmation?.id) &&
@@ -460,6 +467,31 @@ class BluetoothControls {
     const operation = this.operation();
     const powered = state.available && state.adapter?.powered;
     const free = !!this.lease && powered && !operation;
+    const adapters = state.adapters || [];
+    if (state.adapters) {
+      this.element("h4", "Адаптер Bluetooth", this.content);
+      this.element("p", "Названия адаптеров могут совпадать или отсутствовать. Сверяйте окончание адреса; номера в списке могут меняться.", this.content);
+      if (state.adapter_preference && !state.adapter)
+        this.element("p", "Выбранный адаптер недоступен. Подключите его или выберите другой.", this.content);
+      const scanning = adapters.some(adapter => adapter.discovering);
+      if (scanning && !operation)
+        this.element("p", "Поиск Bluetooth уже идёт. Дождитесь его завершения перед сменой адаптера.", this.content);
+      const canChoose = !!this.lease && !operation && !scanning;
+      this.button(this.content, "adapter:auto", "Автоматически", canChoose && !!state.adapter_preference,
+        () => this.mutate("adapter_auto", {revision: state.revision}));
+      for (const [index, adapter] of adapters.entries()) {
+        const selected = adapter.id === state.adapter?.id;
+        const button = this.button(this.content, `adapter:${adapter.id}`,
+          `${index + 1}. ${adapter.name || "Без названия"} ${adapter.label} · ${adapter.powered ? "включён" : "выключен"}${adapter.selectable ? "" : " · неоднозначный адрес"}`,
+          canChoose && adapter.selectable && (!selected || !state.adapter_preference),
+          () => this.mutate("select_adapter", {adapter_id: adapter.id, revision: state.revision}));
+        button.setAttribute("aria-pressed", String(selected));
+      }
+      if (state.adapter && !state.adapter.powered)
+        this.button(this.content, "adapter:power", "Включить выбранный адаптер", canChoose &&
+          adapters.some(adapter => adapter.id === state.adapter.id && adapter.selectable),
+          () => this.mutate("power_on", {adapter_id: state.adapter.id}));
+    }
     this.element("p", !state.available ? this.text(state.reason || "unavailable") : !state.adapter ?
       this.text("unavailable") : !state.adapter.powered ? this.text("adapter_off") :
       state.adapter.discovering ? "Поиск устройств идёт…" : "Адаптер Bluetooth включён.", this.content);
@@ -469,7 +501,7 @@ class BluetoothControls {
     }
     this.button(this.content, "discover", "Найти устройства (30 с)", free, () => this.mutate("discover"));
     if (operation) {
-      const kinds = {discover: "Поиск", pair: "Сопряжение", connect: "Подключение", disconnect: "Отключение",
+      const kinds = {discover: "Поиск", power_on: "Включение адаптера", pair: "Сопряжение", connect: "Подключение", disconnect: "Отключение",
         select_remote: "Выбор пульта", learn: "Обучение кнопки", forget: "Удаление сопряжения"};
       const phases = {queued: "в очереди", requested: "запрошено", accepted: "запрос принят",
         waiting: "ожидаем устройство", finished: "ожидаем подтверждение состояния",

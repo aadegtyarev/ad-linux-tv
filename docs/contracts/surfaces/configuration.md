@@ -24,6 +24,10 @@ Saving is targeted, atomic/private, preserves unrelated fields/auth/sessions/oth
 
 The [2026-10-27 deployment](../../verification/settings-versions-2026-10-27.md) installed S01/S02: six services inherit the saved common desktop125, with no override or pending restart. This supersedes the earlier power-scope mobile200 omission/reset default without rewriting the historical approval. Power/CEC adds no client-supplied command, device path, secret or settings file; private config/auth/profile isolation remains unchanged. Physical acceptance is separate.
 
+## Bluetooth adapter preference
+
+The optional private `bluetooth` section retains `remote` and may include an explicit canonical adapter address. Omission preserves the previous automatic policy, including a saved remote's adapter. A targeted atomic update preserves the saved remote and unrelated settings. An explicitly selected adapter that is missing or ambiguous is not replaced automatically; choosing automatic removes only the preference. The setting does not contain bond keys, names, D-Bus paths or pairing secrets. Selection and adapter power-on use the existing private Bluetooth authority and lease; power-on is explicit and its result requires an observed state. No other controller is powered off, disconnected or unpaired by selection. Physical adapter and pairing behavior remains unverified. See the [adapter feature](../features/bluetooth-adapter-selection.md).
+
 ## Phone settings presentation
 Phone Menu exposes sound/output, PIN/proxy, pointer, magnifier, shared view settings and QR help. The configured-site selector only scopes view editing; it is not a service launcher. Website-address forms and duplicate browser-key/Tab command banks are not added. Legacy command/input endpoints remain unchanged.
 

@@ -26,6 +26,10 @@ The power delivery installed root-owned `ad-linux-tv-poweroff.service` and one e
 
 Display sleep is separate: managed pause and verified silence precede output-off, and wake never resumes playback. Existing optional CEC is directed wake only, not provisioning or physical-TV-state proof. Use the TV remote if the output is on but no picture appears. The [power delivery record](../../verification/remote-power-2026-10-26.md) records backup, wheel digest, preservation checks and outstanding physical gates; no destructive acceptance was run.
 
+## Bluetooth adapter operation
+
+The Bluetooth selector uses the existing user-session BlueZ D-Bus boundary; it does not install drivers, helpers, services or new privileges. Selection does not switch the system default for other applications or migrate bonds. Only a user's explicit power-on request targets the selected controller, and BlueZ may deny it. Hardware behavior and physical remote-button input remain unverified or unavailable; see the [adapter feature](../features/bluetooth-adapter-selection.md).
+
 ## Safety, failures, and recovery
 Never put PIN/secrets in command arguments or logs; review dry-run before mutation. No silent sudo. Installed CLI validates config; troubleshoot server output, matching bridge localhost port 8765, and shared private LAN. Uninstall retains user configuration.
 
