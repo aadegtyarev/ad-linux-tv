@@ -108,18 +108,21 @@ def validate_bluetooth(value):
     """Validate an explicitly present optional ``bluetooth`` config section.
 
     Omission is handled by the caller and must not trigger a configuration write.
-    An explicit section has exactly ``remote``, either null or one identity/map.
+    ``adapter`` is an optional explicit controller address. Its absence retains
+    legacy automatic selection and is never materialized by reading settings.
     """
-    if not isinstance(value, dict) or set(value) != {"remote"}:
+    if not isinstance(value, dict) or set(value) not in ({"remote"}, {"remote", "adapter"}):
         raise ValueError("invalid Bluetooth configuration")
+    adapter = {"adapter": _address(value["adapter"])} if "adapter" in value else {}
     remote = value["remote"]
     if remote is None:
-        return {"remote": None}
+        return {"remote": None, **adapter}
     if not isinstance(remote, dict) or set(remote) != {"identity", "bindings"}:
         raise ValueError("invalid Bluetooth configuration")
     return {
         "remote": {
             "identity": validate_identity(remote["identity"]),
             "bindings": validate_bindings(remote["bindings"]),
-        }
+        },
+        **adapter,
     }

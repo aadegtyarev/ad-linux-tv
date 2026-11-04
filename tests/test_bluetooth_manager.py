@@ -25,6 +25,7 @@ class Adapter:
     address: str = A1
     powered: bool = True
     discovering: bool = False
+    name: str = ""
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,9 @@ class Transport:
 
     def stop_discovery(self, *args):
         return self._command("stop_discovery", *args)
+
+    def power_on(self, *args):
+        return self._command("power_on", *args)
 
     def pair(self, *args):
         return self._command("pair", *args)
@@ -520,6 +524,8 @@ def test_challenge_forms_private_delivery_and_exact_answers(rig, kind, value, an
         "reason",
         "revision",
         "adapter",
+        "adapter_preference",
+        "adapters",
         "devices",
         "remote",
         "operation",

@@ -849,6 +849,33 @@ def test_remote_request_preserves_upgrade_duplicate_header_order(
         sock.close()
 
 
+def test_adapter_selection_uses_existing_private_authority_and_atomic_settings(integrated):
+    rig = integrated
+    lease = acquire(rig)
+    state = rig.api(method="GET")[1]["state"]
+    selected = state["adapters"][0]
+    status, result = action(
+        rig, lease, "select_adapter", adapter_id=selected["id"], revision=state["revision"]
+    )
+    assert status == 200 and result["state"]["adapter_preference"]
+    saved = yaml.safe_load(rig.path.read_text())
+    assert saved["bluetooth"]["adapter"] == rig.transport.state.adapters[0].address
+    assert saved["auth"] == rig.config["auth"]
+    assert saved["services"] == rig.config["services"]
+    assert saved["proxy"] == rig.config["proxy"]
+    denied_headers = dict(
+        rig.headers, Host=f"localhost:{rig.port}", Origin=f"http://localhost:{rig.port}"
+    )
+    denied_headers.pop("X-CSRF-Token")
+    assert (
+        rig.api(
+            {"op": "power_on", "lease": lease, "adapter_id": selected["id"]}, headers=denied_headers
+        )[0]
+        == 403
+    )
+    assert not any(call[0] == "power_on" for call in rig.transport.calls)
+
+
 @pytest.mark.parametrize("host_name,origin_name", [("host", "origin"), ("hOsT", "oRiGiN")])
 @pytest.mark.parametrize("invalid", ["host", "origin", "session", "csrf"])
 def test_socket_cased_headers_do_not_relax_authority(integrated, host_name, origin_name, invalid):

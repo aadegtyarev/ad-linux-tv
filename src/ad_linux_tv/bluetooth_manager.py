@@ -36,6 +36,9 @@ _FIELDS = {
     "poll": ("lease",),
     "release": ("lease",),
     "discover": ("lease",),
+    "select_adapter": ("lease", "adapter_id", "revision"),
+    "adapter_auto": ("lease", "revision"),
+    "power_on": ("lease", "adapter_id"),
     "cancel": ("lease", "operation_id"),
     "pair": ("lease", "device_id"),
     "connect": ("lease", "device_id"),
@@ -50,7 +53,14 @@ _FIELDS = {
     "unmap": ("lease", "key", "revision"),
     "reset": ("lease", "revision"),
 }
-_DURATIONS = {"discover": 30, "pair": 60, "connect": 60, "disconnect": 15, "forget": 15}
+_DURATIONS = {
+    "discover": 30,
+    "pair": 60,
+    "connect": 60,
+    "disconnect": 15,
+    "forget": 15,
+    "power_on": 15,
+}
 # Only these documented admission rejections use a placeholder device epoch.
 _PRE_DISPATCH_REJECTIONS = frozenset("busy unavailable invalidated adapter_off expired".split())
 _OBSERVATIONS = {
@@ -58,6 +68,7 @@ _OBSERVATIONS = {
     "connect": "connected",
     "disconnect": "disconnected",
     "forget": "forgotten",
+    "power_on": "powered",
 }
 
 
@@ -427,10 +438,18 @@ class BluetoothManager:
                 ),
                 None,
             )
+        preference = self._config.get("adapter") if self._config else None
+        if preference:
+            matches = [a for a in adapters if a.address == preference]
+            return matches[0] if len(matches) == 1 else None
         remote = self._config["remote"] if self._config else None
         if remote:
-            return next((a for a in adapters if a.address == remote["identity"]["adapter"]), None)
-        return next((a for a in adapters if a.powered), adapters[0] if adapters else None)
+            matches = [a for a in adapters if a.address == remote["identity"]["adapter"]]
+            return matches[0] if len(matches) == 1 else None
+        candidate = next((a for a in adapters if a.powered), adapters[0] if adapters else None)
+        if candidate and sum(a.address == candidate.address for a in adapters) == 1:
+            return candidate
+        return None
 
     def _devices(self):
         if self._inventory is None:
@@ -471,7 +490,12 @@ class BluetoothManager:
         ):
             return False
         adapter = next((a for a in self._adapters() if a.id == operation.adapter_id), None)
-        if adapter is None or adapter.address != operation.adapter_address or not adapter.powered:
+        if (
+            adapter is None
+            or adapter.address != operation.adapter_address
+            or (not adapter.powered and operation.kind != "power_on")
+            or sum(a.address == adapter.address for a in self._adapters()) != 1
+        ):
             return False
         if operation.device_id is None:
             return True
@@ -638,6 +662,9 @@ class BluetoothManager:
         device = self._device(operation.device_id)
         if operation.kind == "forget":
             proven = device is None
+        elif operation.kind == "power_on":
+            adapter = self._adapter()
+            proven = bool(adapter and adapter.powered)
         else:
             proven = (
                 device is not None
@@ -658,7 +685,7 @@ class BluetoothManager:
             remote = self._config["remote"] if self._config_ok else None
             if remote and remote["identity"] == operation.identity:
                 if (
-                    self._save({"remote": None}, operation.revision) is not None
+                    self._save(dict(self._config, remote=None), operation.revision) is not None
                     and not self._failed
                 ):
                     operation.error = "save_failed"
@@ -764,6 +791,19 @@ class BluetoothManager:
             "available": reason in ("", "adapter_off"),
             "reason": reason,
             "revision": self._revision,
+            "adapter_preference": bool(self._config and self._config.get("adapter")),
+            "adapters": [
+                {
+                    "id": a.id,
+                    "name": _name(getattr(a, "name", "")),
+                    "label": "…" + a.address[-11:],
+                    "powered": a.powered,
+                    "discovering": a.discovering,
+                    "selectable": sum(other.address == a.address for other in self._adapters())
+                    == 1,
+                }
+                for a in self._adapters()
+            ],
             "adapter": (
                 {"id": adapter.id, "powered": adapter.powered, "discovering": adapter.discovering}
                 if adapter
@@ -912,6 +952,67 @@ class BluetoothManager:
                 return self._reply(202, private=True)
             if self._operation and self._operation.outstanding:
                 return self._reply(409, "busy")
+            if op in ("select_adapter", "adapter_auto", "power_on"):
+                self._refresh()
+                if self._inventory is None or not self._inventory.available:
+                    return self._reply(503, "unavailable")
+                if any(adapter.discovering for adapter in self._adapters()):
+                    return self._reply(409, "busy")
+            if op in ("select_adapter", "adapter_auto"):
+                if not self._config_ok or self._inventory is None or not self._inventory.available:
+                    return self._reply(503, "unavailable")
+                section = validate_bluetooth(self._config)
+                if op == "select_adapter":
+                    adapter = next((a for a in self._adapters() if a.id == dto["adapter_id"]), None)
+                    if (
+                        adapter is None
+                        or sum(a.address == adapter.address for a in self._adapters()) != 1
+                    ):
+                        return self._reply(409, "invalidated")
+                    self._refresh()
+                    matches = [a for a in self._adapters() if a.address == adapter.address]
+                    if (
+                        self._inventory is None
+                        or not self._inventory.available
+                        or len(matches) != 1
+                        or matches[0].id != adapter.id
+                    ):
+                        return self._reply(409, "invalidated")
+                    if any(a.discovering for a in self._adapters()):
+                        return self._reply(409, "busy")
+                    section["adapter"] = adapter.address
+                else:
+                    section.pop("adapter", None)
+                error = self._save(section, dto["revision"])
+                return self._reply(409 if error == "stale" else 503 if error else 200, error)
+            if op == "power_on":
+                adapter = self._adapter()
+                if (
+                    not self._config_ok
+                    or self._inventory is None
+                    or not self._inventory.available
+                    or adapter is None
+                    or adapter.id != dto["adapter_id"]
+                ):
+                    return self._reply(409, "invalidated")
+                if adapter.powered:
+                    return self._reply(409, "stale")
+                self._operation = _Operation(
+                    id=uuid.uuid4().hex,
+                    kind="power_on",
+                    deadline=self._clock() + 15,
+                    controller_epoch=self._inventory.controller_epoch,
+                    adapter_id=adapter.id,
+                    adapter_address=adapter.address,
+                    revision=self._revision,
+                )
+                operation = self._operation
+                failure = self._dispatch_fence(operation)
+                if failure:
+                    return self._reply(*failure)
+                if not self._command("power_on", operation.id, adapter.id, operation.deadline):
+                    return self._reply(503, "unavailable")
+                return self._reply(202, private=True)
             if op in ("unmap", "reset"):
                 return self._edit_maps(dto)
             if op == "learn":
