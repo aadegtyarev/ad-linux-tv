@@ -227,6 +227,38 @@ def test_render_transitions_and_in_place_ticks(overlay_module):
     overlay_module.timer_request.assert_not_called()
 
 
+def test_video_notice_shows_above_video_and_coexists_with_timer(overlay_module):
+    overlay = overlay_module.TimerOverlay()
+    reply = {"generation": 1, "remaining_seconds": 0, "phase": "idle", "video_notice": True}
+    overlay_module.timer_request.side_effect = None
+    overlay_module.timer_request.return_value = reply
+    assert overlay.poll() is True
+    assert overlay.window.visible and overlay.video_warning.visible
+    assert not overlay.header.visible and not overlay.actions.visible
+    assert overlay.video_warning.text == "Не удалось настроить видео в этом плеере"
+
+    overlay_module.timer_request.return_value = reply | {
+        "remaining_seconds": 900,
+        "phase": "countdown",
+    }
+    overlay.poll()
+    assert overlay.window.visible and overlay.header.visible and overlay.video_warning.visible
+    overlay_module.timer_request.return_value = {
+        "generation": 1,
+        "remaining_seconds": 900,
+        "phase": "countdown",
+    }
+    overlay.poll()
+    assert overlay.window.visible and overlay.header.visible and not overlay.video_warning.visible
+    overlay_module.timer_request.return_value = {
+        "generation": 2,
+        "remaining_seconds": 0,
+        "phase": "idle",
+    }
+    overlay.poll()
+    assert not overlay.window.visible
+
+
 def test_hover_and_header_callbacks_do_not_mutate_timer(overlay_module):
     overlay = overlay_module.TimerOverlay()
     update(overlay, 900)

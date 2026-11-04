@@ -19,6 +19,7 @@ Scan the TV QR code with a phone on the same home network. No PIN is needed by d
 - **Magnifier:** button next to the volume.
 - **⛶ Экран:** puts the video on the current page into fullscreen; press again to return. Only on press, never automatically.
 - **Media panel:** appears when the site exposes playback (title, play/pause, position, previous/next where supported).
+- **Menu → Видео:** choose **Исходный**, **4:3** or **16:9**, optionally enable horizontal mirror, then press **Применить**. The change affects only the current eligible video; 4:3 and 16:9 stretch or squeeze it. Some players, embedded frames and protected video are unsupported. Assigning a physical remote button is not yet available.
 
 ## Touch panel
 
@@ -43,7 +44,7 @@ Open **Bluetooth** in TV or phone settings. Choose a detected adapter by its Blu
 
 A chosen adapter is remembered. If it disappears, the panel reports it missing rather than silently using another; it becomes available again when that adapter returns. **Автоматически** restores the former automatic behavior. Finish or cancel discovery or pairing before switching. The device list shows the Bluetooth name and, when different, its alias; either may appear later during discovery. An alias can look like an address and does not establish device identity. Selection does not disable another adapter, disconnect devices, remove or transfer Bluetooth pairings, or change other applications' controller choice. Devices paired through another adapter may require separate pairing; do not forget an existing bond just to switch adapters.
 
-The Bluetooth panel does not configure or intercept physical remote buttons. Existing saved mappings are not automatically deleted; explicitly forgetting their associated device can remove its saved mappings. Adapter switching and pairing with actual hardware still need verification; a displayed name does not prove whether an adapter is USB or built in.
+The Bluetooth panel does not configure or intercept physical remote buttons. Existing saved mappings are not automatically deleted; explicitly forgetting their associated device can remove its saved mappings. Adapter switching and pairing with actual hardware still need verification; a displayed name does not prove whether an adapter is USB or built in. If a verified UR02's OK button does not activate a tile, see [UR02 troubleshooting](troubleshooting.md#ur02-ok-does-not-activate-a-tile).
 
 The dedicated TV Firefox profile prepares the media-center launcher as its browser homepage at startup. Firefox's own Home action (including Alt+Home) can then open it from a site; this may navigate the current tab and does not invoke the bridge's separate Home command. Ordinary text-editing Home is not intercepted. Whether the physical remote button reaches Firefox's browser-home action depends on the system and focus and remains untested.
 

@@ -79,6 +79,7 @@ class BrowserMedia:
                 "html_media_v1",
                 "tab_view_v1",
                 "video_fullscreen_v1",
+                "video_geometry_v1",
             }
 
     def fresh(self):
@@ -89,6 +90,15 @@ class BrowserMedia:
     def capabilities(self):
         with self.lock:
             return sorted(self._capabilities) if self.fresh() else []
+
+    def geometry_observation_after(self, recorded_at):
+        """Return whether a fresh post-receipt report exists and its eligible media ID."""
+        with self.lock:
+            if self.updated <= recorded_at or not self.fresh():
+                return False, None
+            if self.media is None or "video_geometry_v1" not in self._capabilities:
+                return True, None
+            return True, self.media["media_id"]
 
     def status(self):
         with self.lock:

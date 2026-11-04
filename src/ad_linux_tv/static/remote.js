@@ -40,6 +40,12 @@ const mediaControls = new PhoneMediaControls(
     method, ...(body === undefined ? {} : {body: JSON.stringify(body)}),
   }), () => requireLogin(),
 );
+const videoGeometryRoot = document.querySelector("#phone-video-geometry");
+const videoGeometry = videoGeometryRoot && typeof VideoGeometryControls === "function"
+  ? new VideoGeometryControls(videoGeometryRoot,
+    (method, path, body) => remoteFetch(path, {
+      method, ...(body === undefined ? {} : {body:JSON.stringify(body)}),
+    }), () => requireLogin(), (text, error) => say(text, error, true)) : null;
 const phoneSettingsRoot = document.querySelector("#phone-settings-controls");
 let pointerAccelerationLevel = 50;
 const phoneSettingsPanel = phoneSettingsRoot ? new SettingsControls(phoneSettingsRoot,
@@ -291,6 +297,7 @@ function say(text, error = false, notice = false) {
 
 function requireLogin() {
   retirePhoneBluetooth();
+  videoGeometry?.deactivate();
   if (remoteSuspended) return;
   touchpadControls.reset();
   mediaControls.stop();
@@ -505,6 +512,8 @@ function showPage(page) {
   menuPage.hidden = page !== "menu";
   sharePage.hidden = page !== "share";
   settingsPage.hidden = page !== "settings";
+  if (page === "menu" && csrf && !remoteSuspended && !document.hidden) videoGeometry?.activate();
+  else videoGeometry?.deactivate();
   syncPhoneBluetooth();
   window.scrollTo(0, 0);
   if (page === "remote") void phoneSettingsPanel?.refresh();
@@ -587,11 +596,17 @@ function reconcileMediaOnReturn() {
 window.addEventListener("focus", reconcileMediaOnReturn);
 window.addEventListener("pageshow", reconcileMediaOnReturn);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) reconcileMediaOnReturn();
-  else syncPhoneBluetooth();
+  if (!document.hidden) {
+    reconcileMediaOnReturn();
+    if (!menuPage.hidden && csrf && !remoteSuspended) videoGeometry?.activate();
+  } else {
+    videoGeometry?.deactivate();
+    syncPhoneBluetooth();
+  }
 });
 window.adLinuxTvRemoteLifecycle = Object.freeze({resume:reconcileMediaOnReturn, suspend() {
   if (remoteSuspended) return;
+  videoGeometry?.deactivate();
   remoteSuspended = true;
   retirePhoneBluetooth();
   csrf = "";

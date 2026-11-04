@@ -4,7 +4,7 @@ import json
 import time
 
 import pytest
-from conftest import request
+from conftest import login, request
 
 from ad_linux_tv.browser_media import BrowserMedia, choose_media
 from ad_linux_tv.control import CommandQueue, QueueFullError
@@ -113,6 +113,153 @@ def test_html_queue_requires_current_id_capability_and_bounded_deadline():
     with pytest.raises(QueueFullError):
         queue.push_media("pause", "a" * 32)
     assert len(queue.items) == 128
+
+
+def test_geometry_queue_requires_fresh_capability_and_current_media():
+    queue = CommandQueue()
+    with pytest.raises(ValueError):
+        queue.push_geometry("a" * 32, "4:3", True)
+    data = report(snapshot())
+    queue.browser_media.report(data)
+    with pytest.raises(ValueError):  # An old extension must not receive new commands.
+        queue.push_geometry("a" * 32, "4:3", True)
+    data = report(snapshot(), data["sequence"] + 1)
+    data["capabilities"].append("video_geometry_v1")
+    queue.browser_media.report(data)
+    for identity, mode, mirror in (
+        ("b" * 32, "4:3", False),
+        ("a" * 32, "stretch-everything", False),
+        ("a" * 32, [], False),
+        ("a" * 32, "4:3", 1),
+    ):
+        with pytest.raises(ValueError):
+            queue.push_geometry(identity, mode, mirror)
+    command_id = queue.push_geometry("a" * 32, "16:9", True)
+    item = queue.poll()[0]
+    assert item == {
+        "id": command_id,
+        "command": "video_geometry",
+        "service_id": None,
+        "media_id": "a" * 32,
+        "mode": "16:9",
+        "mirror": True,
+        "deadline": item["deadline"],
+    }
+    assert 0 < item["deadline"] - time.time() * 1000 <= 5000
+    assert queue.result(command_id) is None  # Enqueue is not proof of application.
+    assert queue.acknowledge(command_id, "failed", "no_media")
+    assert queue.result(command_id)["outcome"] == "failed"
+    assert queue.geometry_notice()
+    queue.geometry_notice_until -= 6
+    assert not queue.geometry_notice()
+    queue.browser_media.updated -= 4
+    with pytest.raises(ValueError):
+        queue.push_geometry("a" * 32, "original", False)
+
+
+def test_geometry_queue_is_bounded_and_stores_successful_bridge_receipt():
+    queue = CommandQueue()
+    data = report(snapshot())
+    data["capabilities"].append("video_geometry_v1")
+    queue.browser_media.report(data)
+    command_id = queue.push_geometry("a" * 32, "original", False)
+    assert queue.acknowledge(command_id)
+    assert queue.result(command_id) == {
+        "id": command_id,
+        "outcome": "completed",
+        "reason": None,
+        "volume": None,
+    }
+    assert not queue.geometry_notice()
+    other = queue.push("home")
+    assert queue.acknowledge(other, "failed", "unavailable")
+    assert not queue.geometry_notice()
+    for _ in range(128):
+        queue.push("home")
+    with pytest.raises(QueueFullError):
+        queue.push_geometry("a" * 32, "4:3", False)
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_completed_geometry_receipt_waits_for_new_observation(changed):
+    queue = CommandQueue()
+    data = report(snapshot())
+    data["capabilities"].append("video_geometry_v1")
+    queue.browser_media.report(data)
+    command_id = queue.push_geometry("a" * 32, "4:3", True)
+    assert queue.acknowledge(command_id)
+    assert queue.geometry_result(command_id) is None  # Pre-ack snapshot is not confirmation.
+    data["sequence"] += 1
+    data["sent_at"] = int(time.time() * 1000)
+    if changed:
+        data["media"] = None
+    queue.browser_media.report(data)
+    result = queue.geometry_result(command_id)
+    assert result["outcome"] == ("failed" if changed else "completed")
+    assert result["reason"] == ("no_media" if changed else None)
+    assert queue.geometry_notice() is changed
+
+
+def test_geometry_rpc_exposes_only_bounded_geometry_receipts(monkeypatch):
+    class Media:
+        def status(self):
+            return {"available": False}
+
+    monkeypatch.setattr("ad_linux_tv.remote_rpc.get_media_monitor", Media)
+    queue = CommandQueue()
+    data = report(snapshot())
+    data["capabilities"].append("video_geometry_v1")
+    queue.browser_media.report(data)
+    rpc = RemoteDispatcher(None, {}, queue, None, None, None, None, "test")
+    payload = {"action": "apply", "media_id": "a" * 32, "mode": "4:3", "mirror": False}
+    for invalid in (
+        payload | {"script": "alert(1)"},
+        payload | {"mirror": 1},
+        payload | {"mode": "scale(2)"},
+        {"action": "result", "id": "../etc/passwd"},
+    ):
+        assert rpc.dispatch("POST", "/api/video-geometry", invalid)[0] in (400, 409)
+    assert rpc.dispatch("GET", "/api/video-geometry", None) == (
+        200,
+        {"available": True, "media_id": "a" * 32},
+    )
+    status, body = rpc.dispatch("POST", "/api/video-geometry", payload)
+    assert status == 202
+    command_id = body["id"]
+    assert rpc.dispatch("POST", "/api/video-geometry", {"action": "result", "id": command_id}) == (
+        202,
+        {},
+    )
+    assert queue.acknowledge(command_id, "failed", "no_media")
+    status, result = rpc.dispatch(
+        "POST", "/api/video-geometry", {"action": "result", "id": command_id}
+    )
+    assert status == 200 and result["outcome"] == "failed"
+    other = queue.push("player_get")
+    assert queue.acknowledge(other, "completed", None, 50)
+    assert rpc.dispatch("POST", "/api/video-geometry", {"action": "result", "id": other}) == (
+        202,
+        {},
+    )
+
+
+def test_video_notice_is_loopback_only_and_has_no_arbitrary_text(endpoint, monkeypatch):
+    connection, port = endpoint
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    monkeypatch.setattr(CommandQueue, "geometry_notice", lambda _self: True)
+    response, body = request(
+        connection, "GET", "/api/display-timer", headers={"Host": f"127.0.0.1:{port}"}
+    )
+    assert response.status == 200 and json.loads(body)["video_notice"] is True
+    response, _, cookie = login(connection, port)
+    assert response.status == 200
+    response, body = request(
+        connection,
+        "GET",
+        "/api/display-timer",
+        headers={"Host": f"192.168.1.2:{port}", "Cookie": cookie},
+    )
+    assert response.status == 200 and "video_notice" not in json.loads(body)
 
 
 def test_rpc_queued_html_action_does_not_claim_observed_playback(monkeypatch):

@@ -14,6 +14,19 @@
 - After a bridge update, restart the TV session.
 - A command shown as uncertain is never repeated automatically; retry it yourself.
 
+## UR02 OK does not activate a tile
+
+On the reference TV, the paired **UR02 Keyboard** (`0005:0508:1980`) sent scan `c0041` as `KEY_SELECT`, which Firefox did not recognize as Enter. The administrator added `/etc/udev/hwdb.d/90-ur02-ok-enter.hwdb`:
+
+```text
+evdev:input:b0005v0508p1980*
+ KEYBOARD_KEY_c0041=enter
+```
+
+After rebuilding hwdb and applying the change to the verified keyboard's input node, its keymap reported `KEY_ENTER`; the owner confirmed that OK opened a tile. This is evidence for that device, not every UR02 or website. The application does not install or manage the rule.
+
+The rule affects **all** Bluetooth input devices matching those IDs, not one paired address. An administrator should verify the keyboard, scan code and existing rules before applying it; obtain consent before observing input, and do not overwrite an existing rule. Rebuilding hwdb includes all current rules. Removing the rule later does not necessarily restore an already-changed live keymap; rollback was not physically tested. Preserve existing pairings and unrelated rules.
+
 ## No sound
 
 1. Open **Menu → Sound** (phone) or **System → Sound** (TV).

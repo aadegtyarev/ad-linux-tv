@@ -31,4 +31,5 @@ def test_manifest_uses_portless_patterns_and_packages_exact_declarations(tmp_pat
         assert packaged["host_permissions"] == ["http://127.0.0.1/*", "http://*/*", "https://*/*"]
         assert "scripting" in packaged["permissions"]
         assert "player_volume.js" in archive.namelist()
+        assert "video_geometry.js" in archive.namelist()
         assert packaged["content_scripts"][0]["matches"] == ["http://127.0.0.1/*"]

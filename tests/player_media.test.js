@@ -50,10 +50,24 @@ test("explicit pause/play targets one element, keeps paused timing and never tog
 
 test("ambiguous players, live/invalid timing and excessive DOM media fail closed", async t => {
   const elements = setup(t, [media(),media()]);
-  assert.equal(await playerMedia(),null);
+  assert.deepEqual(await playerMedia(),{ambiguous:true});
   elements.splice(0,2,media({duration:Infinity})); assert.equal(await playerMedia(),null);
   elements.splice(0,1,media({currentTime:NaN})); assert.equal(await playerMedia(),null);
-  elements.splice(0,1,...Array.from({length:65},() => media())); assert.equal(await playerMedia(),null);
+  elements.splice(0,1,...Array.from({length:65},() => media())); assert.deepEqual(await playerMedia(),{ambiguous:true});
+});
+
+test("a newly ambiguous or unavailable status clears the previous selection", async t => {
+  const first=media(),elements=setup(t,[first]);
+  assert.ok((await playerMedia()).media_id);
+  assert.equal(global.document.__adLinuxTvTiming.last,first);
+  elements.push(media());
+  assert.deepEqual(await playerMedia(),{ambiguous:true});
+  assert.equal(global.document.__adLinuxTvTiming.last,null);
+  elements.splice(1,1);
+  assert.ok((await playerMedia()).media_id);
+  elements.push(...Array.from({length:64},()=>media()));
+  assert.deepEqual(await playerMedia(),{ambiguous:true});
+  assert.equal(global.document.__adLinuxTvTiming.last,null);
 });
 
 test("replacement element and missing seekable ranges never inherit previous seek authority", async t => {
