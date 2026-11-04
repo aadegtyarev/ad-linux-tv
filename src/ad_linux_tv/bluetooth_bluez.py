@@ -102,6 +102,8 @@ class Device:
     paired: bool
     connected: bool
     device_epoch: int
+    bluez_name: str = ""
+    alias: str = ""
 
 
 @dataclass(frozen=True)
@@ -648,10 +650,12 @@ class BluezTransport:
                     adapter.id,
                     p["Address"],
                     p.get("AddressType", ""),
-                    _name(p.get("Alias", p.get("Name"))),
+                    _name(p.get("Name")) or _name(p.get("Alias")),
                     p.get("Paired") is True,
                     p.get("Connected") is True,
                     obj.epoch,
+                    _name(p.get("Name")),
+                    _name(p.get("Alias")),
                 )
             )
         reason = ("" if adapters else "no_adapter") if self._registered else "starting"

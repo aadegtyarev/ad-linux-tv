@@ -38,6 +38,8 @@ class Device:
     paired: bool = False
     connected: bool = False
     device_epoch: int = 2
+    bluez_name: str = ""
+    alias: str = ""
 
 
 @dataclass(frozen=True)
