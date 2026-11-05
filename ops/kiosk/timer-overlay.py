@@ -5,16 +5,19 @@
 # ruff: noqa: E402, I001
 
 import json
+import signal
 from urllib import request
 
 import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
+gi.require_version("GLibUnix", "2.0")
 gi.require_version("GtkLayerShell", "0.1")
-from gi.repository import Gdk, GLib, Gtk, GtkLayerShell
+from gi.repository import Gdk, GLib, GLibUnix, Gtk, GtkLayerShell
 
 from timer_notice import TimerNotice
+from volume_notice import VolumeNotice, VolumeWatcher
 
 
 TIMER_URL = "http://127.0.0.1:8765/api/display-timer"
@@ -34,6 +37,11 @@ window { background: transparent; }
   border: 1px solid #7697b1; border-radius: 8px; font: 17px sans-serif;
   min-width: 78px; min-height: 42px; padding: 4px 8px; }
 .timer-action:active { background-color: #176991; }
+.volume-notice { background: rgba(13, 27, 48, 0.88); border: 1px solid rgba(128, 171, 200, 0.7);
+  border-radius: 14px; padding: 12px 16px; min-width: 240px; }
+.volume-label { color: #e9f6ff; font: bold 20px sans-serif; }
+.volume-meter trough { min-height: 10px; background: #384e62; border-radius: 5px; }
+.volume-meter progress { min-height: 10px; background: #69c9f2; border-radius: 5px; }
 """
 
 
@@ -210,11 +218,87 @@ class TimerOverlay:
         return True
 
 
+class VolumeOverlay:
+    """Separate click-through, non-focusable indicator above fullscreen video."""
+
+    def __init__(self):
+        self.window = Gtk.Window()
+        self.window.set_decorated(False)
+        self.window.set_resizable(False)
+        self.window.set_accept_focus(False)
+        screen = Gdk.Screen.get_default()
+        if screen and screen.get_rgba_visual():
+            self.window.set_visual(screen.get_rgba_visual())
+        GtkLayerShell.init_for_window(self.window)
+        GtkLayerShell.set_namespace(self.window, "ad-linux-tv-volume")
+        GtkLayerShell.set_layer(self.window, GtkLayerShell.Layer.OVERLAY)
+        GtkLayerShell.set_anchor(self.window, GtkLayerShell.Edge.TOP, True)
+        GtkLayerShell.set_margin(self.window, GtkLayerShell.Edge.TOP, 28)
+        GtkLayerShell.set_exclusive_zone(self.window, 0)
+        GtkLayerShell.set_keyboard_mode(self.window, GtkLayerShell.KeyboardMode.NONE)
+        self.window.connect("map-event", self._click_through)
+        provider = Gtk.CssProvider()
+        provider.load_from_data(STYLE)
+        Gtk.StyleContext.add_provider_for_screen(
+            screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        panel.get_style_context().add_class("volume-notice")
+        self.label = Gtk.Label()
+        self.label.set_xalign(0)
+        self.label.get_style_context().add_class("volume-label")
+        self.bar = Gtk.ProgressBar()
+        self.bar.get_style_context().add_class("volume-meter")
+        panel.pack_start(self.label, False, False, 0)
+        panel.pack_start(self.bar, False, False, 0)
+        self.window.add(panel)
+
+    @staticmethod
+    def _click_through(window, *_event):
+        # Empty input region lets pointer/touch events reach the video beneath.
+        import cairo
+
+        window.get_window().input_shape_combine_region(cairo.Region(), 0, 0)
+        return False
+
+    def render(self, state):
+        if not state["visible"]:
+            self.window.hide()
+            return
+        level = state["level"]
+        self.label.set_text(f"Громкость: {level}%")
+        self.bar.set_fraction(level / 100)
+        if not self.window.get_visible():
+            self.window.show_all()
+
+
 def main():
     overlay = TimerOverlay()
+    indicator = VolumeOverlay()
+    notice = VolumeNotice()
+    watcher = VolumeWatcher()
+    watcher.start()
     overlay.poll()
     GLib.timeout_add_seconds(1, overlay.poll)
-    Gtk.main()
+
+    def poll_volume():
+        for observed_at, value in watcher.drain():
+            notice.observe(value, observed_at)
+        indicator.render(notice.snapshot())
+        return True
+
+    GLib.timeout_add(200, poll_volume)
+
+    def stop(*_args):
+        Gtk.main_quit()
+        return False
+
+    GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, stop)
+    GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, stop)
+    try:
+        Gtk.main()
+    finally:
+        watcher.close()
 
 
 if __name__ == "__main__":

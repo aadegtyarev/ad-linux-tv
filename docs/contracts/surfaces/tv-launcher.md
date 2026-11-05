@@ -15,7 +15,9 @@ The browser-rendered home page and Firefox bridge provide TV service selection a
 
 ## Physical volume keys
 
-Standard volume-up/down keys in the dedicated TV session adjust the selected software output by 5% per step, capped at 100%. This binding applies to keyboards and remotes, not just UR02; other physical keys are unchanged. Real-device and audible-output behavior must be verified separately.
+Standard volume-up/down keys in the dedicated TV session adjust the selected software output by 5% per step, capped at 100%. This binding applies to keyboards and remotes, not just UR02; other physical keys are unchanged. The owner verified UR02 + and − changed the software level 35→40→35%; a synthetic audio stream carried a signal, but physical HDMI audibility was not verified.
+
+When the selected software output level changes, a small top-center bar and percentage appear briefly, including over fullscreen video, then disappear. The separate overlay takes no keyboard focus and requests an empty pointer-input region; it coexists with the timer. Unknown audio levels do not show a stale value. A controlled headless Wayland scene verified rendering, expiry and click-through; physical-screen visibility remains a separate check.
 
 ## Video-geometry feedback
 

@@ -1,6 +1,7 @@
 """Execute the native panel's actual methods with GI and all I/O fenced off."""
 
 import importlib.util
+import signal
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -85,6 +86,9 @@ class Widget:
     def load_from_data(self, data):
         self.css = data
 
+    def set_fraction(self, value):
+        self.properties["fraction"] = value
+
     def __getattr__(self, name):
         # Only inert properties used by the constructor; no image API fallback.
         if name in {
@@ -118,7 +122,7 @@ def overlay_module(monkeypatch):
     gi.require_version = Mock()
     repository = ModuleType("gi.repository")
     gtk = FakeGtk("Gtk")
-    for name in ("Window", "Box", "Label", "Button", "EventBox", "CssProvider"):
+    for name in ("Window", "Box", "Label", "Button", "EventBox", "CssProvider", "ProgressBar"):
         setattr(gtk, name, Widget)
     gtk.Orientation = SimpleNamespace(VERTICAL=1, HORIZONTAL=2)
     gtk.Align = SimpleNamespace(START=1)
@@ -146,6 +150,7 @@ def overlay_module(monkeypatch):
         NotifyType=SimpleNamespace(INFERIOR=1),
     )
     repository.GLib = SimpleNamespace(timeout_add_seconds=forbidden)
+    repository.GLibUnix = SimpleNamespace(signal_add=forbidden)
     repository.GtkLayerShell = layer
     monkeypatch.setitem(sys.modules, "gi", gi)
     monkeypatch.setitem(sys.modules, "gi.repository", repository)
@@ -155,6 +160,12 @@ def overlay_module(monkeypatch):
     notice = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(notice)
     monkeypatch.setitem(sys.modules, "timer_notice", notice)
+    spec = importlib.util.spec_from_file_location(
+        "volume_notice", ROOT / "ops/kiosk/volume_notice.py"
+    )
+    volume = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(volume)
+    monkeypatch.setitem(sys.modules, "volume_notice", volume)
     monkeypatch.setattr("urllib.request.urlopen", forbidden)
     spec = importlib.util.spec_from_file_location(
         "timer_overlay_under_test", ROOT / "ops/kiosk/timer-overlay.py"
@@ -175,6 +186,55 @@ def update(overlay, seconds, generation=1, phase="countdown"):
             }
         )
     )
+
+
+def test_volume_indicator_is_separate_focusless_and_transient(overlay_module):
+    timer = overlay_module.TimerOverlay()
+    indicator = overlay_module.VolumeOverlay()
+    update(timer, 60)
+    timer.video_notice = True
+    update(timer, 60)
+    assert timer.window.get_visible() and timer.video_warning.visible
+    indicator.render({"visible": True, "level": 40})
+    assert indicator.window.get_visible()
+    assert indicator.label.text == "Громкость: 40%"
+    assert indicator.bar.properties["fraction"] == 0.4
+    assert indicator.window.properties["set_accept_focus"] is False
+    indicator.render({"visible": False, "level": 40})
+    assert not indicator.window.get_visible()
+    assert timer.window.get_visible() and timer.video_warning.visible
+
+
+def test_volume_indicator_requests_empty_pointer_region(overlay_module, monkeypatch):
+    cairo = ModuleType("cairo")
+    region = object()
+    cairo.Region = lambda: region
+    monkeypatch.setitem(sys.modules, "cairo", cairo)
+    window = SimpleNamespace(input_shape_combine_region=Mock())
+    widget = SimpleNamespace(get_window=lambda: window)
+    overlay_module.VolumeOverlay._click_through(widget)
+    window.input_shape_combine_region.assert_called_once_with(region, 0, 0)
+
+
+def test_termination_quits_gtk_and_closes_watcher(overlay_module, monkeypatch):
+    timer = SimpleNamespace(poll=Mock())
+    indicator = SimpleNamespace(render=Mock())
+    watcher = SimpleNamespace(start=Mock(), close=Mock(), drain=Mock(return_value=[]))
+    callbacks = {}
+    monkeypatch.setattr(overlay_module, "TimerOverlay", lambda: timer)
+    monkeypatch.setattr(overlay_module, "VolumeOverlay", lambda: indicator)
+    monkeypatch.setattr(overlay_module, "VolumeWatcher", lambda: watcher)
+    overlay_module.GLib = SimpleNamespace(
+        PRIORITY_DEFAULT=0, timeout_add_seconds=Mock(), timeout_add=Mock()
+    )
+    overlay_module.GLibUnix = SimpleNamespace(
+        signal_add=lambda _priority, number, callback: callbacks.setdefault(number, callback)
+    )
+    overlay_module.Gtk.main_quit = Mock()
+    overlay_module.Gtk.main = lambda: callbacks[signal.SIGTERM]()
+    overlay_module.main()
+    overlay_module.Gtk.main_quit.assert_called_once_with()
+    watcher.close.assert_called_once_with()
 
 
 def test_constructor_text_clock_and_focusless_header(overlay_module):
