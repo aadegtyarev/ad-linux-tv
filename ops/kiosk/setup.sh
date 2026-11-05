@@ -10,7 +10,7 @@ ROOT=$(cd "$(dirname "$0")" && pwd)
 SOURCE=$(cd "$ROOT/../.." && pwd)
 # The administrator gets the `gui` helper and may switch sessions from a console.
 ADMIN=${AD_LINUX_TV_ADMIN:-${SUDO_USER:-}}
-PACKAGES='labwc squeekboard wtype wlrctl oxygen-cursor-theme wlopm swayidle python3-gi python3-gi-cairo gir1.2-gtklayershell-0.1 pulseaudio-utils pipewire pipewire-pulse wireplumber python3-venv fonts-noto-core fonts-noto-color-emoji curl'
+PACKAGES='labwc squeekboard wtype wlrctl oxygen-cursor-theme wlopm swayidle python3-gi python3-gi-cairo gir1.2-gtklayershell-0.1 pulseaudio-utils pipewire pipewire-pulse wireplumber util-linux python3-venv fonts-noto-core fonts-noto-color-emoji curl'
 
 preview() {
   printf 'TV user: %s\n' ad-tv
@@ -73,7 +73,7 @@ install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/snap /home/ad-tv/snap/firefox /h
 "$ROOT/configure-firefox.sh" --configure
 install -d -m 755 /usr/local/libexec/ad-linux-tv
 install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" "$ROOT/start-compositor.sh" "$ROOT/tv-session.sh" "$ROOT/touch-controls.sh" "$ROOT/select-audio.sh" "$ROOT/touch-overlay.py" "$ROOT/timer-overlay.py" "$ROOT/cycle-keyboard-language.sh" "$ROOT/wake-display.sh" /usr/local/libexec/ad-linux-tv/
-install -m 644 "$ROOT/timer_notice.py" /usr/local/libexec/ad-linux-tv/
+install -m 644 "$ROOT/timer_notice.py" "$ROOT/volume_notice.py" /usr/local/libexec/ad-linux-tv/
 install -d -m 755 /etc/ad-linux-tv/labwc
 install -m 644 "$ROOT/labwc/rc.xml" /etc/ad-linux-tv/labwc/rc.xml
 install -m 644 "$ROOT/ad-linux-tv-kiosk.service" "$ROOT/ad-linux-tv-boot.service" "$ROOT/ad-linux-tv-switch-kde.service" "$ROOT/ad-linux-tv-poweroff.service" /etc/systemd/system/

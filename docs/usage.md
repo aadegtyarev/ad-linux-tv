@@ -4,7 +4,7 @@ The launcher and remote interface are in Russian.
 
 ## TV
 
-Pick a service tile with the arrows and Enter, or click it from the phone. **Плитки** (Home) returns to the tiles. **System** opens TV settings. Standard volume +/− keys on a physical remote or keyboard adjust the selected software output in 5% steps, up to 100%.
+Pick a service tile with the arrows and Enter, or click it from the phone. **Плитки** (Home) returns to the tiles. **System** opens TV settings. Standard volume +/− keys on a physical remote or keyboard adjust the selected software output in 5% steps, up to 100%. A small volume bar briefly appears at the top of the TV picture when the level changes.
 
 ## Connect a phone
 
