@@ -91,7 +91,7 @@ def free_port():
         return sock.getsockname()[1]
 
 
-def request(port, method, path, value=None):
+def request(port, method, path, value=None, timeout=20):
     data = None if value is None else json.dumps(value).encode()
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}{path}",
@@ -99,7 +99,7 @@ def request(port, method, path, value=None):
         method=method,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=20) as response:
+    with urllib.request.urlopen(req, timeout=timeout) as response:
         return json.load(response)["value"]
 
 
@@ -172,6 +172,7 @@ def test_launcher_fit_and_scroll_fallback():
                             }
                         }
                     },
+                    timeout=90,
                 )["sessionId"]
                 rect = request(
                     port,
