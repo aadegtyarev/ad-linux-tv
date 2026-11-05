@@ -1,6 +1,7 @@
 """Phone RPC adapter for the existing, separately maintained HTTP actions."""
 
 import json
+import os
 import re
 from http.client import HTTPMessage
 
@@ -125,6 +126,14 @@ class RemoteDispatcher:
             handle_bluetooth(request, self.sessions, method)
             status, payload = request.response
             return status, json.loads(payload)
+        if path == "/api/tv-video-panel":
+            if method != "POST" or body != {"action": "open"}:
+                return 400, {}
+            menu = getattr(self.handler, "tv_video_menu", None)
+            if os.environ.get("AD_LINUX_TV_KIOSK") != "1" or not menu or not menu.overlay_online():
+                return 503, {"error": "panel_unavailable"}
+            menu.open()
+            return 202, {"accepted": True}
         if path == "/api/video-geometry":
             # The dispatcher is only reached after the socket session, Origin,
             # source and CSRF have been checked. No CSS or scripts come from

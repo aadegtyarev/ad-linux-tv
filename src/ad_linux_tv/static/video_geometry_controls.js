@@ -12,14 +12,17 @@ class VideoGeometryControls {
     this.mirror = root.querySelector('[data-video="mirror"]');
     this.applyButton = root.querySelector('[data-video="apply"]');
     this.refreshButton = root.querySelector('[data-video="refresh"]');
+    this.tvPanelButton = root.querySelector('[data-video="tv-panel"]');
     this.note = root.querySelector('[data-video="status"]');
     this.active = false;
     this.busy = false;
+    this.tvPanelBusy = false;
     this.epoch = 0;
     this.mediaId = null;
     this.targetId = null;
     this.applyButton.onclick = () => void this.apply();
     if (this.refreshButton) this.refreshButton.onclick = () => this.activate();
+    if (this.tvPanelButton) this.tvPanelButton.onclick = () => void this.openTvPanel();
     this.render();
   }
 
@@ -29,6 +32,7 @@ class VideoGeometryControls {
     this.mirror.disabled = disabled;
     this.applyButton.disabled = disabled || !this.mediaId;
     if (this.refreshButton) this.refreshButton.disabled = disabled;
+    if (this.tvPanelButton) this.tvPanelButton.disabled = !this.active || this.tvPanelBusy;
     this.root.setAttribute("aria-busy", String(this.busy));
   }
 
@@ -51,6 +55,7 @@ class VideoGeometryControls {
   activate() {
     this.active = true;
     this.busy = false;
+    this.tvPanelBusy = false;
     this.mediaId = null;
     const epoch = ++this.epoch;
     this.note.textContent = "Проверяем видео…";
@@ -76,9 +81,28 @@ class VideoGeometryControls {
   deactivate() {
     this.active = false;
     this.busy = false;
+    this.tvPanelBusy = false;
     this.mediaId = null;
     this.epoch++;
     this.render();
+  }
+
+  async openTvPanel() {
+    if (!this.active || this.tvPanelBusy) return;
+    const epoch = this.epoch;
+    this.tvPanelBusy = true;
+    this.render();
+    try {
+      const response = await this.request("POST", "/api/tv-video-panel", {action:"open"});
+      if (!this.current(epoch)) return;
+      if (response.status === 401 || response.status === 403) { this.onAuth(); return; }
+      if (response.status !== 202) throw new Error("unavailable");
+      this.notify("Запрос на открытие плашки на ТВ отправлен.", false);
+    } catch (_) {
+      if (this.current(epoch)) this.notify("Не удалось открыть плашку на ТВ.", true);
+    } finally {
+      if (this.current(epoch)) { this.tvPanelBusy = false; this.render(); }
+    }
   }
 
   async apply() {

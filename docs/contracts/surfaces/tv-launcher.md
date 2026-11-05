@@ -21,7 +21,9 @@ When the selected software output level changes, a small top-center bar and perc
 
 ## Video-geometry feedback
 
-A failed or uncertain video-geometry receipt shows a fixed, short message in the existing timer layer, without changing the timer or taking keyboard focus. The server supplies only a transient boolean to the exact local timer client, not page data or client-provided text. This behavior is covered by source tests; rendering over a real TV player remains unverified. It does not add a TV menu or assign a physical remote button.
+A failed or uncertain video-geometry receipt shows a fixed, short message in the existing timer layer, without changing the timer or taking keyboard focus. The server supplies only a transient boolean to the exact local timer client, not page data or client-provided text. Rendering over a real TV player remains unverified.
+
+The authenticated phone can also request a separate, focusless TV panel over ordinary or fullscreen video. A pointer selects original, 4:3 or 16:9 and an independent mirror toggle; only **Применить** sends a current-video geometry command. **Закрыть** does not change or restore the video. Clicks outside the panel pass through; it does not navigate or pause. Drafts are invalidated on a video change, and delayed actions cannot target a later panel opening. Unavailable or uncertain results are reported without automatic replay. No physical remote button is assigned. A headless Wayland scene verified fullscreen visibility, mouse actions, focus preservation, click-through and cleanup with synthetic content; actual TV and site behavior remain separate acceptance checks.
 
 ## Browser-tile search
 
