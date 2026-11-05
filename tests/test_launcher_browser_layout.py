@@ -272,21 +272,23 @@ def test_launcher_fit_and_scroll_fallback():
                   const nav=document.querySelector('.pagination').getBoundingClientRect();
                   const bottom=Math.max(...tiles.map(x=>x.getBoundingClientRect().bottom));
                   const separated=bottom<=nav.top;
-                  const reachable=nav.bottom<=document.documentElement.scrollHeight;
-                  document.querySelector('#next').click();
+                  const nextButton=document.querySelector('#next');
+                  nextButton.focus();nextButton.scrollIntoView({block:'end'});
+                  const nextRect=nextButton.getBoundingClientRect();
+                  // innerHeight is integer-rounded; Firefox can expose a fractional viewport.
+                  const reachable=nextRect.top>=0&&nextRect.bottom<=innerHeight+1;
+                  const debug={top:nextRect.top,bottom:nextRect.bottom,height:innerHeight,
+                    scroll:scrollY,documentHeight:document.documentElement.scrollHeight};
+                  nextButton.click();
                   const next=[...document.querySelectorAll('#tiles button')]
                     .map(x=>x.dataset.serviceIndex);
                   document.querySelector('#prev').click();
                   const returned=document.querySelectorAll('#tiles button').length;
-                  return {separated,reachable,next,returned};
+                  return {separated,reachable,next,returned,debug};
                 """,
                 )
-                assert pages == {
-                    "separated": True,
-                    "reachable": True,
-                    "next": ["12"],
-                    "returned": 12,
-                }
+                assert pages["separated"] and pages["reachable"], pages["debug"]
+                assert pages["next"] == ["12"] and pages["returned"] == 12
                 fallback = execute(
                     port,
                     session,
@@ -380,19 +382,22 @@ def test_launcher_fit_and_scroll_fallback():
                 )
                 request(port, "POST", f"/session/{session}/moz/context", {"context": "content"})
                 for width in (600, 700, 701, 900, 901, 1100, 1101):
-                    rect = request(port, "GET", f"/session/{session}/window/rect")
-                    viewport = execute(port, session, "return {w:innerWidth,h:innerHeight};")
-                    request(
-                        port,
-                        "POST",
-                        f"/session/{session}/window/rect",
-                        {
-                            "x": 0,
-                            "y": 0,
-                            "width": rect["width"] + width - viewport["w"],
-                            "height": rect["height"] + 500 - viewport["h"],
-                        },
-                    )
+                    for _ in range(4):
+                        rect = request(port, "GET", f"/session/{session}/window/rect")
+                        viewport = execute(port, session, "return {w:innerWidth,h:innerHeight};")
+                        if viewport == {"w": width, "h": 600}:
+                            break
+                        request(
+                            port,
+                            "POST",
+                            f"/session/{session}/window/rect",
+                            {
+                                "x": 0,
+                                "y": 0,
+                                "width": rect["width"] + width - viewport["w"],
+                                "height": rect["height"] + 600 - viewport["h"],
+                            },
+                        )
                     boundary = execute(
                         port,
                         session,
@@ -406,7 +411,7 @@ def test_launcher_fit_and_scroll_fallback():
                         title.top<button.bottom&&button.top<title.bottom;
                       const last=tiles.at(-1);last.focus();last.scrollIntoView({block:'end'});
                       const r=last.getBoundingClientRect();
-                      return {width:innerWidth,overlap,
+                      return {width:innerWidth,height:innerHeight,overlap,
                         clipped:tiles.some(x=>x.scrollWidth>x.clientWidth||x.scrollHeight>x.clientHeight),
                         horizontal:document.documentElement.scrollWidth>innerWidth,
                         reachable:r.top>=0&&r.bottom<=innerHeight};
@@ -414,6 +419,7 @@ def test_launcher_fit_and_scroll_fallback():
                     )
                     assert boundary == {
                         "width": width,
+                        "height": 600,
                         "overlap": False,
                         "clipped": False,
                         "horizontal": False,
