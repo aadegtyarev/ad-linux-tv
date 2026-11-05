@@ -374,6 +374,51 @@ def test_launcher_fit_and_scroll_fallback():
                                 """,
                             )
                             assert reachable
+                request(port, "POST", f"/session/{session}/moz/context", {"context": "chrome"})
+                execute(
+                    port, session, "ZoomManager.setZoomForBrowser(gBrowser.selectedBrowser, 1);"
+                )
+                request(port, "POST", f"/session/{session}/moz/context", {"context": "content"})
+                for width in (600, 700, 701, 900, 901, 1100, 1101):
+                    rect = request(port, "GET", f"/session/{session}/window/rect")
+                    viewport = execute(port, session, "return {w:innerWidth,h:innerHeight};")
+                    request(
+                        port,
+                        "POST",
+                        f"/session/{session}/window/rect",
+                        {
+                            "x": 0,
+                            "y": 0,
+                            "width": rect["width"] + width - viewport["w"],
+                            "height": rect["height"] + 500 - viewport["h"],
+                        },
+                    )
+                    boundary = execute(
+                        port,
+                        session,
+                        """
+                      fixtureUI.update(Array.from({length:12},(_,i)=>
+                        ({id:`s${i}`,name:'ШШШШШШШШШ ШШШ'})),12);
+                      const tiles=[...document.querySelectorAll('#tiles button')];
+                      const title=document.querySelector('h1').getBoundingClientRect();
+                      const button=document.querySelector('#system-button').getBoundingClientRect();
+                      const overlap=title.left<button.right&&button.left<title.right&&
+                        title.top<button.bottom&&button.top<title.bottom;
+                      const last=tiles.at(-1);last.focus();last.scrollIntoView({block:'end'});
+                      const r=last.getBoundingClientRect();
+                      return {width:innerWidth,overlap,
+                        clipped:tiles.some(x=>x.scrollWidth>x.clientWidth||x.scrollHeight>x.clientHeight),
+                        horizontal:document.documentElement.scrollWidth>innerWidth,
+                        reachable:r.top>=0&&r.bottom<=innerHeight};
+                    """,
+                    )
+                    assert boundary == {
+                        "width": width,
+                        "overlap": False,
+                        "clipped": False,
+                        "horizontal": False,
+                        "reachable": True,
+                    }
             finally:
                 if session:
                     try:
