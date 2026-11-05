@@ -8,7 +8,7 @@ h1,h2,p{margin:0}h1{font-size:clamp(42px,4vw,70px);line-height:1.05;letter-spaci
 #config-status,#system-status{color:#ffaaa6}#bridge-status,#command-status{color:#f6d38d}
 .home-content{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start}.services-area{min-width:0}
 #tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}button{color:inherit;font:inherit;cursor:pointer}
-#tiles button{min-height:190px;padding:25px;text-align:left;border:1px solid #46566d;border-radius:20px;background:linear-gradient(145deg,#26394f,#1b293b);font-size:1.12em;font-weight:650;transition:background .15s,transform .15s}#tiles button:hover{background:#314862;transform:translateY(-3px)}
+#tiles button{min-height:190px;padding:25px;text-align:left;overflow-wrap:anywhere;border:1px solid #46566d;border-radius:20px;background:linear-gradient(145deg,#26394f,#1b293b);font-size:1.12em;font-weight:650;transition:background .15s,transform .15s}#tiles button:hover{background:#314862;transform:translateY(-3px)}
 #tiles button.colored-tile{border-color:var(--tile-color);background:linear-gradient(145deg,color-mix(in srgb,var(--tile-color) 30%,#1b293b),color-mix(in srgb,var(--tile-color) 18%,#1b293b))}#tiles button.colored-tile:hover{background:color-mix(in srgb,var(--tile-color) 32%,#1b293b)}
 button:focus-visible{outline:4px solid #65d0ff;outline-offset:3px}
 .pagination{display:flex;align-items:center;justify-content:center;gap:18px;margin-top:24px}.pagination button,.settings-actions button,#confirm-kde button{border:1px solid #50647e;border-radius:12px;background:#24354a;padding:12px 18px;font-size:.72em}.pagination button:hover,.settings-actions button:hover,#confirm-kde button:hover{background:#334c69}#page{min-width:65px;text-align:center;color:#b8c8d9;font-size:.76em}
@@ -23,6 +23,19 @@ button:focus-visible{outline:4px solid #65d0ff;outline-offset:3px}
 .audio-volume-row{display:flex;align-items:center;gap:12px}.audio-card input[type=range]{flex:1;width:auto;background:transparent;border:0;padding:0}.audio-volume-row button{white-space:nowrap}.audio-card .remote-hint{margin-bottom:8px}
 .remote-dock{position:sticky;top:8px;z-index:10;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;padding:8px;background:#142235f2;border:1px solid #526c87;border-radius:17px;box-shadow:0 10px 25px #0005}.remote-dock button{min-width:0;min-height:58px;border:1px solid #6883a1;border-radius:11px;background:#2b4059;padding:8px;font-size:.73em}.remote-dock .primary-button{background:#176991;border-color:#58bde9;font-weight:700}#url-form{border-top:1px solid #455a72;margin-top:22px;padding-top:14px}
 @media(max-width:1100px){.home-content{grid-template-columns:1fr}#remote-setup{max-width:420px}.topbar{align-items:start;flex-direction:column}.topbar-right{align-items:flex-start}.status-area{text-align:left}}
+/* A service tab can return to Home with its own zoom still applied. */
+@media(min-width:901px) and (max-width:1100px){.home-content{grid-template-columns:minmax(0,1fr) minmax(220px,300px)}#remote-setup{max-width:none}.topbar{flex-direction:row;align-items:flex-start}.status-area{text-align:right}#remote-setup #qr{width:min(100%,190px);margin:16px auto}}
+/* Fit a page of seven to twelve tiles when there is room; intrinsic row sizes
+   deliberately allow scrolling instead of clipping unusually long labels. */
+@media(min-width:901px) and (min-height:500px){
+  main:has(#home:not([hidden]) #tiles>button:nth-child(7)):not(:has(#tiles>button:nth-child(13))){height:100dvh}
+  #home:not([hidden]):has(#tiles>button:nth-child(7)):not(:has(#tiles>button:nth-child(13))){display:flex;flex-direction:column;height:100%}
+  #home:has(#tiles>button:nth-child(7)):not(:has(#tiles>button:nth-child(13))) .home-content{flex:1;min-height:0}
+  #home:has(#tiles>button:nth-child(7)):not(:has(#tiles>button:nth-child(13))) .services-area{height:100%;display:flex;flex-direction:column;min-height:0}
+  #home:has(#tiles>button:nth-child(7)):not(:has(#tiles>button:nth-child(13))) #tiles{flex:1;min-height:min-content;grid-auto-rows:minmax(max-content,1fr);padding-bottom:8px}
+  #home:has(#tiles>button:nth-child(7)):not(:has(#tiles>button:nth-child(13))) #tiles button{min-height:84px;padding:12px 16px}
+  #home:has(#tiles>button:nth-child(7)):not(:has(#tiles>button:nth-child(13))) #qr{width:min(100%,190px);margin:16px auto}
+}
 @media(max-width:700px){#tiles{grid-template-columns:repeat(2,minmax(0,1fr))}#tiles button{min-height:130px}.pagination{flex-wrap:wrap}}
 @media(max-width:500px){.remote-row{flex-direction:column}.remote-row button{width:100%}.remote-actions button{flex:1 1 130px}.remote-main{padding:24px 16px 60px}}
 
