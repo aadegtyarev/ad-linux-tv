@@ -39,5 +39,7 @@ bar=$!
   done
 ) &
 timer=$!
-trap 'kill "$osk" "$bar" "$timer" "$idle" 2>/dev/null || true; wait "$osk" "$bar" "$timer" "$idle" 2>/dev/null || true; /usr/bin/wlopm --on "*" >/dev/null 2>&1 || true' EXIT
+AD_TV_VIDEO_PANEL_PARENT=$$ /usr/bin/python3 /usr/local/libexec/ad-linux-tv/video-panel.py &
+video_panel=$!
+trap 'kill "$osk" "$bar" "$timer" "$idle" "$video_panel" 2>/dev/null || true; wait "$osk" "$bar" "$timer" "$idle" "$video_panel" 2>/dev/null || true; /usr/bin/wlopm --on "*" >/dev/null 2>&1 || true' EXIT
 /home/ad-tv/.local/share/ad-linux-tv/run.sh /home/ad-tv/.config/ad-linux-tv/config.yaml

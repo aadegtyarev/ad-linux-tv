@@ -226,6 +226,113 @@ def test_video_geometry_through_socket_and_bridge_requires_capability(endpoint, 
         sock.close()
 
 
+def test_tv_panel_phone_open_to_overlay_and_real_bridge_queue(endpoint, monkeypatch):
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    connection, port = endpoint
+    _, session, cookie = login(connection, port)
+    sock, stream, status = connect(port, cookie, session["csrf"])
+    assert " 101 " in status
+    host = f"127.0.0.1:{port}"
+    panel_headers = {
+        "Host": host,
+        "Origin": f"http://{host}",
+        "X-AD-Linux-TV-Video-Panel": "video-panel-v1",
+        "Content-Type": "application/json",
+    }
+    bridge_headers = {"Host": host, BRIDGE_HEADER: BRIDGE_VALUE, "Content-Type": "application/json"}
+
+    def rpc(number):
+        send_message(
+            sock,
+            {
+                "id": number,
+                "method": "POST",
+                "path": "/api/tv-video-panel",
+                "body": {"action": "open"},
+            },
+        )
+        return receive_message(stream)
+
+    def panel_post(body):
+        response, data = request(
+            connection, "POST", "/api/local-video-panel", json.dumps(body), panel_headers
+        )
+        return response.status, json.loads(data)
+
+    now = int(time.time() * 1000)
+    report = {
+        "protocol": 1,
+        "sequence": now,
+        "sent_at": now,
+        "capabilities": ["html_media_v1", "video_geometry_v1"],
+        "media": {
+            "media_id": "a" * 32,
+            "playing": True,
+            "position": 12,
+            "duration": 900,
+            "can_seek": True,
+        },
+    }
+    try:
+        assert rpc(1)["status"] == 503
+        assert (
+            request(connection, "POST", "/extension/media", json.dumps(report), bridge_headers)[
+                0
+            ].status
+            == 200
+        )
+        response, _ = request(connection, "GET", "/api/local-video-panel", headers=panel_headers)
+        assert response.status == 200
+        assert rpc(2)["status"] == 202
+        response, body = request(connection, "GET", "/api/local-video-panel", headers=panel_headers)
+        state = json.loads(body)
+        assert response.status == 200 and state["visible"] and state["available"]
+        status, state = panel_post(
+            {
+                "action": "choose",
+                "instance": state["instance"],
+                "revision": state["revision"],
+                "mode": "4:3",
+                "mirror": True,
+            }
+        )
+        assert status == 200
+        status, state = panel_post(
+            {"action": "apply", "instance": state["instance"], "revision": state["revision"]}
+        )
+        assert status == 200 and state["busy"]
+        commands = json.loads(
+            request(connection, "GET", "/extension/poll", headers=bridge_headers)[1]
+        )
+        assert len(commands) == 1 and commands[0]["command"] == "video_geometry"
+        assert (commands[0]["media_id"], commands[0]["mode"], commands[0]["mirror"]) == (
+            "a" * 32,
+            "4:3",
+            True,
+        )
+        ack = json.dumps({"id": commands[0]["id"], "outcome": "completed", "reason": None})
+        assert request(connection, "POST", "/extension/ack", ack, bridge_headers)[0].status == 200
+        report["sequence"] += 1
+        report["sent_at"] = int(time.time() * 1000)
+        assert (
+            request(connection, "POST", "/extension/media", json.dumps(report), bridge_headers)[
+                0
+            ].status
+            == 200
+        )
+        state = json.loads(
+            request(connection, "GET", "/api/local-video-panel", headers=panel_headers)[1]
+        )
+        assert state["status"] == "completed" and not state["busy"]
+        assert (
+            json.loads(request(connection, "GET", "/extension/poll", headers=bridge_headers)[1])
+            == []
+        )
+    finally:
+        stream.close()
+        sock.close()
+
+
 def test_remote_socket_media_uses_same_authenticated_channel(endpoint, monkeypatch):
     import ad_linux_tv.remote_rpc as rpc
 

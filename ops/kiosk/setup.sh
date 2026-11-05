@@ -23,6 +23,7 @@ preview() {
   printf 'Compositor config: %s\n' /etc/ad-linux-tv/labwc/rc.xml
   printf 'Touch controls: %s\n' /usr/local/libexec/ad-linux-tv/touch-overlay.py
   printf 'TV timer overlay: %s\n' /usr/local/libexec/ad-linux-tv/timer-overlay.py
+  printf 'TV current-video panel: %s\n' /usr/local/libexec/ad-linux-tv/video-panel.py /usr/local/libexec/ad-linux-tv/video_panel_client.py
   printf 'Touch keyboard layouts: %s\n' /home/ad-tv/.local/share/squeekboard/keyboards
   printf 'System units: %s\n' /etc/systemd/system/ad-linux-tv-kiosk.service /etc/systemd/system/ad-linux-tv-boot.service
   printf 'KDE switch unit: %s\n' /etc/systemd/system/ad-linux-tv-switch-kde.service
@@ -73,7 +74,8 @@ install -d -o ad-tv -g ad-tv -m 700 /home/ad-tv/snap /home/ad-tv/snap/firefox /h
 "$ROOT/configure-firefox.sh" --configure
 install -d -m 755 /usr/local/libexec/ad-linux-tv
 install -m 755 "$ROOT/has-monitor.sh" "$ROOT/boot-tv.sh" "$ROOT/start-compositor.sh" "$ROOT/tv-session.sh" "$ROOT/touch-controls.sh" "$ROOT/select-audio.sh" "$ROOT/touch-overlay.py" "$ROOT/timer-overlay.py" "$ROOT/cycle-keyboard-language.sh" "$ROOT/wake-display.sh" /usr/local/libexec/ad-linux-tv/
-install -m 644 "$ROOT/timer_notice.py" "$ROOT/volume_notice.py" /usr/local/libexec/ad-linux-tv/
+install -m 755 "$ROOT/video-panel.py" /usr/local/libexec/ad-linux-tv/
+install -m 644 "$ROOT/timer_notice.py" "$ROOT/volume_notice.py" "$ROOT/video_panel_client.py" /usr/local/libexec/ad-linux-tv/
 install -d -m 755 /etc/ad-linux-tv/labwc
 install -m 644 "$ROOT/labwc/rc.xml" /etc/ad-linux-tv/labwc/rc.xml
 install -m 644 "$ROOT/ad-linux-tv-kiosk.service" "$ROOT/ad-linux-tv-boot.service" "$ROOT/ad-linux-tv-switch-kde.service" "$ROOT/ad-linux-tv-poweroff.service" /etc/systemd/system/

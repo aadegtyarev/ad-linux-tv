@@ -34,12 +34,12 @@ Queue command `fullscreen` toggles: if any frame of the active owned tab is full
 
 ## Video geometry (`video_geometry_v1`, bridge 0.4.4+)
 
-The authenticated phone sends a fixed `video_geometry` command for the current HTML media ID: mode `original`, `4:3` or `16:9`, and a separate boolean horizontal mirror. The latter two formats stretch or squeeze the video; `original` restores the site's appearance. A 202 response means the server queued the command, not that the picture changed. The phone polls for its receipt; an unsupported or uncertain result is not success and is never automatically retried. A fresh capability report and media ID are required, so an older bridge cannot receive this command.
+The authenticated phone, or the TV panel opened from it, sends a fixed `video_geometry` command for the current HTML media ID: mode `original`, `4:3` or `16:9`, and a separate boolean horizontal mirror. The latter two formats stretch or squeeze the video; `original` restores the site's appearance. A 202 response means the server queued the command, not that the picture changed. The phone polls for its receipt; an unsupported or uncertain result is not success and is never automatically retried. A fresh capability report and media ID are required, so an older bridge cannot receive this command.
 
 The extension targets the selected video in an owned tab, verifies computed geometry and uses a removable style layer rather than changing the site's inline styles. The layer ends with that playback or when its target or geometry becomes unsafe. A failed bridge receipt also requests a short, fixed message in the existing TV timer overlay. Bridge 0.4.5 attempts accessible embedded frames and shadow roots, but cannot verify an embedding page's effect on final screen geometry; the phone asks the user to check the picture. The implementation does not verify decoded pixels or the physical display, and does not promise support for every site, fullscreen mode or protected video. Directly fullscreening the video element is unsupported. A signed bridge update is required; real-site and physical-TV verification are separate checks.
 
 ## Outside the bridge
 
-Discovery, pairing, Android, pointer/text input, output audio, the timer and the magnifier are handled by the server, app or compositor and never need a bridge signature.
+Discovery, pairing, Android, pointer/text input, output audio, the timer, the magnifier and the TV video-panel interface are handled by the server, app or compositor and never need a bridge signature. The panel's geometry command still requires the bridge capability above.
 
 See [Release](release.md) for signing.

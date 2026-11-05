@@ -25,11 +25,14 @@ from .post_routes import handle_post
 from .remote_socket import serve_remote_socket
 from .settings import SettingsManager
 from .sleep_timer import DisplaySleepTimer
+from .video_menu import VideoMenu
+from .video_panel_routes import PANEL_PATH, handle_local_panel
 
 
 def make_handler(config, config_path=None):
     apk_download = ApkDownload()
     queue = CommandQueue()
+    video_menu = VideoMenu(queue)
     display_timer = DisplaySleepTimer(queue)
     power_control = HostPowerControl()
     pin_file = (
@@ -62,6 +65,7 @@ def make_handler(config, config_path=None):
         protocol_version = "HTTP/1.1"
         host_power = power_control
         bluetooth_manager = bluetooth
+        tv_video_menu = video_menu
 
         def setup(self):
             super().setup()
@@ -144,6 +148,8 @@ def make_handler(config, config_path=None):
                 raise BodyTimeout from exc
 
         def do_GET(self):
+            if self.path == PANEL_PATH:
+                return handle_local_panel(self, video_menu, "GET")
             if self.path == "/api/bluetooth":
                 return handle_bluetooth(self, sessions, "GET")
             if self.path == APK_ROUTE:
@@ -250,6 +256,8 @@ def make_handler(config, config_path=None):
             self.send(status, body, kind)
 
         def do_POST(self):
+            if self.path == PANEL_PATH:
+                return handle_local_panel(self, video_menu, "POST")
             if not security.matches_device(self.path, self.headers, config):
                 return self.send(403, "{}")
             return handle_post(self, config, queue, sessions, failures, display_timer, settings)

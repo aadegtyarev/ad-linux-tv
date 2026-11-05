@@ -7,12 +7,38 @@ const id="a".repeat(32), commandId="AbCdEf0123456789";
 const response=(status,body)=>({status,ok:status>=200&&status<300,json:async()=>body});
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function harness(request){
-  const elements={mode:{value:"original"},mirror:{checked:false},apply:{},refresh:{},status:{textContent:""}};
+  const elements={mode:{value:"original"},mirror:{checked:false},apply:{},refresh:{},
+    "tv-panel":{},status:{textContent:""}};
   const root={querySelector:selector=>elements[selector.match(/"([^"]+)"/)[1]],setAttribute(){}};
   const notices=[];let auth=0;
   const controls=new VideoGeometryControls(root,request,()=>{auth++;},(...args)=>notices.push(args));
   return {controls,elements,notices,auth:()=>auth};
 }
+
+test("TV panel opens only on explicit request; acceptance does not claim it appeared",async()=>{
+  const requests=[];
+  const h=harness(async(method,path,body)=>{
+    requests.push([method,path,body]);
+    return method==="GET" ? response(200,{available:false,media_id:null}) : response(202,{});
+  });
+  h.controls.activate();await settle();await h.controls.openTvPanel();
+  assert.deepEqual(requests.at(-1),["POST","/api/tv-video-panel",{action:"open"}]);
+  assert.deepEqual(h.notices,[["Запрос на открытие плашки на ТВ отправлен.",false]]);
+});
+
+test("TV panel failure and duplicate taps do not silently replay",async()=>{
+  let count=0,finish;
+  const h=harness(async(method)=>{
+    if(method==="GET")return response(200,{available:false,media_id:null});
+    count++;return new Promise(resolve=>{finish=resolve;});
+  });
+  h.controls.activate();await settle();
+  const first=h.controls.openTvPanel();await settle();await h.controls.openTvPanel();
+  assert.equal(count,1);finish(response(503,{}));await first;
+  assert.deepEqual(h.notices,[["Не удалось открыть плашку на ТВ.",true]]);
+  const old=h.controls.openTvPanel();await settle();h.controls.deactivate();
+  finish(response(202,{}));await old;assert.equal(h.notices.length,1);
+});
 
 test("when no current video is found, choices remain visible but cannot apply to a future video",async()=>{
   const h=harness(async()=>response(200,{available:false,media_id:null}));

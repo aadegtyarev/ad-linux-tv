@@ -12,6 +12,7 @@ TV_HOME=/home/ad-tv
 if [[ "$MODE" == --dry-run ]]; then
   echo "Source checkout preserved: $ROOT"
   HOME="$TV_HOME" "$ROOT/install.sh" --dry-run --no-autostart
+  printf '%s\n' 'Update TV session and current-video panel files in /usr/local/libexec/ad-linux-tv; apply on next TV session.'
   exit 0
 fi
 
@@ -25,5 +26,7 @@ trap 'rm -rf "$stage"' EXIT
 cp -R "$ROOT/src" "$ROOT/extension" "$ROOT/install.sh" "$ROOT/run.sh" "$ROOT/pyproject.toml" "$stage/"
 chown -R ad-tv:ad-tv "$stage"
 runuser -u ad-tv -- env HOME="$TV_HOME" "$stage/install.sh" --install --no-autostart
+install -m 755 "$ROOT/ops/kiosk/tv-session.sh" "$ROOT/ops/kiosk/video-panel.py" /usr/local/libexec/ad-linux-tv/
+install -m 644 "$ROOT/ops/kiosk/video_panel_client.py" /usr/local/libexec/ad-linux-tv/
 "$ROOT/ops/kiosk/configure-firefox.sh" --configure
 echo 'Application installed for ad-tv. Source checkout was not changed.'
