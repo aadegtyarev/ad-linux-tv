@@ -5,11 +5,12 @@ const {TvShortcutControls} = require("../src/ad_linux_tv/static/tv_shortcut_cont
 const ok = (status, body) => ({status, ok:status >= 200 && status < 300, json:async()=>body});
 const settle = () => new Promise(resolve=>setImmediate(resolve));
 const id = "a".repeat(32);
-function harness(request) {
+function harness(request, {restartHint = true} = {}) {
   const elements = {};
   for (const name of ["ok", "volume_up", "volume_down", "video_panel", "magnifier", "fullscreen"])
     for (const suffix of ["key", "applied", "learn", "clear"]) elements[`${name}-${suffix}`] = {};
-  for (const name of ["save", "cancel", "status", "restart"]) elements[name] = {};
+  for (const name of ["save", "cancel", "status"]) elements[name] = {};
+  if (restartHint) elements.restart = {};
   const root = {querySelector:s=>elements[s.match(/"([^"]+)"/)[1]]};
   let saved = 0, auth = 0;
   const controls = new TvShortcutControls(root, request, ()=>auth++, ()=>saved++, async()=>{});
@@ -33,6 +34,13 @@ test("learning is a draft only until explicitly saved", async()=>{
   assert.deepEqual(calls.at(-1),["POST","/api/settings",{setting:"tv_shortcuts",value:{expected:{},assignments:{video_panel:"XF86Launch1"}}}]);
   assert.equal(h.saved(),1); assert.match(h.elements.status.textContent,/перезапустите/);
   assert.equal(h.elements.restart.hidden, false);
+});
+
+test("new controller remains compatible with an already-loaded older page", async()=>{
+  const h=harness(async()=>ok(200,{tv_shortcuts:{},tv_shortcuts_restart_required:true}),{restartHint:false});
+  await h.controls.activate();
+  assert.match(h.elements.status.textContent,/перезапустите/);
+  assert.equal(h.elements["ok-learn"].disabled,false);
 });
 
 test("all six distinct choices remain drafts until one explicit save", async()=>{

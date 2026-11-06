@@ -57,7 +57,8 @@ class TvShortcutControls {
       this.field(`${action}-learn`).disabled = !this.active || !this.state || this.busy || waitingForSave;
       this.field(`${action}-clear`).disabled = !this.active || !this.state || this.busy || waitingForSave || !this.draft[action];
     }
-    this.field("restart").hidden = !this.state?.tv_shortcuts_restart_required;
+    const restartHint = this.field("restart");
+    if (restartHint) restartHint.hidden = !this.state?.tv_shortcuts_restart_required;
     this.field("cancel").hidden = this.phase !== "learn";
     this.field("save").disabled = !this.active || !this.state || this.busy || waitingForSave || !this.dirty || this.conflict;
   }
