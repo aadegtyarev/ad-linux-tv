@@ -40,6 +40,6 @@ The extension targets the selected video in an owned tab, verifies computed geom
 
 ## Outside the bridge
 
-Discovery, pairing, Android, pointer/text input, output audio, the timer, the magnifier and the TV video-panel interface are handled by the server, app or compositor and never need a bridge signature. The panel's geometry command still requires the bridge capability above.
+Discovery, pairing, Android, pointer/text input, output audio, the timer, the magnifier, TV-session key assignments and the TV video-panel interface are handled by the server, app or compositor and never need a bridge signature. A physical fullscreen shortcut reuses the bounded fullscreen command; the panel's geometry command still requires the bridge capability above.
 
 See [Release](release.md) for signing.

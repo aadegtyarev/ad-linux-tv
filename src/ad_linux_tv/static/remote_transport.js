@@ -3,6 +3,7 @@
 class RemoteTransport {
   constructor(location, options = {}) {
     this.onClose = options.onClose;
+    this.onOpen = options.onOpen;
     this.opened = false;
     const address = new URL("/api/remote-ws", location.href);
     address.protocol = address.protocol === "https:" ? "wss:" : "ws:";
@@ -73,6 +74,7 @@ class RemoteTransport {
         this.connectReject = null;
         this.connecting = null;
         resolve();
+        try { this.onOpen?.(); } catch (_) { /* Connection setup must finish even if a consumer fails. */ }
       };
       socket.onerror = fail;
       socket.onclose = fail;

@@ -26,9 +26,13 @@ Saving is targeted, atomic/private, preserves unrelated fields/auth/sessions/oth
 
 The [2026-10-27 deployment](../../verification/settings-versions-2026-10-27.md) installed S01/S02: six services inherit the saved common desktop125, with no override or pending restart. This supersedes the earlier power-scope mobile200 omission/reset default without rewriting the historical approval. Power/CEC adds no client-supplied command, device path, secret or settings file; private config/auth/profile isolation remains unchanged. Physical acceptance is separate.
 
+## TV-session shortcut assignments
+
+Optional `tv_shortcuts` holds at most one distinct, allowlisted key each for `ok`, `volume_up`, `volume_down`, `video_panel`, `magnifier` and `fullscreen`; omission means no extra assignment. The owner explicitly learns and saves keys through the authenticated phone, with the previous mapping as a compare-and-swap precondition. A stale or conflicting update does not write. Selected keysyms are shared across input devices in the dedicated TV session, not bound to a particular remote. Unsupported keys or unknown compositor defaults fail closed. Settings distinguish saved, boot-requested and applied assignments; if the running session's receipt is missing or malformed, its applied keys are unknown and the kiosk requests a restart even when the saved mapping is empty. Clearing any assignment does not require other unavailable assignments to become valid. Saving never restarts the session. An offline `clear-tv-shortcuts` command removes the optional mapping without exposing other configuration; stop the TV service before using it to avoid concurrent writes.
+
 ## Temporary video geometry
 
-The phone's video format and mirror are temporary playback operations, not configuration. They add no saved setting, alter no pairing and do not assign physical remote buttons. See the [phone remote](phone-remote.md).
+The phone's video format and mirror remain temporary playback operations, not configuration. The separate user-selected shortcut may open that panel but stores no video geometry. Neither feature changes pairing. See the [phone remote](phone-remote.md).
 
 ## Bluetooth adapter preference
 

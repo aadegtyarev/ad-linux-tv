@@ -46,6 +46,27 @@ test("phone actions share one ordered socket and do not replay after disconnect"
   }
 });
 
+test("onOpen notifies each successful connection without replaying a request", async () => {
+  const previous = global.WebSocket; const sockets = []; let opens = 0;
+  class FakeSocket {
+    static OPEN = 1;
+    constructor() { this.readyState = 0; this.sent = []; sockets.push(this); }
+    open() { this.readyState = 1; this.onopen(); }
+    close() { this.readyState = 3; this.onclose?.(); }
+    send(value) { this.sent.push(JSON.parse(value)); }
+  }
+  global.WebSocket = FakeSocket;
+  try {
+    const transport = new RemoteTransport({href:"http://127.0.0.1:8765/remote"}, {onOpen:()=>opens++});
+    const first = transport.connect("csrf"); sockets[0].open(); await first;
+    assert.equal(opens,1); assert.deepEqual(sockets[0].sent,[]);
+    sockets[0].close();
+    const second = transport.connect("csrf"); sockets[1].open(); await second;
+    assert.equal(opens,2); assert.deepEqual(sockets[1].sent,[]);
+    transport.close();
+  } finally { global.WebSocket = previous; }
+});
+
 test("optional onClose fires once only for an opened connection after pending cleanup, never first empty close", async () => {
   const previous = global.WebSocket;
   const sockets = [];

@@ -47,7 +47,7 @@ def test_local_panel_only_accepts_fixed_actions(endpoint, monkeypatch):
     assert response.status == 200
     instance = json.loads(payload)["instance"]
     for action, expected in (
-        ({"action": "open"}, 400),
+        ({"action": "open", "extra": True}, 400),
         ({"action": "close", "extra": True}, 400),
         ({"action": "apply", "instance": instance, "revision": 0}, 409),
         (
@@ -67,6 +67,25 @@ def test_local_panel_only_accepts_fixed_actions(endpoint, monkeypatch):
     ):
         response, _ = request(connection, "POST", PANEL, json.dumps(action), headers)
         assert response.status == expected
+
+
+def test_local_fixed_shortcut_open_needs_live_overlay_and_exact_authority(endpoint, monkeypatch):
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    connection, port = endpoint
+    headers = overlay_headers(port)
+    body = json.dumps({"action": "open"})
+    assert request(connection, "POST", PANEL, body, headers)[0].status == 503
+    assert (
+        request(connection, "POST", PANEL, body, {**headers, "Origin": "http://bad.example"})[
+            0
+        ].status
+        == 403
+    )
+    assert request(connection, "GET", PANEL, headers=headers)[0].status == 200
+    duplicate = '{"action":"close","action":"open"}'
+    assert request(connection, "POST", PANEL, duplicate, headers)[0].status == 400
+    response, payload = request(connection, "POST", PANEL, body, headers)
+    assert response.status == 200 and json.loads(payload)["visible"] is True
 
 
 def test_phone_open_requires_authenticated_socket_and_live_overlay(endpoint, monkeypatch):

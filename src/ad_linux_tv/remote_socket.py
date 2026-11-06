@@ -9,7 +9,7 @@ import socket
 import struct
 import time
 
-from . import security
+from . import security, strict_json
 from .bluetooth_routes import phone_principal
 from .remote_rpc import RemoteDispatcher
 
@@ -92,7 +92,7 @@ class RemoteSocket:
                     continue
                 if opcode == 10:
                     continue
-                item = json.loads(payload.decode("utf-8"))
+                item = strict_json.loads(payload.decode("utf-8"))
                 if not isinstance(item, dict) or set(item) != {"id", "method", "path", "body"}:
                     raise ValueError("invalid request")
                 request_id = item["id"]
@@ -189,4 +189,9 @@ def serve_remote_socket(
         # Partial upgrade/setup failure closes this lifetime without exception text.
         handler.close_connection = True
     finally:
-        manager.retire(principal)
+        try:
+            manager.retire(principal)
+        finally:
+            learner = getattr(handler, "tv_shortcut_learner", None)
+            if learner is not None:
+                learner.retire(principal)

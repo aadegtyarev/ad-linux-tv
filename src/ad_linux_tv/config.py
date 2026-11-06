@@ -17,6 +17,7 @@ from .discovery import validate_discovery
 from .magnifier import validate_magnifier
 from .service_url import validate_service_url
 from .settings import SettingsError, validate_proxy
+from .tv_shortcut_keys import validate_shortcuts
 from .view_config import validate_view
 from .yaml_config import load_yaml
 
@@ -43,6 +44,7 @@ def load_config(path):
                 "browser",
                 "browser_search",
                 "bluetooth",
+                "tv_shortcuts",
             }
         ):
             raise ConfigurationError("expected bind, port, page_size, auth and services")
@@ -108,6 +110,11 @@ def load_config(path):
                 data["bluetooth"] = validate_bluetooth(data["bluetooth"])
             except ValueError:
                 raise ConfigurationError("invalid Bluetooth configuration") from None
+        if "tv_shortcuts" in data:
+            try:
+                data["tv_shortcuts"] = validate_shortcuts(data["tv_shortcuts"])
+            except ValueError:
+                raise ConfigurationError("invalid TV shortcuts") from None
         if "browser_search" in data:
             try:
                 validate_search_provider(data["browser_search"])

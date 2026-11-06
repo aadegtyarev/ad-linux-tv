@@ -6,7 +6,7 @@ import subprocess
 from urllib.parse import urlparse
 
 from . import audio
-from .bluetooth_routes import handle_bluetooth
+from .bluetooth_routes import handle_bluetooth, phone_principal
 from .config import verify_pin
 from .control import QueueFullError
 from .host_power import PowerError
@@ -142,25 +142,56 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
         try:
             action = handler.read_payload()
             invalidated = False
+            learner = getattr(handler, "tv_shortcut_learner", None)
+            learner_before = None
             try:
                 # Sample this update only, not a concurrent PIN change while reading
                 # the body or waiting for the existing reentrant settings lock.
                 with settings.lock:
-                    auth_tag = sessions.auth_tag
-                    try:
-                        state = settings.update(action)
-                    finally:
-                        invalidated = (
-                            isinstance(action, dict)
+                    # Session invalidation and settings updates share this lock
+                    # order. A request admitted before a PIN change must not
+                    # persist changes after that session has been retired.
+                    with sessions.lock:
+                        principal = getattr(handler, "bluetooth_principal", None)
+                        if principal is not None or not exact_local:
+                            current = handler.authorized()
+                            if (
+                                not current
+                                or current != token
+                                or not sessions.csrf_valid(
+                                    current, handler.headers.get("X-CSRF-Token")
+                                )
+                                or (
+                                    principal is not None
+                                    and phone_principal(current).owner != principal.owner
+                                )
+                            ):
+                                return handler.send(403, "{}")
+                        auth_tag = sessions.auth_tag
+                        if (
+                            learner is not None
+                            and isinstance(action, dict)
                             and action.get("setting") == "pin"
-                            and sessions.auth_tag != auth_tag
-                        )
+                        ):
+                            learner_before = learner.snapshot()
+                        try:
+                            state = settings.update(action)
+                        finally:
+                            invalidated = (
+                                isinstance(action, dict)
+                                and action.get("setting") == "pin"
+                                and sessions.auth_tag != auth_tag
+                            )
             finally:
                 # Never invert settings -> manager -> settings lock ordering.
                 if invalidated:
-                    manager = getattr(handler, "bluetooth_manager", None)
-                    if manager is not None:
-                        manager.retire_phones()
+                    try:
+                        if learner is not None and learner_before is not None:
+                            learner.retire(*learner_before)
+                    finally:
+                        manager = getattr(handler, "bluetooth_manager", None)
+                        if manager is not None:
+                            manager.retire_phones()
             return handler.send(200, json.dumps(state))
         except OverflowError:
             return handler.send(413, "{}")

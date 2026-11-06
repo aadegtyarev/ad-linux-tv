@@ -11,7 +11,11 @@ const commandStatus = document.querySelector("#command-status");
 let csrf = "";
 let remoteSuspended = false;
 let phoneBluetoothPanel = null;
-const transport = new RemoteTransport(window.location, {onClose: () => retirePhoneBluetooth()});
+let phoneShortcutPanel = null;
+const transport = new RemoteTransport(window.location, {onClose: () => {
+  retirePhoneBluetooth();
+  phoneShortcutPanel?.disconnect();
+}, onOpen: () => syncPhoneShortcuts()});
 // Binding is presentation context, not authentication or app-version detection.
 // Keep links hidden by default if the existing binding parser rejects the page.
 // Platform hints affect only the Android invitation, never binding or authority.
@@ -74,6 +78,20 @@ function syncPhoneBluetooth() {
   else phoneBluetoothPanel?.deactivate();
 }
 phoneBluetoothDetails?.addEventListener("toggle", syncPhoneBluetooth);
+const phoneShortcutDetails = document.querySelector("#phone-shortcuts-details");
+const phoneShortcutRoot = document.querySelector("#phone-shortcut-controls");
+phoneShortcutPanel = phoneShortcutRoot && typeof TvShortcutControls === "function"
+  ? new TvShortcutControls(phoneShortcutRoot, (method, path, body) => remoteFetch(path, {
+    method, ...(body === undefined ? {} : {body:JSON.stringify(body)}),
+  }), () => requireLogin(), () => void phoneSettingsPanel?.refresh()) : null;
+function syncPhoneShortcuts() {
+  const page = document.querySelector("#remote-settings-page");
+  if (csrf && !remoteSuspended && !controls.hidden && !page.hidden &&
+      !document.hidden && phoneShortcutDetails?.open)
+    void phoneShortcutPanel?.activate();
+  else phoneShortcutPanel?.deactivate();
+}
+phoneShortcutDetails?.addEventListener("toggle", syncPhoneShortcuts);
 if (phoneSettingsPanel) phoneSettingsPanel.bindMagnifierShortcut(document.querySelector("#pad-magnifier"));
 let statusTimer = null;
 let statusRequestId = 0;
@@ -296,6 +314,7 @@ function say(text, error = false, notice = false) {
 }
 
 function requireLogin() {
+  phoneShortcutPanel?.disconnect();
   retirePhoneBluetooth();
   videoGeometry?.deactivate();
   if (remoteSuspended) return;
@@ -517,6 +536,7 @@ function showPage(page) {
   if (page === "video" && csrf && !remoteSuspended && !document.hidden) videoGeometry?.activate();
   else videoGeometry?.deactivate();
   syncPhoneBluetooth();
+  syncPhoneShortcuts();
   window.scrollTo(0, 0);
   if (page === "remote") void phoneSettingsPanel?.refresh();
 }
@@ -596,6 +616,7 @@ function sendKey(key) { return touchpadControls.sendKey(key); }
 function reconcileMediaOnReturn() {
   if (csrf && !remoteSuspended) mediaControls.reconcile();
   syncPhoneBluetooth();
+  syncPhoneShortcuts();
 }
 window.addEventListener("focus", reconcileMediaOnReturn);
 window.addEventListener("pageshow", reconcileMediaOnReturn);
@@ -606,11 +627,13 @@ document.addEventListener("visibilitychange", () => {
   } else {
     videoGeometry?.deactivate();
     syncPhoneBluetooth();
+    syncPhoneShortcuts();
   }
 });
 window.adLinuxTvRemoteLifecycle = Object.freeze({resume:reconcileMediaOnReturn, suspend() {
   if (remoteSuspended) return;
   videoGeometry?.deactivate();
+  phoneShortcutPanel?.deactivate();
   remoteSuspended = true;
   retirePhoneBluetooth();
   csrf = "";
