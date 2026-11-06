@@ -200,3 +200,27 @@ html:has(.remote-main){scrollbar-gutter:stable}
 .remote-main a:focus-visible{outline:3px solid #65d0ff;outline-offset:2px;border-radius:4px}
 @media(prefers-reduced-motion:reduce){.remote-main button{transition:none!important}}
 .remote-bottom .remote-fullscreen-button{width:62px;flex:none;background:#294963}.remote-fullscreen-button span:first-child{font-size:24px}@media(max-width:360px){.remote-bottom .remote-fullscreen-button{width:54px}}
+
+/* Settings remain scrollable as text grows; home tiles are unaffected. */
+#phone-settings-controls.remote-menu-group { display: grid; gap: 12px; padding: 0; margin: 0; border: 0; background: transparent; }
+#phone-settings-controls .settings-control { padding: 16px; margin: 0; }
+#phone-settings-controls .settings-control h3 { font-size: 17px; }
+#phone-settings-controls .settings-inline label { font-size: 15px; gap: 6px; }
+#phone-settings-controls .settings-inline input,
+#phone-settings-controls .settings-inline select { min-height: 46px; height: auto; font-size: 16px; }
+#phone-settings-controls summary { min-height: 44px; cursor: pointer; }
+#phone-shortcut-controls > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid #526b83; }
+#phone-shortcut-controls > div strong { flex: 1 1 100%; }
+#phone-shortcut-controls > div small { flex: 1 1 100%; }
+#phone-shortcut-controls button { min-height: 44px; font-size: 15px; }
+#phone-shortcut-controls p { margin: 12px 0; line-height: 1.5; overflow-wrap: anywhere; }
+#phone-shortcut-controls .shortcut-scope { padding: 12px; border-left: 3px solid #65d0ff; border-radius: 8px; background: #172c40; color: #e3f5ff; }
+#settings .settings-control { padding: 14px 16px; }
+#settings [data-role="magnifier"] { margin: 4px 12px 8px 0; }
+#settings label[for="tv-magnifier-scale"] { display: inline-block; margin: 4px 0 8px; }
+#settings .settings-inline label { font-size: 14px; }
+#settings .settings-control button, #settings .settings-inline input,
+#settings .settings-inline select, #settings .system-audio button,
+#settings .system-audio select, #settings .timer-presets button { min-height: 44px; height: auto; font-size: 15px; }
+#settings .system-audio label, #settings .system-timer p { font-size: 15px; }
+#settings :focus-visible, #phone-settings-controls :focus-visible { outline: 3px solid #ffd16c; outline-offset: 3px; }

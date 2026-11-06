@@ -23,10 +23,12 @@ class TvShortcutControls {
     this.state = null;
     this.dirty = false;
     this.conflict = false;
+    this.pendingSave = null;
+    this.discardedOnDisconnect = false;
     for (const action of this.actions) {
       this.field(`${action}-learn`).onclick = () => void this.learn(action);
       this.field(`${action}-clear`).onclick = () => {
-        if (this.busy) return;
+        if (this.busy || this.pendingSave?.inFlight) return;
         delete this.draft[action];
         this.dirty = true;
         this.notice("Изменения ещё не сохранены.");
@@ -45,17 +47,20 @@ class TvShortcutControls {
   }
 
   render() {
+    const waitingForSave = !!this.pendingSave?.inFlight;
     for (const action of this.actions) {
       this.field(`${action}-key`).textContent = this.draft[action] || "Не назначено";
       const applied = this.state?.tv_shortcuts_applied;
       this.field(`${action}-applied`).textContent = !this.state ? "" :
         !applied || typeof applied !== "object" ? "Сейчас: неизвестно" :
           `Сейчас: ${applied[action] || "не назначено"}`;
-      this.field(`${action}-learn`).disabled = !this.active || !this.state || this.busy;
-      this.field(`${action}-clear`).disabled = !this.active || !this.state || this.busy || !this.draft[action];
+      this.field(`${action}-learn`).disabled = !this.active || !this.state || this.busy || waitingForSave;
+      this.field(`${action}-clear`).disabled = !this.active || !this.state || this.busy || waitingForSave || !this.draft[action];
     }
+    const restartHint = this.field("restart");
+    if (restartHint) restartHint.hidden = !this.state?.tv_shortcuts_restart_required;
     this.field("cancel").hidden = this.phase !== "learn";
-    this.field("save").disabled = !this.active || !this.state || this.busy || !this.dirty;
+    this.field("save").disabled = !this.active || !this.state || this.busy || waitingForSave || !this.dirty || this.conflict;
   }
 
   async activate() {
@@ -73,13 +78,14 @@ class TvShortcutControls {
     this.active = false;
     this.cancel();
     this.state = null;
-    this.draft = {};
-    this.saved = {};
-    this.dirty = false;
+    // Keep a draft across ordinary navigation, but stop any focused learner.
+    // A fresh read on return still compares against the original saved base.
     this.render();
   }
 
   disconnect() {
+    this.discardedOnDisconnect ||= this.dirty;
+    this.pendingSave = null;
     this.active = false;
     ++this.epoch;
     ++this.socketEpoch;
@@ -116,13 +122,37 @@ class TvShortcutControls {
       if (!state || !state.tv_shortcuts || typeof state.tv_shortcuts !== "object" || Array.isArray(state.tv_shortcuts))
         throw new Error("unavailable");
       this.state = state;
-      const changedElsewhere = this.dirty && !this.same(this.saved, state.tv_shortcuts);
+      const pending = this.pendingSave;
+      const observedSave = pending && this.same(pending.draft, state.tv_shortcuts);
+      if (observedSave) {
+        // An observed match is not proof of which client performed the write.
+        this.pendingSave = null;
+        this.saved = {...state.tv_shortcuts};
+        this.draft = {...this.saved};
+        this.dirty = false;
+        this.discardedOnDisconnect = false;
+        this.onSaved();
+      }
+      const waitingForSave = !!this.pendingSave?.inFlight;
+      const unconfirmedSave = !!this.pendingSave && !waitingForSave;
+      if (unconfirmedSave) this.pendingSave = null;
+      const changedElsewhere = !waitingForSave && this.dirty && !this.same(this.saved, state.tv_shortcuts);
       this.conflict = changedElsewhere;
       if (!this.dirty) {
         this.saved = {...state.tv_shortcuts};
         this.draft = {...this.saved};
       }
-      if (changedElsewhere) this.notice("Назначения изменились на другом устройстве. Откройте этот раздел заново.");
+      if (observedSave) this.notice("Текущие сохранённые назначения совпадают с отправленными." +
+        (state.tv_shortcuts_restart_required ? " Для применения перезапустите ТВ-режим." : ""));
+      else if (waitingForSave) this.notice("Проверяем результат сохранения. Повторно запрос не отправляем.");
+      else if (changedElsewhere) this.notice("Назначения изменились на другом устройстве. Сохранение этого черновика недоступно; обновите страницу.");
+      else if (unconfirmedSave && this.dirty) this.notice("Сохранение не подтверждено. Проверьте черновик и сохраните его вручную.");
+      else if (this.dirty) this.notice("Черновик не сохранён. Сохраните назначения, когда будете готовы." +
+        (state.tv_shortcuts_restart_required ? " Для применения сохранённых назначений требуется перезапуск ТВ-режима." : ""));
+      else if (this.discardedOnDisconnect) {
+        this.notice("Связь прервалась. Несохранённый черновик был сброшен; проверьте назначения.");
+        this.discardedOnDisconnect = false;
+      }
       else if (state.tv_shortcuts_restart_required) this.notice("Сохранено. Для применения перезапустите ТВ-режим.");
       else if (state.tv_shortcuts_unavailable) this.notice("Некоторые назначения недоступны. Выберите другие кнопки.");
       else this.notice("Выберите кнопки, затем сохраните назначения.");
@@ -136,7 +166,7 @@ class TvShortcutControls {
   }
 
   async learn(action) {
-    if (!this.active || this.busy || !this.state || !this.actions.includes(action)) return;
+    if (!this.active || this.busy || this.pendingSave?.inFlight || !this.state || !this.actions.includes(action)) return;
     const epoch = ++this.epoch, socketEpoch = this.socketEpoch;
     this.busy = true;
     this.phase = "learn";
@@ -198,23 +228,27 @@ class TvShortcutControls {
   }
 
   async save() {
-    if (!this.active || this.busy || !this.state || !this.dirty) return;
+    if (!this.active || this.busy || this.pendingSave?.inFlight || !this.state || !this.dirty || this.conflict) return;
     const epoch = ++this.epoch, draft = {...this.draft};
+    const pending = {draft, inFlight:true};
+    this.pendingSave = pending;
     this.busy = true;
     this.phase = "save";
     this.notice("Сохраняем…");
     this.render();
+    let authLost = false;
     try {
       const response = await this.request("POST", "/api/settings", {
         setting:"tv_shortcuts", value:{expected:{...this.saved}, assignments:draft},
       });
       if (!this.active || epoch !== this.epoch) return;
-      if (response.status === 401 || response.status === 403) { this.onAuth(); return; }
+      if (response.status === 401 || response.status === 403) { authLost = true; this.onAuth(); return; }
       if (!response.ok) throw new Error("unavailable");
       const state = await response.json();
       if (!this.active || epoch !== this.epoch) return;
       if (!state || !state.tv_shortcuts || !this.same(state.tv_shortcuts, draft))
         throw new Error("unavailable");
+      this.pendingSave = null;
       this.saved = {...draft};
       this.state = state;
       this.dirty = false;
@@ -222,13 +256,13 @@ class TvShortcutControls {
         "Назначения сохранены.");
       this.onSaved();
     } catch (_) {
-      if (this.active && epoch === this.epoch) {
-        await this.refresh(epoch);
-        if (this.active && epoch === this.epoch && !this.conflict)
-          this.notice("Не удалось сохранить. Кнопка может быть занята или версия ТВ-режима не поддерживается.");
-      }
+      // Re-read below; an uncertain write is never repeated automatically.
     } finally {
-      if (this.active && epoch === this.epoch) { this.busy = false; this.phase = null; this.render(); }
+      pending.inFlight = false;
+      if (this.active && epoch === this.epoch) { this.busy = false; this.phase = null; }
+      if (authLost && this.pendingSave === pending) this.pendingSave = null;
+      if (this.active && !authLost && this.pendingSave === pending) await this.refresh();
+      this.render();
     }
   }
 }

@@ -183,7 +183,8 @@ test("BluetoothControls forget requires owner confirmation and binds operation, 
   ui.reply(snapshot({operation: operation("forget", {phase: "confirm"})}), {confirmation_id: "confirmation"});
   await ui.click("forget_prepare");
   assert.deepEqual(lastBody(ui), {op: "forget_prepare", lease, device_id: "device"});
-  assert.match(ui.root.textContent, /Сопряжение и его назначения будут удалены/);
+  assert.match(ui.root.textContent, /старые привязки этого устройства будут удалены/);
+  assert.match(ui.root.textContent, /Общие кнопки ТВ-режима останутся без изменений/);
   assert.equal(ui.find("device:device").disabled, true);
   ui.reply(snapshot({operation: operation("forget", {phase: "accepted"})}), {}, 202);
   await ui.click("forget-confirm");
@@ -831,4 +832,18 @@ test("off adapter needs explicit power; missing preference never selects fallbac
   const missing = await panel(snapshot({adapters:[], adapter_preference:true, adapter:null, available:false})).start();
   assert.match(missing.root.textContent, /Выбранный адаптер недоступен/);
   assert.equal(missing.find("adapter:power"), undefined);
+});
+
+test("selected Bluetooth device offers phone shortcut handoff without changing device state", async () => {
+  const ui = panel(); let opened = 0;
+  ui.controls.options.openShortcuts = () => opened++;
+  await ui.start();
+  assert.match(ui.root.textContent, /всех устройств ввода/);
+  const before = ui.calls.length;
+  await ui.click("shortcuts");
+  assert.equal(opened, 1); assert.equal(ui.calls.length, before);
+  await ui.poll(snapshot({operation: operation("pair")}));
+  assert.equal(ui.find("shortcuts").disabled, true);
+  const tv = await panel().start();
+  assert.equal(tv.find("shortcuts"), undefined);
 });
