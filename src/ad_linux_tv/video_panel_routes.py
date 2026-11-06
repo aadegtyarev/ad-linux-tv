@@ -3,7 +3,7 @@
 import json
 import os
 
-from . import security
+from . import security, strict_json
 from .http_errors import BodyTimeout
 
 PANEL_PATH = "/api/local-video-panel"
@@ -36,6 +36,12 @@ def handle_local_panel(handler, menu, method):
         if not isinstance(body, dict):
             raise TypeError("invalid panel action")
         action = body.get("action")
+        if action == "open":
+            if set(body) != {"action"}:
+                raise TypeError("invalid panel action")
+            if not menu.overlay_online():
+                return handler.send(503, "{}")
+            return handler.send(200, json.dumps(menu.open()))
         if action == "close":
             valid_shape = set(body) == {"action", "instance", "opening"} and isinstance(
                 body.get("opening"), str
@@ -60,7 +66,7 @@ def handle_local_panel(handler, menu, method):
         return handler.send(413, "{}")
     except BodyTimeout:
         return handler.send(408, "{}", headers=(("Connection", "close"),))
-    except TypeError:
+    except (TypeError, json.JSONDecodeError, strict_json.DuplicateJSONError):
         return handler.send(400, "{}")
     except ValueError:
         return handler.send(409, "{}")

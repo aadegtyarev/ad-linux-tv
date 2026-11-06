@@ -55,6 +55,19 @@ def send_message(sock, item):
     )
 
 
+def send_raw_text(sock, text):
+    payload = text.encode("utf-8")
+    mask = b"test"
+    size = (
+        bytes([len(payload) | 0x80])
+        if len(payload) < 126
+        else bytes([0xFE]) + struct.pack("!H", len(payload))
+    )
+    sock.sendall(
+        bytes([0x81]) + size + mask + bytes(value ^ mask[i % 4] for i, value in enumerate(payload))
+    )
+
+
 def receive_message(stream):
     first, second = stream.read(2)
     assert first == 0x81
@@ -137,6 +150,94 @@ def test_remote_socket_rejects_unmasked_frame(endpoint, monkeypatch):
     finally:
         stream.close()
         sock.close()
+
+
+def test_pin_change_retires_idle_shortcut_learner_socket(endpoint, monkeypatch):
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    events = []
+    monkeypatch.setattr(
+        "ad_linux_tv.tv_shortcut_learner.ShortcutLearner.start", lambda *_: "a" * 32
+    )
+    monkeypatch.setattr(
+        "ad_linux_tv.tv_shortcut_learner.ShortcutLearner.snapshot",
+        lambda *_: ("old-owner", "a" * 32),
+    )
+    monkeypatch.setattr(
+        "ad_linux_tv.tv_shortcut_learner.ShortcutLearner.retire",
+        lambda *_: events.append("retired"),
+    )
+
+    def save(self, candidate):
+        self.config.clear()
+        self.config.update(candidate)
+
+    monkeypatch.setattr("ad_linux_tv.settings.SettingsManager._save_config", save)
+    connection, port = endpoint
+    _, session, cookie = login(connection, port)
+    sock, stream, status = connect(port, cookie, session["csrf"])
+    assert " 101 " in status
+    try:
+        send_message(
+            sock,
+            {
+                "id": 1,
+                "method": "POST",
+                "path": "/api/tv-shortcut-learn",
+                "body": {"action": "start"},
+            },
+        )
+        assert receive_message(stream)["status"] == 202
+        body = json.dumps(
+            {"setting": "pin", "value": {"enabled": False, "pin": None, "confirm": None}}
+        )
+        headers = {
+            "Host": f"127.0.0.1:{port}",
+            "Origin": f"http://127.0.0.1:{port}",
+            "Content-Type": "application/json",
+        }
+        assert request(connection, "POST", "/api/settings", body, headers)[0].status == 200
+        assert events == ["retired"]
+    finally:
+        stream.close()
+        sock.close()
+
+
+def test_remote_socket_rejects_duplicate_nested_shortcut_members(endpoint, monkeypatch):
+    monkeypatch.setenv("AD_LINUX_TV_KIOSK", "1")
+    calls = []
+    monkeypatch.setattr(
+        "ad_linux_tv.tv_shortcut_learner.ShortcutLearner.start", lambda *_: calls.append("learn")
+    )
+    monkeypatch.setattr(
+        "ad_linux_tv.settings.SettingsManager.update", lambda *_: calls.append("update")
+    )
+    connection, port = endpoint
+    _, session, cookie = login(connection, port)
+    control, control_stream, status = connect(port, cookie, session["csrf"])
+    assert " 101 " in status
+    try:
+        control_payload = '{"id":0,"method":"GET","path":"/api/status","body":null}'
+        for payload in (control_payload, control_payload + " " * 130):
+            send_raw_text(control, payload)
+            assert receive_message(control_stream)["status"] == 200
+    finally:
+        control_stream.close()
+        control.close()
+    payloads = (
+        '{"id":1,"method":"POST","path":"/api/tv-shortcut-learn","body":{"action":"start","action":"cancel"}}',
+        '{"id":2,"method":"POST","path":"/api/settings","body":{"setting":"tv_shortcuts","value":{"magnifier":"XF86Launch1","magnifier":"XF86Launch2"}}}',
+    )
+    for payload in payloads:
+        sock, stream, status = connect(port, cookie, session["csrf"])
+        assert " 101 " in status
+        try:
+            send_raw_text(sock, payload)
+            assert stream.read(2) == bytes([0x88, 0x02])
+            assert stream.read(2) == struct.pack("!H", 1002)
+        finally:
+            stream.close()
+            sock.close()
+    assert not calls
 
 
 def test_video_geometry_through_socket_and_bridge_requires_capability(endpoint, monkeypatch):

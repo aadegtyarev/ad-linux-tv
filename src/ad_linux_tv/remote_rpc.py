@@ -5,12 +5,13 @@ import os
 import re
 from http.client import HTTPMessage
 
-from .bluetooth_routes import handle_bluetooth
+from .bluetooth_routes import handle_bluetooth, phone_principal
 from .browser_media import choose_media
 from .control import QueueFullError
 from .media_session import MediaUnavailable, get_media_monitor
 from .pages import get_response
 from .post_routes import handle_post
+from .tv_shortcut_learner import ShortcutLearningError
 
 GET_PATHS = frozenset(
     {
@@ -47,6 +48,7 @@ class RemoteRequest:
         self.server = handler.server
         self.connection = handler.connection
         self.bluetooth_manager = getattr(handler, "bluetooth_manager", None)
+        self.tv_shortcut_learner = getattr(handler, "tv_shortcut_learner", None)
         self.bluetooth_principal = principal
         self.headers = HTTPMessage()
         for name, value in handler.headers.items():
@@ -104,6 +106,16 @@ class RemoteDispatcher:
         self.settings = settings
         self.media = get_media_monitor()
 
+    def _learner_authorized(self):
+        with self.sessions.lock:
+            token = self.handler.authorized()
+            return bool(
+                token
+                and self.bluetooth_principal is not None
+                and phone_principal(token).owner == self.bluetooth_principal.owner
+                and self.sessions.csrf_valid(token, self.csrf)
+            )
+
     def media_status(self):
         store = getattr(self.queue, "browser_media", None)
         browser = store.status() if store is not None else None
@@ -126,6 +138,44 @@ class RemoteDispatcher:
             handle_bluetooth(request, self.sessions, method)
             status, payload = request.response
             return status, json.loads(payload)
+        if path == "/api/tv-shortcut-learn":
+            if method != "POST" or not isinstance(body, dict):
+                return 400, {}
+            learner = getattr(self.handler, "tv_shortcut_learner", None)
+            if learner is None or self.bluetooth_principal is None:
+                return 503, {"error": "unavailable"}
+            action = body.get("action")
+            valid_start = action == "start" and set(body) == {"action"}
+            valid_existing = (
+                action in ("result", "cancel")
+                and set(body) == {"action", "id"}
+                and isinstance(body["id"], str)
+                and re.fullmatch(r"[0-9a-f]{32}", body["id"])
+            )
+            if not (valid_start or valid_existing):
+                return 400, {}
+            try:
+                # Serialize all learner access with session invalidation, not
+                # just the initial admission of the focused capture window.
+                with self.sessions.lock:
+                    token = self.handler.authorized()
+                    if (
+                        not token
+                        or phone_principal(token).owner != self.bluetooth_principal.owner
+                        or not self.sessions.csrf_valid(token, self.csrf)
+                    ):
+                        return 403, {}
+                    if valid_start:
+                        return 202, {
+                            "id": learner.start(self.bluetooth_principal, self._learner_authorized)
+                        }
+                    if action == "result":
+                        return 200, learner.result(self.bluetooth_principal, body["id"])
+                    if learner.retire(self.bluetooth_principal, body["id"]):
+                        return 200, {"state": "cancelled"}
+                    return 409, {"error": "unavailable"}
+            except ShortcutLearningError as error:
+                return (409 if str(error) == "busy" else 503), {"error": str(error)}
         if path == "/api/tv-video-panel":
             if method != "POST" or body != {"action": "open"}:
                 return 400, {}

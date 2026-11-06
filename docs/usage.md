@@ -19,7 +19,13 @@ Scan the TV QR code with a phone on the same home network. No PIN is needed by d
 - **Magnifier:** button next to the volume.
 - **⛶ Экран:** puts the video on the current page into fullscreen; press again to return. Only on press, never automatically.
 - **Media panel:** appears when the site exposes playback (title, play/pause, position, previous/next where supported).
-- **Screen settings on the playback panel:** choose **Исходный**, **4:3** or **16:9**, optionally enable horizontal mirror, then press **Применить**. Alternatively, press **Открыть плашку на ТВ**, then use the TV pointer to choose settings, apply them or close the panel. The change affects only the current eligible video; 4:3 and 16:9 stretch or squeeze it. Accessible embedded players are attempted, but some sites, directly fullscreened video and protected video may not support the operation. Assigning a physical remote button is not yet available.
+- **Screen settings on the playback panel:** choose **Исходный**, **4:3** or **16:9**, optionally enable horizontal mirror, then press **Применить**. Alternatively, press **Открыть плашку на ТВ**, then use the TV pointer to choose settings, apply them or close the panel. The change affects only the current eligible video; 4:3 and 16:9 stretch or squeeze it. Accessible embedded players are attempted, but some sites, directly fullscreened video and protected video may not support the operation.
+
+### Choose remote buttons
+
+In phone **Menu → Settings → Кнопки пульта**, select **Назначить** beside OK, volume +/−, video format, magnifier or fullscreen. When the TV asks, press a rare extra button on the remote. Its former action may occur while it is being identified. Repeat for the other actions, then **Сохранить назначения** and explicitly restart TV mode when convenient. **Убрать** clears a choice after saving and restarting.
+
+The assignments affect the same key on every remote or keyboard in TV mode, not only the remote used to choose it. Ordinary Enter, arrows and standard volume keys remain available. Some buttons, applications or TV-mode versions cannot be recognized or intercepted; the settings report unavailable choices. Actual remote behavior still needs to be checked.
 
 ## Touch panel
 

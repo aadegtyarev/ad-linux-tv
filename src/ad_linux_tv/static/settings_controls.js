@@ -155,7 +155,7 @@ class SettingsControls {
     for (const [key, value] of Object.entries(viewState)) if (isView(key)) merged[key] = value;
     merged.restart_required = !!(merged.proxy_restart_required || merged.browser_locale_restart_required ||
       (merged.magnifier_scale ?? 2.5) !== (merged.magnifier_applied_scale ?? 2.5) ||
-      merged.view_restart_required);
+      merged.view_restart_required || merged.tv_shortcuts_restart_required);
     return merged;
   }
 

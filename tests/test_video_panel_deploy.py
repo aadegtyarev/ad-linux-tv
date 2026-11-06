@@ -15,6 +15,9 @@ def test_existing_kiosk_update_includes_panel_assets():
     assert '"$ROOT/ops/kiosk/tv-session.sh"' in source
     assert '"$ROOT/ops/kiosk/video-panel.py"' in source
     assert '"$ROOT/ops/kiosk/video_panel_client.py"' in source
+    assert '"$ROOT/ops/kiosk/tv-shortcut.sh"' in source
+    assert '"$ROOT/ops/kiosk/learn-tv-shortcut.py"' in source
+    assert '"$ROOT/src/ad_linux_tv/tv_shortcut_keys.py"' in source
     assert "/usr/local/libexec/ad-linux-tv/" in source
     assert source.index('"$stage/install.sh" --install') < source.index(
         '"$ROOT/ops/kiosk/video-panel.py"'
@@ -32,12 +35,16 @@ def test_existing_kiosk_update_installs_the_panel_in_fake_root(tmp_path):
         "tv-session.sh",
         "video-panel.py",
         "video_panel_client.py",
+        "tv-shortcut.sh",
+        "learn-tv-shortcut.py",
     ):
         shutil.copy2(ROOT / "ops/kiosk" / name, kiosk / name)
     (kiosk / "configure-firefox.sh").write_text("#!/bin/sh\nexit 0\n")
     (kiosk / "configure-firefox.sh").chmod(0o755)
     for name in ("src", "extension"):
         (root / name).mkdir()
+    (root / "src/ad_linux_tv").mkdir()
+    shutil.copy2(ROOT / "src/ad_linux_tv/tv_shortcut_keys.py", root / "src/ad_linux_tv")
     for name in ("install.sh", "run.sh", "pyproject.toml"):
         (root / name).write_text("fixture\n")
     fake = tmp_path / "bin"
@@ -72,8 +79,13 @@ def test_existing_kiosk_update_installs_the_panel_in_fake_root(tmp_path):
         "tv-session.sh",
         "video-panel.py",
         "video_panel_client.py",
+        "tv-shortcut.sh",
+        "learn-tv-shortcut.py",
     ):
         assert (dest / name).read_bytes() == (kiosk / name).read_bytes()
+    assert (dest / "tv_shortcut_keys.py").read_bytes() == (
+        root / "src/ad_linux_tv/tv_shortcut_keys.py"
+    ).read_bytes()
 
 
 def test_kiosk_update_dry_run_announces_panel_without_installing():

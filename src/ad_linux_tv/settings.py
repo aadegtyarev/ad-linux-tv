@@ -13,6 +13,7 @@ from threading import RLock, Timer
 
 import yaml
 
+from . import strict_json
 from .audio import OUTPUT_ID
 from .bluetooth_schema import validate_bluetooth
 from .browser_locale import (
@@ -24,6 +25,7 @@ from .browser_locale import (
 from .browser_search import browser_tile, search_state, validate_search_provider
 from .build_info import server_info
 from .magnifier import validate_magnifier
+from .tv_shortcut_keys import validate_shortcuts
 from .view_config import common_view, service_views, validate_view, view_fingerprint
 
 
@@ -157,6 +159,26 @@ class SettingsManager:
             )["scale"]
         except ValueError:
             self.applied_magnifier_scale = 2.5
+        self.shortcut_template = Path("/etc/ad-linux-tv/labwc/rc.xml")
+        self.shortcut_runtime_unknown_requires_restart = os.environ.get("AD_LINUX_TV_KIOSK") == "1"
+        self.requested_shortcuts = None
+        self.applied_shortcuts = None
+        runtime = os.environ.get("XDG_RUNTIME_DIR")
+        if runtime:
+            try:
+                data = strict_json.loads(
+                    (Path(runtime) / "ad-linux-tv-labwc/shortcuts-applied.json").read_text()
+                )
+                if not isinstance(data, dict) or set(data) != {"requested", "applied"}:
+                    raise ValueError("invalid applied shortcuts")
+                self.requested_shortcuts = validate_shortcuts(data["requested"])
+                self.applied_shortcuts = validate_shortcuts(data["applied"])
+                if any(
+                    self.requested_shortcuts.get(k) != v for k, v in self.applied_shortcuts.items()
+                ):
+                    raise ValueError("invalid applied shortcuts")
+            except (OSError, ValueError, TypeError):
+                self.requested_shortcuts = self.applied_shortcuts = None
 
     def proxy(self):
         if "proxy" in self.config:
@@ -181,7 +203,16 @@ class SettingsManager:
                 "magnifier": self.magnified,
                 "magnifier_scale": self.config.get("magnifier", {}).get("scale", 2.5),
                 "magnifier_applied_scale": self.applied_magnifier_scale,
-                "restart_required": self.proxy_restart_required
+                "tv_shortcuts": dict(self.config.get("tv_shortcuts", {})),
+                "tv_shortcuts_applied": None
+                if self.applied_shortcuts is None
+                else dict(self.applied_shortcuts),
+                "tv_shortcuts_restart_required": self._shortcuts_restart_required(),
+                "tv_shortcuts_unavailable": self.requested_shortcuts
+                == self.config.get("tv_shortcuts", {})
+                and self.applied_shortcuts != self.requested_shortcuts,
+                "restart_required": self._shortcuts_restart_required()
+                or self.proxy_restart_required
                 or self.locale_restart_required
                 or self.config.get("magnifier", {}).get("scale", 2.5)
                 != self.applied_magnifier_scale
@@ -204,6 +235,38 @@ class SettingsManager:
                 "browser_locale_restart_required": self.locale_restart_required,
                 "kde_available": kde_available(),
             }
+
+    def _shortcuts_restart_required(self):
+        saved = self.config.get("tv_shortcuts", {})
+        if self.requested_shortcuts is None:
+            # A missing/corrupt boot receipt does not prove old bindings are gone,
+            # even if the saved mapping was just cleared or the server restarted.
+            return bool(saved) or self.shortcut_runtime_unknown_requires_restart
+        return saved != self.requested_shortcuts
+
+    def _preflight_shortcuts(self, shortcuts):
+        if not shortcuts:
+            return
+        # Import lazily: kiosk_config also uses the settings atomic writer.
+        from xml.etree import ElementTree
+
+        from .kiosk_config import (
+            _known_labwc_defaults,
+            add_default_ok_bindings,
+            add_selected_shortcuts,
+        )
+
+        try:
+            root = ElementTree.parse(self.shortcut_template).getroot()
+            if root.tag != "labwc_config":
+                raise ValueError("invalid template")
+            defaults_verified = _known_labwc_defaults()
+            add_default_ok_bindings(root, defaults_verified=defaults_verified)
+            rendered = add_selected_shortcuts(root, shortcuts, defaults_verified=defaults_verified)
+            if rendered != shortcuts:
+                raise ValueError("shortcut conflict or unsupported compositor")
+        except (OSError, ValueError, ElementTree.ParseError):
+            raise SettingsError("TV shortcut unavailable") from None
 
     def bluetooth_config(self):
         """Detached server-only settings; never included in the generic snapshot."""
@@ -414,6 +477,28 @@ class SettingsManager:
                 candidate = dict(self.config, services=services)
                 if candidate != self.config:
                     self._save_config(candidate)
+            elif setting == "tv_shortcuts":
+                try:
+                    if not isinstance(value, dict) or set(value) != {"expected", "assignments"}:
+                        raise ValueError("invalid TV shortcut update")
+                    expected = validate_shortcuts(value["expected"])
+                    shortcuts = validate_shortcuts(value["assignments"])
+                except ValueError:
+                    raise SettingsError("invalid TV shortcuts") from None
+                previous = self.config.get("tv_shortcuts", {})
+                if expected != previous:
+                    raise SettingsError("TV shortcuts changed")
+                changed = {
+                    key: value for key, value in shortcuts.items() if previous.get(key) != value
+                }
+                self._preflight_shortcuts(changed)
+                candidate = dict(self.config)
+                if shortcuts:
+                    candidate["tv_shortcuts"] = shortcuts
+                else:
+                    candidate.pop("tv_shortcuts", None)
+                if candidate != self.config:
+                    self._save_config(candidate)
             elif setting == "pointer_acceleration":
                 if type(value) is not int or not 0 <= value <= 100:
                     raise SettingsError("invalid pointer acceleration")
@@ -426,6 +511,10 @@ class SettingsManager:
                     raise SettingsError(str(exc)) from None
                 if magnifier["scale"] != self.config.get("magnifier", {}).get("scale", 2.5):
                     self._save_config(dict(self.config, magnifier=magnifier))
+            elif setting == "magnifier_toggle":
+                if value is not True:
+                    raise SettingsError("invalid magnifier toggle")
+                return self.update({"setting": "magnifier", "value": not self.magnified})
             elif setting == "magnifier":
                 if type(value) is not bool:
                     raise SettingsError("invalid magnifier state")

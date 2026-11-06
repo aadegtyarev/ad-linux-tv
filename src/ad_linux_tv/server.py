@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import security
+from . import security, strict_json
 from .apk_download import APK_ROUTE, ApkDownload
 from .auth_state import RateLimiter, Sessions
 from .bluetooth_bluez import BluezTransport
@@ -25,6 +25,7 @@ from .post_routes import handle_post
 from .remote_socket import serve_remote_socket
 from .settings import SettingsManager
 from .sleep_timer import DisplaySleepTimer
+from .tv_shortcut_learner import ShortcutLearner
 from .video_menu import VideoMenu
 from .video_panel_routes import PANEL_PATH, handle_local_panel
 
@@ -33,6 +34,7 @@ def make_handler(config, config_path=None):
     apk_download = ApkDownload()
     queue = CommandQueue()
     video_menu = VideoMenu(queue)
+    shortcut_learner = ShortcutLearner()
     display_timer = DisplaySleepTimer(queue)
     power_control = HostPowerControl()
     pin_file = (
@@ -66,6 +68,7 @@ def make_handler(config, config_path=None):
         host_power = power_control
         bluetooth_manager = bluetooth
         tv_video_menu = video_menu
+        tv_shortcut_learner = shortcut_learner
 
         def setup(self):
             super().setup()
@@ -142,7 +145,7 @@ def make_handler(config, config_path=None):
             try:
                 data = self.rfile.read(length)
                 self.payload_consumed = True
-                return json.loads(data)
+                return strict_json.loads(data)
             except socket.timeout as exc:
                 self.close_connection = True
                 raise BodyTimeout from exc
