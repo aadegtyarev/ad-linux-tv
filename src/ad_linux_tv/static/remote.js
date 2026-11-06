@@ -63,7 +63,14 @@ const phoneBluetoothRoot = document.querySelector("#phone-bluetooth-controls");
 phoneBluetoothPanel = phoneBluetoothRoot ? new BluetoothControls(phoneBluetoothRoot,
   (method, path, body) => remoteFetch(path, {
     method, ...(body === undefined ? {} : {body: JSON.stringify(body)}),
-  }), {onAuthLost: () => requireLogin()}) : null;
+  }), {onAuthLost: () => requireLogin(), openShortcuts: () => {
+    phoneBluetoothDetails.open = false;
+    syncPhoneBluetooth();
+    phoneShortcutDetails.open = true;
+    syncPhoneShortcuts();
+    phoneShortcutDetails.querySelector("summary")?.focus();
+    phoneShortcutDetails.scrollIntoView({block: "start"});
+  }}) : null;
 function retirePhoneBluetooth() {
   phoneBluetoothPanel?.retire();
   // A new connection/session needs an explicit reopening, never automatic replay.
@@ -92,6 +99,15 @@ function syncPhoneShortcuts() {
   else phoneShortcutPanel?.deactivate();
 }
 phoneShortcutDetails?.addEventListener("toggle", syncPhoneShortcuts);
+phoneShortcutRoot?.querySelector?.('[data-shortcut="restart-link"]')?.addEventListener("click", () => {
+  const button = phoneSettingsRoot?.querySelector('[data-role="restart"]');
+  if (!button || button.closest("[hidden]")) {
+    phoneShortcutPanel?.notice("Кнопка перезапуска пока недоступна. Проверьте соединение и настройки.");
+    return;
+  }
+  button.scrollIntoView({block: "center"});
+  button.focus();
+});
 if (phoneSettingsPanel) phoneSettingsPanel.bindMagnifierShortcut(document.querySelector("#pad-magnifier"));
 let statusTimer = null;
 let statusRequestId = 0;

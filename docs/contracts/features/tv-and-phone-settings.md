@@ -2,6 +2,7 @@
 
 - Status: Installed on the reference TV; automated checks and TV visual check passed. Real-phone settings and actual PIN/proxy changes remain acceptance checks, 2026-10-25.
 - Approval: User approved the exact scope through the in-session contract question. Telegram was removed from scope; local-file playback is a later task.
+- Later scope: the approved settings-usability update allows TV System to scroll rather than clip controls. The original no-scroll goal below is historical; current behavior is in the [TV launcher surface](../surfaces/tv-launcher.md).
 
 ## Goal and user-visible behavior
 TV System exposes PIN, magnifier and TV-browser proxy settings. The phone Menu has PIN and proxy settings, with the magnifier shortcut beside the volume slider on the main phone remote. The TV System page fits the normal TV screen without a scrollbar. New installations have PIN access disabled by default.

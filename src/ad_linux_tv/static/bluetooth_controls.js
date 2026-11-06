@@ -548,6 +548,11 @@ class BluetoothControls {
       this.element("h4", `Устройство: ${this.deviceName(device)}`, this.content);
       const commands = this.element("div", undefined, this.content);
       commands.className = "bt-buttons";
+      if (this.options.openShortcuts) {
+        this.element("p", "Кнопки настраиваются для всех устройств ввода в ТВ-режиме, не только для выбранного устройства.", this.content);
+        this.button(this.content, "shortcuts", "Настроить кнопки пульта", !operation,
+          () => this.options.openShortcuts());
+      }
       for (const [op, label, allowed] of [
         ["pair", "Создать сопряжение", !device.paired],
         ["connect", "Подключить", device.paired && !device.connected],
@@ -560,7 +565,7 @@ class BluetoothControls {
       const target = state.devices.find(item => item.id === operation.device_id);
       const group = this.element("section", undefined, this.content);
       group.className = "bt-confirm";
-      this.element("p", `Забыть устройство «${this.deviceName(target)}»? Сопряжение и его назначения будут удалены.`, group);
+      this.element("p", `Забыть устройство «${this.deviceName(target)}»? Сопряжение и старые привязки этого устройства будут удалены. Общие кнопки ТВ-режима останутся без изменений.`, group);
       const confirmation = this.confirmation;
       this.button(group, "forget-confirm", "Да, забыть устройство", !!this.lease, () =>
         this.mutate("forget_confirm", {operation_id: confirmation.operation_id, confirmation_id: confirmation.id}));
