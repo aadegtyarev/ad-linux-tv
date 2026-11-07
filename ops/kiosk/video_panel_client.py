@@ -13,7 +13,9 @@ HEADERS = {
     "X-AD-Linux-TV-Video-Panel": "video-panel-v1",
 }
 MODES = frozenset({"original", "4:3", "16:9"})
-STATUSES = frozenset({"unavailable", "choose", "changed", "pending", "completed", "unconfirmed"})
+STATUSES = frozenset(
+    {"unavailable", "choose", "changed", "pending", "completed", "unconfirmed", "transition_busy"}
+)
 
 
 class PanelUnavailable(ValueError):

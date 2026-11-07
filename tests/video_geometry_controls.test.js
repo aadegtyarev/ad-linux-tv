@@ -148,3 +148,24 @@ test("duplicate taps cannot dispatch a second geometry request",async()=>{
   const first=h.controls.apply();await settle();await h.controls.apply();
   assert.equal(writes,1);release(response(202,{id:commandId}));await first;
 });
+
+test("busy feedback is explicit only for the matching failed receipt and never retries",async()=>{
+  for(const [receipt,specific] of [
+    [{id:commandId,outcome:"failed",reason:"transition_busy"},true],
+    [{id:"foreign-command-123",outcome:"failed",reason:"transition_busy"},false],
+    [{id:commandId,outcome:"uncertain",reason:"transition_busy"},false],
+    [{id:commandId,outcome:"completed",reason:"transition_busy"},false],
+    [{id:commandId,outcome:"failed",reason:["transition_busy"]},false],
+  ]) {
+    let writes=0;
+    const h=harness(async(method,_path,body)=>{
+      if(method==="GET")return response(200,{available:true,media_id:id});
+      if(body.action==="apply"){writes++;return response(202,{id:commandId});}
+      return response(200,receipt);
+    });
+    h.controls.activate();await settle();await h.controls.apply();
+    assert.equal(writes,1);assert.equal(h.notices.length,1);
+    assert.equal(h.elements.status.textContent.includes("Переход видео ещё завершается"),specific);
+    if(specific) assert.match(h.notices[0][0],/вручную.*Предыдущее изменение могло быть удалено/);
+  }
+});

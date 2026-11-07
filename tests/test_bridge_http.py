@@ -143,3 +143,27 @@ def test_home_ack_closes_only_admitted_opening_over_http(endpoint, monkeypatch):
     menu.open()
     assert request(connection, "POST", "/extension/ack", json.dumps(ack), bridge)[0].status == 409
     assert menu.snapshot()["visible"]
+
+
+def test_busy_ack_rejects_foreign_command_and_malformed_reasons(endpoint):
+    connection, port = endpoint
+    _, auth, cookie = login(connection, port)
+    headers = command_headers(port, cookie, auth["csrf"])
+    request(connection, "POST", "/api/command", '{"command":"home"}', headers)
+    bridge = {
+        "Host": f"127.0.0.1:{port}",
+        BRIDGE_HEADER: BRIDGE_VALUE,
+        "Content-Type": "application/json",
+    }
+    item = json.loads(request(connection, "GET", "/extension/poll", headers=bridge)[1])[0]
+    for outcome, reason, expected in (
+        ("failed", "transition_busy", 409),
+        ("uncertain", "transition_busy", 400),
+        ("completed", "transition_busy", 400),
+        ("failed", ["transition_busy"], 400),
+        ("failed", "foreign", 400),
+    ):
+        ack = json.dumps({"id": item["id"], "outcome": outcome, "reason": reason})
+        assert request(connection, "POST", "/extension/ack", ack, bridge)[0].status == expected
+    ack = json.dumps({"id": item["id"], "outcome": "failed", "reason": "operation"})
+    assert request(connection, "POST", "/extension/ack", ack, bridge)[0].status == 200

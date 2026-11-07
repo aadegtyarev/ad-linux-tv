@@ -103,3 +103,15 @@ test("player volume ACK keeps its measured value after delivery retry", async ()
   assert.deepEqual(acknowledgements.map(ack => ack.volume), [75, 75]);
   assert.equal(mock.calls.filter(call => call[0] === "script" && call[1].func.name === "playerMediaVolume").length, 1);
 });
+
+test("bridge sends the fixed busy reason in its ACK",async()=>{
+  const operation=item("video_geometry");let ack;
+  const tabs={restore:async()=>{},execute:async()=>({outcome:"failed",reason:"transition_busy"})};
+  const fetcher=async(url,options={})=>{
+    if(url.endsWith("/poll"))return {ok:true,json:async()=>[operation]};
+    if(url.endsWith("/ack"))ack=JSON.parse(options.body);
+    return {ok:true};
+  };
+  await createBridgeController(tabs,fetcher,{error(){}}).wake();
+  assert.deepEqual(ack,{id:operation.id,outcome:"failed",reason:"transition_busy"});
+});

@@ -297,3 +297,17 @@ def test_report_endpoint_is_loopback_bridge_only_and_rejects_replay(endpoint):
         request(connection, "POST", path, body, dict(bridge, Host="attacker.invalid"))[0].status
         == 403
     )
+
+
+def test_geometry_busy_receipt_is_exposed_without_private_data():
+    queue = CommandQueue()
+    data = report(snapshot())
+    data["capabilities"].append("video_geometry_v1")
+    queue.browser_media.report(data)
+    command_id = queue.push_geometry("a" * 32, "4:3", True)
+    assert queue.acknowledge(command_id, "failed", "transition_busy")
+    assert queue.geometry_result(command_id) == {
+        "id": command_id,
+        "outcome": "failed",
+        "reason": "transition_busy",
+    }

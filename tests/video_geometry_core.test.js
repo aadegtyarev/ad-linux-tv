@@ -16,7 +16,7 @@ function makeHarness(options={}) {
   page.body={parentElement:null};page.documentElement={parentElement:null};
   const parent={parentElement:page.body};
   page.body.parentElement=page.documentElement;
-  let current="one",layer=null,observerCallback,timerCallback,records=[],serial=0;
+  let current="one",layer=null,observerCallback,timerCallback,records=[],serial=0,transition="none";
   let removeAttributeThrows=Boolean(options.attributeRemoveThrows),removeThrows=Boolean(options.removeThrows);
   const base=()=>({display:"block",visibility:"visible",opacity:"1",clipPath:"none",scale:"none",rotate:"none",translate:"none",transform:"none",overflowX:"visible",overflowY:"visible",borderLeftWidth:"0px",borderRightWidth:"0px",borderTopWidth:"0px",borderBottomWidth:"0px",paddingLeft:"0px",paddingRight:"0px",paddingTop:"0px",paddingBottom:"0px",objectFit:"contain"});
   const site=new Map(),attribute=new Map(),video=new Target();
@@ -54,12 +54,12 @@ function makeHarness(options={}) {
     const n=value.match(/matrix\(([^)]+)\)/)[1].split(",").map(Number);
     return {a:n[0],b:n[1],c:n[2],d:n[3],e:n[4],f:n[5]};
   };
-  const env={page,view,styleOf,matrixOf,afterFrame:options.afterFrame||(()=>Promise.resolve()),randomToken:()=>String(++serial).padStart(32,"0"),
+  const env={page,view,styleOf,matrixOf,transformTransitions:element=>element===video ? transition : "none",afterFrame:options.afterFrame||(()=>Promise.resolve()),randomToken:()=>String(++serial).padStart(32,"0"),
     observe:(_video,callback)=>{if(options.observeThrows)throw Error("observe");observerCallback=callback;return {takeRecords:()=>records.splice(0),disconnect(){}};},
     setTimer:callback=>{timerCallback=callback;return 1;},clearTimer:()=>{}};
   const controller=createVideoGeometryController(env);
   return {page,view,parent,parentStyle,video,videoStyle,site,attribute,controller,
-    isCurrent:(_v,id)=>current===id,setCurrent:id=>{current=id;},
+    isCurrent:(_v,id)=>current===id,setCurrent:id=>{current=id;},setTransition:value=>{transition=value;},
     active:()=>Boolean(layer?.isConnected),
     notify:record=>observerCallback(record),queue:record=>records.push(record),
     tick:()=>timerCallback(),
@@ -142,8 +142,8 @@ test("stale target and stale reset cannot destroy a newer active session",async(
   const h=makeHarness();h.setCurrent("two");
   assert.equal((await h.controller.apply(h.video,"two",h.isCurrent,"4:3",false)).outcome,"applied");
   assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",false)).outcome,"unsupported");
-  assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"unsupported");
-  assert.equal(h.active(),true);assert.equal(h.controller.reset(h.video,"two",h.isCurrent).outcome,"restored");
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"unsupported");
+  assert.equal(h.active(),true);assert.equal((await h.controller.reset(h.video,"two",h.isCurrent)).outcome,"restored");
   assert.equal(h.active(),false);
 });
 
@@ -181,7 +181,7 @@ test("clipping, padding, transform and inaccessible roots fail closed",async()=>
 test("an accessible embedded frame can change only its selected video",async()=>{
   const h=makeHarness();h.view.top={};
   assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"4:3",true)).outcome,"applied");
-  assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"restored");
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
   assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
 });
 
@@ -191,7 +191,7 @@ test("open shadow player uses its own style layer and supports fullscreen hosts"
   h.video.getRootNode=()=>root;h.parent.parentElement=null;h.parent.getRootNode=()=>root;
   h.page.fullscreenElement=h.page.body;
   assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
-  assert.equal(appended,true);assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"restored");
+  assert.equal(appended,true);assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
 });
 
 test("an accessible closed shadow root can use its own style layer",async()=>{
@@ -199,7 +199,7 @@ test("an accessible closed shadow root can use its own style layer",async()=>{
   root.appendChild=node=>{appended=true;h.page.head.appendChild(node);};
   h.video.getRootNode=()=>root;h.parent.parentElement=null;h.parent.getRootNode=()=>root;
   assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
-  assert.equal(appended,true);assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"restored");
+  assert.equal(appended,true);assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
 });
 
 test("a normal fullscreen player with overflow hidden is accepted only when video fits",async()=>{
@@ -208,7 +208,7 @@ test("a normal fullscreen player with overflow hidden is accepted only when vide
   h.parent.getBoundingClientRect=()=>({left:0,top:0,right:320,bottom:240,width:320,height:240});
   h.page.fullscreenElement=h.parent;
   assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
-  assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"restored");
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
   h.parent.getBoundingClientRect=()=>({left:20,top:0,right:300,bottom:240,width:280,height:240});
   assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"unsupported");
 });
@@ -237,17 +237,17 @@ test("setup and teardown exceptions are reported, while remaining cleanup still 
   }
   const h=makeHarness({removeThrows:true});
   assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"4:3",true)).outcome,"applied");
-  assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"uncertain");
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"uncertain");
   assert.equal(h.attribute.size,0); // inert even if node removal failed
 });
 
 test("simultaneous failed removals remain tracked and can be retried",async()=>{
   const h=makeHarness({removeThrows:true,attributeRemoveThrows:true});
   assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"4:3",true)).outcome,"applied");
-  assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"uncertain");
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"uncertain");
   assert.equal(h.active(),true);assert.equal(h.attribute.size,1);
   assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"uncertain");
-  h.allowCleanup();assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"restored");
+  h.allowCleanup();assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
   assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
 });
 
@@ -263,7 +263,7 @@ test("failed invalidation retries cleanup after the target becomes ineligible",a
 test("pending identical marker writes are not removed during cleanup",async()=>{
   const h=makeHarness();assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"4:3",true)).outcome,"applied");
   const marker=[...h.attribute.keys()][0];h.queue({attributeName:marker});
-  assert.equal(h.controller.reset(h.video,"one",h.isCurrent).outcome,"restored");
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
   assert.equal(h.active(),false);assert.equal(h.attribute.has(marker),true);
 });
 
@@ -294,3 +294,217 @@ test("a newer request fences the result of an older in-flight request",async()=>
   frames[0]();assert.equal((await old).outcome,"unsupported");assert.equal(h.active(),true);
   frames[1]();assert.equal((await newer).outcome,"applied");
 });
+
+
+test("identity matrices are accepted, translations and 3D matrices rejected",async()=>{
+  for (const [transform,expected] of [["matrix(1, 0, 0, 1, 0, 0)","applied"],
+    ["matrix(1, 0, 0, 1, 1, 0)","unsupported"],
+    ["matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)","unsupported"]]) {
+    const h=makeHarness();h.parentStyle.transform=transform;
+    assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,expected);
+  }
+});
+
+test("preparation waits for a transition and checks identity again before writing",async()=>{
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  h.setTransition("running");
+  const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);
+  assert.equal(h.active(),false);
+  h.video.currentSrc="https://example.invalid/changed";frames.shift()();
+  assert.equal((await pending).outcome,"unsupported");assert.equal(h.active(),false);
+});
+
+test("reset during preparation invalidates pending work without a layer",async()=>{
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  h.setTransition("running");const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);
+  const reset=h.controller.reset(h.video,"one",h.isCurrent);
+  h.setTransition("none");frames.shift()();frames.shift()();
+  assert.equal((await reset).outcome,"unchanged");
+  assert.equal((await pending).outcome,"unsupported");assert.equal(h.active(),false);
+});
+
+test("finite busy preparation reports its reason and never writes",async()=>{
+  const now=Date.now;let clock=1000;Date.now=()=>clock;
+  try {
+    const h=makeHarness({afterFrame:()=>{clock=1701;return Promise.resolve();}});
+    h.setTransition("running");
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"4:3",true,3000),
+      {outcome:"unsupported",reason:"transition_busy"});
+    assert.equal(h.active(),false);
+  } finally {Date.now=now;}
+});
+
+test("replacement removes only its own layer and a stale completion cannot remove a newer layer",async()=>{
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  const first=h.controller.apply(h.video,"one",h.isCurrent,"4:3",true);frames.shift()();
+  assert.equal((await first).outcome,"applied");
+  h.setTransition("running");const replacement=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);
+  assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+  h.setTransition("none");const newer=h.controller.apply(h.video,"one",h.isCurrent,"4:3",false);
+  frames.shift()();assert.equal((await replacement).outcome,"unsupported");assert.equal(h.active(),true);
+  frames.shift()();assert.equal((await newer).outcome,"applied");assert.equal(h.active(),true);
+});
+
+test("post-apply transition must end before success",async()=>{
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);
+  h.setTransition("running");frames.shift()();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.active(),true);h.setTransition("none");frames.shift()();
+  assert.equal((await pending).outcome,"applied");
+});
+
+test("animation inspection rejects paused, infinite and non-transition transforms",()=>{
+  class Transition {}
+  const view={CSSTransition:Transition}, env=createVideoGeometryEnvironment({},view),element={};
+  const effect={target:element,getKeyframes:()=>[{transform:"none"},{transform:"scale(1)"}],
+    getComputedTiming:()=>({endTime:200,activeDuration:200})};
+  const animation=Object.assign(new Transition(),{effect,transitionProperty:"transform",playState:"running",playbackRate:1});
+  element.getAnimations=()=>[animation];
+  assert.equal(env.transformTransitions(element),"running");
+  animation.playState="paused";assert.equal(env.transformTransitions(element),"unsafe");
+  animation.playState="running";effect.getComputedTiming=()=>({endTime:Infinity,activeDuration:Infinity});
+  assert.equal(env.transformTransitions(element),"unsafe");
+  effect.getComputedTiming=()=>({endTime:200,activeDuration:200});
+  element.getAnimations=()=>[{...animation}];assert.equal(env.transformTransitions(element),"unsafe");
+});
+
+
+test("late frame after confirmation timeout cannot restore a layer",async()=>{
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  const pending=h.controller.apply(h.video,"one",h.isCurrent,"4:3",true,Date.now()+15);
+  assert.equal((await pending).outcome,"unsupported");assert.equal(h.active(),false);
+  frames.shift()();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+});
+
+test("stale identity cannot cancel pending preparation",async()=>{
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  h.setTransition("running");const pending=h.controller.apply(h.video,"one",h.isCurrent,"4:3",true);
+  assert.equal((await h.controller.reset(h.video,"wrong",h.isCurrent)).outcome,"unsupported");
+  h.setTransition("none");frames.shift()();await new Promise(resolve=>setImmediate(resolve));
+  frames.shift()();assert.equal((await pending).outcome,"applied");
+});
+
+test("settled nonidentity transform after waiting is rejected",async()=>{
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  h.setTransition("running");const pending=h.controller.apply(h.video,"one",h.isCurrent,"4:3",true);
+  h.site.set("transform",{matrix:[.8,1]});h.setTransition("none");frames.shift()();
+  assert.equal((await pending).outcome,"unsupported");assert.equal(h.active(),false);
+});
+
+test("post-apply inspection waits only for a transition to the expected matrix",()=>{
+  class Transition {}
+  class Matrix {constructor(value){
+    const n=value.match(/matrix\(([^)]+)\)/)[1].split(",").map(Number);
+    [this.a,this.b,this.c,this.d,this.e,this.f]=n;this.is2D=true;
+  }}
+  const element={},env=createVideoGeometryEnvironment({}, {CSSTransition:Transition,DOMMatrixReadOnly:Matrix});
+  let end="matrix(-1,0,0,0.75,0,0)";
+  const effect={target:element,getKeyframes:()=>[{transform:"none"},{transform:end}],
+    getComputedTiming:()=>({endTime:200,activeDuration:200})};
+  const animation=Object.assign(new Transition(),{effect,transitionProperty:"transform",playState:"running",playbackRate:1});
+  element.getAnimations=()=>[animation];
+  assert.equal(env.transformTransitions(element,{x:-1,y:.75}),"running");
+  end="matrix(1,0,0,1,10,0)";
+  assert.equal(env.transformTransitions(element,{x:-1,y:.75}),"unsafe");
+});
+
+test("original and reset wait for neutral restoration after layer cleanup",async()=>{
+  for (const method of ["original","reset"]) {
+    const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+    const first=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);frames.shift()();
+    assert.equal((await first).outcome,"applied");
+    h.setTransition("running");
+    const restoring=method === "reset" ? h.controller.reset(h.video,"one",h.isCurrent) :
+      h.controller.apply(h.video,"one",h.isCurrent,"original",false);
+    assert.equal(h.active(),false);
+    h.setTransition("none");frames.shift()();
+    assert.equal((await restoring).outcome,"restored");
+  }
+});
+
+test("restoration fails on busy, changed source or non-neutral settled presentation",async()=>{
+  for (const change of ["busy","source","nonidentity"]) {
+    const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+    const first=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);frames.shift()();
+    assert.equal((await first).outcome,"applied");h.setTransition("running");
+    const restoring=h.controller.apply(h.video,"one",h.isCurrent,"original",false,Date.now()+25);
+    if (change === "source") h.video.currentSrc="https://example.invalid/other";
+    if (change === "nonidentity") {h.setTransition("none");h.site.set("transform",{matrix:[.8,1]});}
+    if (change !== "busy") frames.shift()();
+    assert.notEqual((await restoring).outcome,"restored");assert.equal(h.active(),false);
+    if (change === "busy") {frames.shift()();await new Promise(resolve=>setImmediate(resolve));}
+    assert.equal(h.active(),false);
+  }
+});
+
+test("a newer apply fences delayed restoration without removing the newer layer",async()=>{
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  const first=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);frames.shift()();
+  assert.equal((await first).outcome,"applied");h.setTransition("running");
+  const restoring=h.controller.reset(h.video,"one",h.isCurrent);
+  h.setTransition("none");const newer=h.controller.apply(h.video,"one",h.isCurrent,"4:3",true);
+  frames.shift()();assert.notEqual((await restoring).outcome,"restored");assert.equal(h.active(),true);
+  frames.shift()();assert.equal((await newer).outcome,"applied");assert.equal(h.active(),true);
+});
+
+function otherVideo(h) {
+  const video=new Target(),attributes=new Map();
+  Object.assign(video,{tagName:"VIDEO",ownerDocument:h.page,isConnected:true,
+    currentSrc:"https://example.invalid/other",videoWidth:320,videoHeight:240,controls:false,
+    mediaKeys:null,textTracks:[],parentElement:h.parent,getRootNode:()=>h.page,
+    getBoundingClientRect:()=>({left:0,top:0,right:320,bottom:240,width:320,height:240})});
+  video.hasAttribute=name=>attributes.has(name);
+  video.getAttribute=name=>attributes.has(name)?attributes.get(name):null;
+  video.setAttribute=(name,value)=>attributes.set(name,value);
+  video.removeAttribute=name=>attributes.delete(name);
+  return video;
+}
+
+test("a verified new video cleans up a no-longer-current owned layer",async()=>{
+  const h=makeHarness(),other=otherVideo(h);
+  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
+  h.setCurrent("two");
+  assert.equal((await h.controller.apply(other,"two",h.isCurrent,"original",false)).outcome,"restored");
+  assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+});
+
+test("failed cleanup of a no-longer-current video is uncertain and remains tracked",async()=>{
+  const h=makeHarness({removeThrows:true,attributeRemoveThrows:true}),other=otherVideo(h);
+  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
+  h.setCurrent("two");
+  assert.equal((await h.controller.apply(other,"two",h.isCurrent,"original",false)).outcome,"uncertain");
+  assert.equal(h.active(),true);h.allowCleanup();
+  assert.equal((await h.controller.apply(other,"two",h.isCurrent,"original",false)).outcome,"restored");
+  assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+});
+
+test("late confirmation from retired video cannot remove a subsequently installed layer",async()=>{
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  const other=otherVideo(h);
+  const old=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);
+  h.setCurrent("two");
+  assert.equal((await h.controller.apply(other,"two",h.isCurrent,"original",false)).outcome,"restored");
+  h.setCurrent("one");
+  const newer=h.controller.apply(h.video,"one",h.isCurrent,"4:3",true);
+  frames.shift()();assert.equal((await old).outcome,"unsupported");assert.equal(h.active(),true);
+  frames.shift()();assert.equal((await newer).outcome,"applied");assert.equal(h.active(),true);
+});
+
+for (const event of ["loadstart","emptied","ended"]) {
+  test(`same-source ${event} invalidates preparation and removes temporary listeners`,async()=>{
+    const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+    h.setTransition("running");
+    const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);
+    h.video.fire(event);h.setTransition("none");frames.shift()();
+    assert.equal((await pending).outcome,"unsupported");assert.equal(h.active(),false);
+    for (const name of ["loadstart","emptied","ended"]) assert.equal(h.video.events.get(name)?.size || 0,0);
+  });
+  test(`same-source ${event} invalidates confirmation and cleans the owned layer`,async()=>{
+    const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+    const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);
+    h.video.fire(event);frames.shift()();
+    assert.equal((await pending).outcome,"unsupported");assert.equal(h.active(),false);
+    for (const name of ["loadstart","emptied","ended"]) assert.equal(h.video.events.get(name)?.size || 0,0);
+  });
+}

@@ -141,6 +141,10 @@ class CommandQueue:
             if not self.items or self.items[0]["id"] != command_id:
                 return False
             item = self.items[0]
+            if reason == "transition_busy" and (
+                item["command"] != "video_geometry" or outcome != "failed"
+            ):
+                return False
             player = item["command"] in {"player_get", "player_set", "player_pause"}
             if (player and outcome == "completed") != (type(volume) is int and 0 <= volume <= 100):
                 return False
