@@ -77,7 +77,7 @@ function createVideoGeometryController(env) {
     } catch (_) { return false; }
   }
 
-  function layout(video, styled = false) {
+  function layout(video, styled = false, ignoreClipping = false) {
     try {
       const box = video.getBoundingClientRect();
       if (![box.left,box.top,box.right,box.bottom,box.width,box.height].every(Number.isFinite) ||
@@ -101,8 +101,8 @@ function createVideoGeometryController(env) {
         // whole transformed video remains inside their visible rectangle.
         if (element !== video && [s.overflowX,s.overflowY].some(value => value && value !== "visible")) {
           const parent = element.getBoundingClientRect();
-          if (box.left < parent.left || box.right > parent.right ||
-              box.top < parent.top || box.bottom > parent.bottom) return {reason:"geometry_clipping"};
+          if (!ignoreClipping && (box.left < parent.left || box.right > parent.right ||
+              box.top < parent.top || box.bottom > parent.bottom)) return {reason:"geometry_clipping"};
         }
         element = videoGeometryParent(element);
       }
@@ -212,16 +212,19 @@ function createVideoGeometryController(env) {
       const preparationEnd=Math.min(deadline,Date.now()+700);
       while (true) {
         if (!valid()) return {outcome:"unsupported",reason:"geometry_eligibility"};
-        const checked=layout(video,true);
-        if (!checked.box) return {outcome:"unsupported",reason:checked.reason};
+        let checked=layout(video,true);
         const state=transitionState(video);
+        if (checked.reason === "geometry_clipping" && state === "running") checked=layout(video,true,true);
+        if (!checked.box) return {outcome:"unsupported",reason:checked.reason};
         if (state === "unsafe") return {outcome:"unsupported",reason:"geometry_transition"};
         if (state === "none") break;
         if (Date.now() >= preparationEnd || !await nextFrame(preparationEnd)) {
           if (!valid()) return {outcome:"unsupported",reason:"geometry_eligibility"};
-          const checked=layout(video,true);
+          let checked=layout(video,true);
+          const state=transitionState(video);
+          if (checked.reason === "geometry_clipping" && state === "running") checked=layout(video,true,true);
           if (!checked.box) return {outcome:"unsupported",reason:checked.reason};
-          return transitionState(video) === "running" ?
+          return state === "running" ?
             {outcome:"unsupported",reason:"transition_busy"} : {outcome:"unsupported",reason:"geometry_transition"};
         }
       }
@@ -278,9 +281,11 @@ function createVideoGeometryController(env) {
           else if (session.closed) failure=session.closeCause || "geometry_post_write_closed";
           else if (active!==session || !markerOwned(session) || !session.layer.isConnected)
             failure="geometry_post_write_ownership";
-          else failure=layout(video,true).reason;
           if (failure) return cleanup(session) ? {outcome:"unsupported",reason:failure} : {outcome:"uncertain"};
+          let checked=layout(video,true);
           const state=transitionState(video,session.scale);
+          if (checked.reason === "geometry_clipping" && state === "running") checked=layout(video,true,true);
+          if (!checked.box) return cleanup(session) ? {outcome:"unsupported",reason:checked.reason} : {outcome:"uncertain"};
           if (state === "unsafe") return cleanup(session) ? {outcome:"unsupported",reason:"geometry_transition"} : {outcome:"uncertain"};
           if (state === "none") {
             const mismatch=presentation(session);
