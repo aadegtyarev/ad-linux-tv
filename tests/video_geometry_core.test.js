@@ -318,7 +318,7 @@ test("reset during preparation invalidates pending work without a layer",async()
   const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
   h.setTransition("running");const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);
   const reset=h.controller.reset(h.video,"one",h.isCurrent);
-  h.setTransition("none");frames.shift()();frames.shift()();
+  h.setTransition("none");frames.shift()();
   assert.equal((await reset).outcome,"unchanged");
   assert.equal((await pending).outcome,"unsupported");assert.equal(h.active(),false);
 });
@@ -409,42 +409,37 @@ test("post-apply inspection waits only for a transition to the expected matrix",
   assert.equal(env.transformTransitions(element,{x:-1,y:.75}),"unsafe");
 });
 
-test("original and reset wait for neutral restoration after layer cleanup",async()=>{
+test("original and reset report cleanup without waiting for site presentation",async()=>{
   for (const method of ["original","reset"]) {
     const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
     const first=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);frames.shift()();
     assert.equal((await first).outcome,"applied");
-    h.setTransition("running");
+    h.setTransition("unsafe");h.site.set("transform",{matrix:[.8,1]});
     const restoring=method === "reset" ? h.controller.reset(h.video,"one",h.isCurrent) :
       h.controller.apply(h.video,"one",h.isCurrent,"original",false);
-    assert.equal(h.active(),false);
-    h.setTransition("none");frames.shift()();
     assert.equal((await restoring).outcome,"restored");
+    assert.equal(h.active(),false);assert.equal(h.attribute.size,0);assert.equal(frames.length,0);
+    assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"original",false)).outcome,"unchanged");
   }
 });
 
-test("restoration fails on busy, changed source or non-neutral settled presentation",async()=>{
-  for (const change of ["busy","source","nonidentity"]) {
-    const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
-    const first=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);frames.shift()();
-    assert.equal((await first).outcome,"applied");h.setTransition("running");
-    const restoring=h.controller.apply(h.video,"one",h.isCurrent,"original",false,Date.now()+25);
-    if (change === "source") h.video.currentSrc="https://example.invalid/other";
-    if (change === "nonidentity") {h.setTransition("none");h.site.set("transform",{matrix:[.8,1]});}
-    if (change !== "busy") frames.shift()();
-    assert.notEqual((await restoring).outcome,"restored");assert.equal(h.active(),false);
-    if (change === "busy") {frames.shift()();await new Promise(resolve=>setImmediate(resolve));}
-    assert.equal(h.active(),false);
-  }
+test("reset cleanup failure stays uncertain even when site presentation is unavailable",async()=>{
+  const h=makeHarness({removeThrows:true});
+  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
+  h.setTransition("unsafe");h.site.set("transform",{matrix:[.8,1]});
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"uncertain");
+  assert.equal(h.active(),true);h.allowCleanup();
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
+  assert.equal(h.active(),false);
 });
 
-test("a newer apply fences delayed restoration without removing the newer layer",async()=>{
+test("reset cancels an older pending wait and cannot remove a newer active layer",async()=>{
   const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
-  const first=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);frames.shift()();
-  assert.equal((await first).outcome,"applied");h.setTransition("running");
-  const restoring=h.controller.reset(h.video,"one",h.isCurrent);
+  h.setTransition("running");
+  const old=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"unchanged");
   h.setTransition("none");const newer=h.controller.apply(h.video,"one",h.isCurrent,"4:3",true);
-  frames.shift()();assert.notEqual((await restoring).outcome,"restored");assert.equal(h.active(),true);
+  frames.shift()();assert.equal((await old).outcome,"unsupported");assert.equal(h.active(),true);
   frames.shift()();assert.equal((await newer).outcome,"applied");assert.equal(h.active(),true);
 });
 

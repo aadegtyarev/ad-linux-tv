@@ -165,9 +165,7 @@ function createVideoGeometryController(env) {
   }
 
   async function reset(video,identity,isCurrent,deadline=Date.now()+1500) {
-    const hadActive=Boolean(active);
-    const result=await apply(video,identity,isCurrent,"original",false,deadline);
-    return !hadActive && result.outcome === "restored" ? {outcome:"unchanged"} : result;
+    return apply(video,identity,isCurrent,"original",false,deadline);
   }
 
   function cancel(identity,token) {
@@ -207,6 +205,8 @@ function createVideoGeometryController(env) {
       const previous=active;
       if (previous && !cleanup(previous)) return {outcome:"uncertain"};
       if (!valid()) return {outcome:"stale"};
+      // Reset confirms only removal of our layer, not the site's resulting presentation.
+      if (mode === "original" && !mirror) return {outcome:previous ? "restored" : "unchanged"};
       const preparationEnd=Math.min(deadline,Date.now()+700);
       while (true) {
         if (!valid() || !layout(video,true)) return {outcome:"unsupported"};
@@ -222,7 +222,6 @@ function createVideoGeometryController(env) {
       if (!valid()) return {outcome:"unsupported"};
       const box = layout(video);
       if (!box) return {outcome:"unsupported"};
-      if (mode === "original" && !mirror) return {outcome:"restored"};
       if (!page.head) return {outcome:"unsupported"};
       let token;
       try { token = randomToken(); } catch (_) { return {outcome:"unsupported"}; }
