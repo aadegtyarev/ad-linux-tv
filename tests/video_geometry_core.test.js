@@ -34,7 +34,9 @@ function makeHarness(options={}) {
     return match ? [Number(match[1]),Number(match[2])] : null;
   };
   const effective=()=>site.get("transform")?.important ? site.get("transform").matrix : layerTransform() || site.get("transform")?.matrix || [1,1];
-  video.getBoundingClientRect=()=>{const [x,y]=effective();const w=320*Math.abs(x),h=240*Math.abs(y);return {left:160-w/2,right:160+w/2,top:120-h/2,bottom:120+h/2,width:w,height:h};};
+  video.getBoundingClientRect=()=>{const [x,y]=effective();const b=options.box || {left:0,top:0,width:320,height:240};
+    const w=b.width*Math.abs(x),h=b.height*Math.abs(y),cx=b.left+b.width/2,cy=b.top+b.height/2;
+    return {left:cx-w/2,right:cx+w/2,top:cy-h/2,bottom:cy+h/2,width:w,height:h};};
   page.createElement=name=>{
     assert.equal(name,"style");
     return {textContent:"",isConnected:false,remove(){if(removeThrows)throw Error("remove");this.isConnected=false;}};
@@ -45,7 +47,7 @@ function makeHarness(options={}) {
     if(element===page.body)return bodyStyle;
     if(element!==video)return base();
     const s={...videoStyle}, [x,y]=effective();
-    s.transform=(x===1 && y===1 && !layerTransform() && !site.has("transform")) ? "none" : `matrix(${x}, 0, 0, ${y}, 0, 0)`;
+    s.transform=(x===1 && y===1 && !layerTransform() && !site.has("transform")) ? "none" : `matrix(${x}, ${options.shear?.b || 0}, ${options.shear?.c || 0}, ${y}, 0, 0)`;
     if(layerTransform() && layer.textContent.includes("object-fit:fill") && !site.get("object-fit")?.important)s.objectFit="fill";
     else if(site.has("object-fit"))s.objectFit=site.get("object-fit").value;
     return s;
@@ -60,7 +62,7 @@ function makeHarness(options={}) {
     setTimer:callback=>{timerCallback=callback;return 1;},clearTimer:()=>{}};
   const controller=createVideoGeometryController(env);
   return {page,view,parent,parentStyle,bodyStyle,video,videoStyle,site,attribute,controller,
-    isCurrent:(_v,id)=>current===id,setCurrent:id=>{current=id;},setTransition:value=>{transition=value;},
+    isCurrent:(_v,id)=>current===id,setCurrent:id=>{current=id;},setTransition:value=>{transition=value;},effective,
     active:()=>Boolean(layer?.isConnected),
     notify:record=>observerCallback(record),queue:record=>records.push(record),
     tick:()=>timerCallback(),
@@ -203,7 +205,7 @@ test("an accessible closed shadow root can use its own style layer",async()=>{
   assert.equal(appended,true);assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
 });
 
-test("a normal fullscreen player with overflow hidden is accepted only when video fits",async()=>{
+test("a fullscreen player fits a video inside overflow hidden",async()=>{
   const h=makeHarness();
   h.parentStyle.overflowX="hidden";h.parentStyle.overflowY="hidden";
   h.parent.getBoundingClientRect=()=>({left:0,top:0,right:320,bottom:240,width:320,height:240});
@@ -211,7 +213,7 @@ test("a normal fullscreen player with overflow hidden is accepted only when vide
   assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
   assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
   h.parent.getBoundingClientRect=()=>({left:20,top:0,right:300,bottom:240,width:280,height:240});
-  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"unsupported");
+  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
 });
 
 test("author inline important conflict is detected and player style is not overwritten",async()=>{
@@ -395,7 +397,7 @@ test("clipping while waiting never bypasses final geometry or safety guards",asy
     if(kind==="source") h.video.currentSrc="https://example.invalid/changed";
     if(kind==="unsafe") h.setTransition("unsafe");
     if(kind==="ancestor") h.parentStyle.opacity="0";
-    if(kind==="viewport") h.view.innerWidth=10;
+    if(kind==="viewport") {h.view.innerWidth=10;h.setTransition("none");}
     if(kind==="ownership") h.attribute.clear();
     frames.shift()();const result=await pending;
     assert.equal(result.outcome,"unsupported",kind);
@@ -515,6 +517,8 @@ test("post-apply inspection waits only for a transition to the expected matrix",
   const animation=Object.assign(new Transition(),{effect,transitionProperty:"transform",playState:"running",playbackRate:1});
   element.getAnimations=()=>[animation];
   assert.equal(env.transformTransitions(element,{x:-1,y:.75}),"running");
+  end="matrix(-0.9991,0.0009,-0.0009,0.7509,0,0)";
+  assert.equal(env.transformTransitions(element,{x:-1,y:.75}),"running");
   end="matrix(1,0,0,1,10,0)";
   assert.equal(env.transformTransitions(element,{x:-1,y:.75}),"unsafe");
 });
@@ -619,7 +623,7 @@ test("geometry failure categories come from the actual checks without page data"
     [h=>{h.video.controls=true;},"geometry_eligibility"],
     [h=>{h.view.innerWidth=10;},"geometry_viewport"],
     [h=>{h.parentStyle.transform="matrix(2, 0, 0, 1, 0, 0)";},"geometry_ancestor_style"],
-    [h=>{h.parentStyle.overflowX="hidden";h.parent.getBoundingClientRect=()=>({left:1,right:319,top:0,bottom:240});},"geometry_clipping"],
+    [h=>{h.parentStyle.overflowX="hidden";h.parent.getBoundingClientRect=()=>({left:161,right:319,top:0,bottom:240});},"geometry_clipping"],
     [h=>{h.setTransition("unsafe");},"geometry_transition"],
     [h=>{h.videoStyle.transform="ignored";h.site.set("transform",{matrix:[0.5,1]});},"geometry_video_transform"],
     [h=>{h.site.set("object-fit",{value:"contain",important:true});},"geometry_presentation_matrix"],
@@ -714,5 +718,225 @@ test("close callbacks report only their fixed per-session cause",async()=>{
     assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"16:9",false),
       {outcome:"unsupported",reason});
     assert.equal(h.active(),false);
+  }
+});
+
+test("viewport and clipping overshoot waits in preparation and confirmation until settled",async()=>{
+  for (const phase of ["preparation","confirmation"]) {
+    const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+    h.parentStyle.overflowX="hidden";h.parent.getBoundingClientRect=()=>({left:0,right:320,top:0,bottom:240});
+    const rect=h.video.getBoundingClientRect;let overshoot=phase==="preparation";
+    h.video.getBoundingClientRect=()=>{const box=rect();return overshoot ? {...box,left:-5,right:box.right+5} : box;};
+    if(overshoot) h.setTransition("running");
+    const pending=h.controller.apply(h.video,"one",h.isCurrent,"original",true);
+    if(phase==="confirmation") {overshoot=true;h.setTransition("running");frames.shift()();await new Promise(resolve=>setImmediate(resolve));}
+    assert.equal(frames.length,1);overshoot=false;h.setTransition("none");frames.shift()();
+    if(phase==="preparation") {await new Promise(resolve=>setImmediate(resolve));frames.shift()();}
+    assert.equal((await pending).outcome,"applied");
+  }
+});
+
+test("running viewport overflow retains invalid box and safety rejection",async()=>{
+  for (const phase of ["preparation","confirmation"]) for (const kind of ["nan","infinity","zero","style","unsafe"]) {
+    const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+    const rect=h.video.getBoundingClientRect;let bad=false;
+    h.video.getBoundingClientRect=()=>{const box=rect();if(!bad)return box;
+      return {...box,left:kind==="nan" ? NaN : -5,right:kind==="infinity" ? Infinity : box.right,width:kind==="zero" ? 0 : box.width};};
+    const mutate=()=>{bad=true;h.setTransition(kind==="unsafe" ? "unsafe" : "running");if(kind==="style")h.parentStyle.opacity="0";};
+    if(phase==="preparation")mutate();
+    const pending=h.controller.apply(h.video,"one",h.isCurrent,"original",true);
+    if(phase==="confirmation"){mutate();frames.shift()();}
+    const reason=kind==="style" ? "geometry_ancestor_style" : kind==="unsafe" && phase==="preparation" ? "geometry_transition" : "geometry_viewport";
+    assert.deepEqual(await pending,{outcome:"unsupported",reason},`${phase} ${kind}`);
+    assert.equal(h.active(),false);
+  }
+});
+
+test("viewport overflow remains strict when settled, including viewport shrink",async()=>{
+  for (const phase of ["final","shrink"]) {
+    const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+    const rect=h.video.getBoundingClientRect;let overflow=false;
+    h.video.getBoundingClientRect=()=>{const box=rect();return overflow ? {...box,left:-5} : box;};
+    const pending=h.controller.apply(h.video,"one",h.isCurrent,"original",true);
+    {overflow=true;h.setTransition("running");frames.shift()();await new Promise(resolve=>setImmediate(resolve));
+      if(phase==="shrink") {overflow=false;h.view.innerWidth=10;}
+      h.setTransition("none");frames.shift()();}
+    assert.deepEqual(await pending,{outcome:"unsupported",reason:"geometry_viewport"});assert.equal(h.active(),false);
+  }
+});
+
+test("viewport overflow preparation timeout rechecks and never writes",async()=>{
+  const now=Date.now;let clock=1000;Date.now=()=>clock;
+  try {
+    const h=makeHarness({afterFrame:()=>{clock=1701;return Promise.resolve();}});
+    const rect=h.video.getBoundingClientRect;h.video.getBoundingClientRect=()=>({...rect(),left:-5});h.setTransition("running");
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"original",true,3000),{outcome:"unsupported",reason:"transition_busy"});
+    assert.equal(h.active(),false);
+  } finally {Date.now=now;}
+});
+
+test("viewport overflow confirmation fences media, ownership, and timeout",async()=>{
+  for (const kind of ["source","ownership","timeout"]) {
+    const now=Date.now;let clock=1000;Date.now=()=>clock;
+    try {
+      const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+      const rect=h.video.getBoundingClientRect;let overflow=false;
+      h.video.getBoundingClientRect=()=>{const box=rect();return overflow ? {...box,left:-5} : box;};
+      const pending=h.controller.apply(h.video,"one",h.isCurrent,"original",true,3000);
+      overflow=true;h.setTransition("running");frames.shift()();await new Promise(resolve=>setImmediate(resolve));
+      if(kind==="source")h.video.currentSrc="https://example.invalid/changed";
+      if(kind==="ownership")h.attribute.clear();
+      if(kind==="timeout")clock=1700;
+      frames.shift()();const result=await pending;
+      assert.equal(result.outcome,"unsupported",kind);assert.equal(h.active(),false,kind);assert.equal(h.attribute.size,0,kind);
+    } finally {Date.now=now;}
+  }
+});
+
+test("centered fit handles each viewport edge and preserves independent mirror and aspect",async()=>{
+  for (const [edge,box] of Object.entries({left:{left:-40,top:50,width:200,height:200},right:{left:240,top:50,width:200,height:200},top:{left:100,top:-40,width:200,height:200},bottom:{left:100,top:140,width:200,height:200}})) {
+    for (const mode of ["original","4:3","16:9"]) for (const mirror of [false,true]) {
+      if(mode==="original" && !mirror)continue;
+      const h=makeHarness({box});h.view.innerWidth=400;h.view.innerHeight=300;
+      assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,mode,mirror)).outcome,"applied",`${edge} ${mode} ${mirror}`);
+      const rect=h.video.getBoundingClientRect(),[x,y]=h.effective();
+      assert.ok(rect.left>=0 && rect.right<=400 && rect.top>=0 && rect.bottom<=300,edge);
+      assert.ok(Math.abs((rect.left+rect.right)/2-(box.left+box.width/2))<1e-9);
+      assert.ok(Math.abs((rect.top+rect.bottom)/2-(box.top+box.height/2))<1e-9);
+      assert.equal(x<0,mirror);assert.ok(y>0);
+      if(mode!=="original")assert.ok(Math.abs(rect.width/rect.height-(mode==="4:3" ? 4/3 : 16/9))<1e-9);
+      assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");assert.equal(h.active(),false);
+    }
+  }
+});
+
+test("fit intersects multiple clipping ancestors and leaves fitting target scale unchanged",async()=>{
+  const h=makeHarness({box:{left:0,top:0,width:400,height:300}});h.view.innerWidth=400;h.view.innerHeight=300;
+  h.parentStyle.overflowX="hidden";h.bodyStyle.overflowY="hidden";
+  h.parent.getBoundingClientRect=()=>({left:50,right:350,top:0,bottom:300});
+  h.page.body.getBoundingClientRect=()=>({left:0,right:400,top:75,bottom:225});
+  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"original",true)).outcome,"applied");
+  assert.ok(Math.abs(h.effective()[0]+0.5)<1e-10 && Math.abs(h.effective()[1]-0.5)<1e-10);
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
+  const target=makeHarness({box:{left:0,top:-50,width:400,height:400}});target.view.innerWidth=400;target.view.innerHeight=300;
+  assert.equal((await target.controller.apply(target.video,"one",target.isCurrent,"16:9",false)).outcome,"applied");
+  assert.deepEqual(target.effective(),[1,0.5625]);
+});
+
+test("centered fit rejects impossible centers, invalid bounds and invalid neutral boxes",async()=>{
+  for (const [box,reason] of [
+    [{left:-400,top:0,width:200,height:100},"geometry_viewport"],
+    [{left:-100,top:0,width:200,height:100},"geometry_viewport"],
+    [{left:0,top:0,width:0,height:100},"geometry_viewport"],
+    [{left:0,top:0,width:Infinity,height:100},"geometry_viewport"],
+    [{left:NaN,top:0,width:200,height:100},"geometry_viewport"]]) {
+    const h=makeHarness({box});h.view.innerWidth=400;h.view.innerHeight=300;
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"original",true),{outcome:"unsupported",reason});assert.equal(h.active(),false);
+  }
+  for (const rect of [{left:201,right:300,top:0,bottom:300},{left:0,right:NaN,top:0,bottom:300},{left:0,right:0,top:0,bottom:300}]) {
+    const h=makeHarness({box:{left:0,top:0,width:400,height:300}});h.view.innerWidth=400;h.view.innerHeight=300;
+    h.parentStyle.overflowX="hidden";h.parent.getBoundingClientRect=()=>rect;
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"original",true),{outcome:"unsupported",reason:"geometry_clipping"});assert.equal(h.active(),false);
+  }
+});
+
+test("centered fit handles large, small and fractional finite boxes",async()=>{
+  for(const box of [{left:-500000,top:0,width:1000400,height:300},{left:199.875,top:149.875,width:0.25,height:0.25},{left:-0.25,top:49.75,width:400.5,height:200.5}]) {
+    const h=makeHarness({box});h.view.innerWidth=400;h.view.innerHeight=300;
+    assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"original",true)).outcome,"applied");
+    const r=h.video.getBoundingClientRect();assert.ok(r.left>=0 && r.right<=400 && r.top>=0 && r.bottom<=300);
+  }
+});
+
+test("fitted sessions retain transition, change and cleanup fences",async()=>{
+  for(const kind of ["settled","viewport","clip","source","ownership"]) {
+    const frames=[];const h=makeHarness({box:{left:-40,top:50,width:200,height:200},afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+    h.view.innerWidth=400;h.view.innerHeight=300;h.parentStyle.overflowX="hidden";
+    let clip={left:0,right:400,top:0,bottom:300};h.parent.getBoundingClientRect=()=>clip;
+    h.setTransition("running");const pending=h.controller.apply(h.video,"one",h.isCurrent,"original",true);
+    h.setTransition("none");frames.shift()();await new Promise(resolve=>setImmediate(resolve));
+    if(kind==="viewport")h.view.innerWidth=20;
+    if(kind==="clip")clip={left:100,right:400,top:0,bottom:300};
+    if(kind==="source")h.video.currentSrc="https://example.invalid/changed";
+    if(kind==="ownership")h.attribute.clear();
+    frames.shift()();const result=await pending;
+    assert.equal(result.outcome,kind==="settled" ? "applied" : "unsupported",kind);
+    if(kind!=="settled") {assert.equal(h.active(),false);assert.equal(h.attribute.size,0);}
+  }
+});
+
+test("fitted active session closes when clipping or viewport changes",async()=>{
+  for(const kind of ["clip","viewport"]) {
+    const h=makeHarness({box:{left:-40,top:50,width:200,height:200}});h.view.innerWidth=400;h.view.innerHeight=300;
+    h.parentStyle.overflowX="hidden";let clip={left:0,right:400,top:0,bottom:300};h.parent.getBoundingClientRect=()=>clip;
+    assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"original",true)).outcome,"applied");
+    if(kind==="clip")clip={left:50,right:400,top:0,bottom:300};else h.view.innerWidth=20;
+    h.tick();assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+  }
+});
+
+test("tiny fitted mirror presentation requires the correct signed scale",async()=>{
+  for (const kind of ["correct","opposite","relative-error","zero"]) {
+    let h;
+    h=makeHarness({box:{left:-999800,top:-499850,width:2000000,height:1000000},afterFrame:()=>{
+      if(kind!=="correct") {
+        const [x,y]=h.effective();
+        h.site.set("transform",{matrix:[kind==="opposite" ? -x : kind==="zero" ? 0 : x*0.5,y],important:true});
+      }
+      return Promise.resolve();
+    }});
+    h.view.innerWidth=400;h.view.innerHeight=300;
+    const result=await h.controller.apply(h.video,"one",h.isCurrent,"original",true);
+    if(kind==="correct") {
+      assert.equal(result.outcome,"applied");assert.ok(h.effective()[0]<0 && Math.abs(h.effective()[0])<0.001);
+      assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
+    } else {
+      assert.equal(result.outcome,"unsupported",kind);assert.equal(h.active(),false,kind);assert.equal(h.attribute.size,0,kind);
+      if(kind!=="zero")assert.equal(result.reason,"geometry_presentation_matrix",kind);
+    }
+  }
+});
+
+test("tiny transition endpoint requires signed scale and bounded relative error",()=>{
+  class Transition {}
+  class Matrix {constructor(value){
+    const n=value.match(/matrix\(([^)]+)\)/)[1].split(",").map(Number);
+    [this.a,this.b,this.c,this.d,this.e,this.f]=n;this.is2D=true;
+  }}
+  const element={},env=createVideoGeometryEnvironment({}, {CSSTransition:Transition,DOMMatrixReadOnly:Matrix});
+  let end="matrix(-0.0001,0,0,0.0002,0,0)";
+  const effect={target:element,getKeyframes:()=>[{transform:"none"},{transform:end}],
+    getComputedTiming:()=>({endTime:200,activeDuration:200})};
+  element.getAnimations=()=>[Object.assign(new Transition(),{effect,transitionProperty:"transform",playState:"running",playbackRate:1})];
+  const expected={x:-0.0001,y:0.0002};
+  assert.equal(env.transformTransitions(element,expected),"running");
+  for(const matrix of ["matrix(0.0001,0,0,0.0002,0,0)","matrix(-0.00015,0,0,0.0002,0,0)",
+    "matrix(-0.0001,0,0,-0.0002,0,0)","matrix(-0.0001,NaN,0,0.0002,0,0)"]) {
+    end=matrix;assert.equal(env.transformTransitions(element,expected),"unsafe",matrix);
+  }
+  for(const matrix of ["matrix(-0.0001,0.00005,0,0.0002,0,0)","matrix(-0.0001,0,0.00005,0.0002,0,0)"]) {
+    end=matrix;assert.equal(env.transformTransitions(element,expected),"unsafe",matrix);
+  }
+  end="matrix(-0.0001005,0.0000005,-0.000001,0.000201,0,0)";
+  assert.equal(env.transformTransitions(element,expected),"running");
+  end="matrix(-0.0001,0.0000005,0.0009,0.75,0,0)";
+  assert.equal(env.transformTransitions(element,{x:-0.0001,y:0.75}),"running");
+});
+
+test("presentation bounds shear relative to fitted axes and permits ordinary rounding",async()=>{
+  for (const kind of ["tiny-b","tiny-c","tiny-rounding","ordinary-rounding"]) {
+    const tiny=kind!=="ordinary-rounding";
+    const options={box:tiny ? {left:-999800,top:-499850,width:2000000,height:1000000} : undefined};
+    options.afterFrame=()=>{options.shear=kind==="tiny-b" ? {b:0.00005} : kind==="tiny-c" ? {c:0.00005} :
+      kind==="tiny-rounding" ? {b:0.0000005,c:-0.0000005} : {b:0.0009,c:-0.0009};return Promise.resolve();};
+    const h=makeHarness(options);h.view.innerWidth=400;h.view.innerHeight=300;
+    const result=await h.controller.apply(h.video,"one",h.isCurrent,"original",true);
+    if(kind==="tiny-b" || kind==="tiny-c") {
+      assert.deepEqual(result,{outcome:"unsupported",reason:"geometry_presentation_matrix"},kind);
+      assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+    } else {
+      assert.equal(result.outcome,"applied",kind);
+      assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
+    }
   }
 });

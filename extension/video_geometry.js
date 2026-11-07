@@ -20,6 +20,14 @@ function videoGeometryScale(width, height, ratio, mirror) {
   return {x:mirror ? -x : x,y};
 }
 
+// A small fitted axis must not accept zero, the opposite sign, or a large
+// relative error merely because it falls inside the usual absolute tolerance.
+function videoGeometryAxisMatches(actual, expected) {
+  return Number.isFinite(actual) && Number.isFinite(expected) && expected !== 0 &&
+    Math.sign(actual) === Math.sign(expected) && Math.abs(actual-expected) <= 0.001 &&
+    Math.abs(actual-expected) / Math.abs(expected) <= 0.01;
+}
+
 function createVideoGeometryController(env) {
   const {page, view, styleOf, matrixOf, afterFrame, randomToken, observe, setTimer, clearTimer} = env;
   let active = null, revision = 0;
@@ -77,12 +85,17 @@ function createVideoGeometryController(env) {
     } catch (_) { return false; }
   }
 
-  function layout(video, styled = false, ignoreClipping = false) {
+  function layout(video, styled = false, ignoreContainment = false) {
     try {
       const box = video.getBoundingClientRect();
       if (![box.left,box.top,box.right,box.bottom,box.width,box.height].every(Number.isFinite) ||
-          box.width <= 0 || box.height <= 0 || box.left < 0 || box.top < 0 ||
-          box.right > view.innerWidth || box.bottom > view.innerHeight) return {reason:"geometry_viewport"};
+          box.width <= 0 || box.height <= 0) return {reason:"geometry_viewport"};
+      const bounds={left:0,top:0,right:view.innerWidth,bottom:view.innerHeight};
+      if (![bounds.right,bounds.bottom].every(value => Number.isFinite(value) && value > 0))
+        return {reason:"geometry_viewport"};
+      let containmentReason = box.left < 0 || box.top < 0 ||
+        box.right > bounds.right || box.bottom > bounds.bottom ? "geometry_viewport" : null;
+      if (!ignoreContainment && containmentReason) return {reason:containmentReason};
       let element = video, depth = 0;
       while (element) {
         if (++depth > 128) return {reason:"geometry_ancestor_style"};
@@ -101,12 +114,18 @@ function createVideoGeometryController(env) {
         // whole transformed video remains inside their visible rectangle.
         if (element !== video && [s.overflowX,s.overflowY].some(value => value && value !== "visible")) {
           const parent = element.getBoundingClientRect();
-          if (!ignoreClipping && (box.left < parent.left || box.right > parent.right ||
-              box.top < parent.top || box.bottom > parent.bottom)) return {reason:"geometry_clipping"};
+          if (![parent.left,parent.top,parent.right,parent.bottom].every(Number.isFinite) ||
+              parent.right <= parent.left || parent.bottom <= parent.top) return {reason:"geometry_clipping"};
+          bounds.left=Math.max(bounds.left,parent.left);bounds.right=Math.min(bounds.right,parent.right);
+          bounds.top=Math.max(bounds.top,parent.top);bounds.bottom=Math.min(bounds.bottom,parent.bottom);
+          if (box.left < parent.left || box.right > parent.right || box.top < parent.top || box.bottom > parent.bottom) {
+            containmentReason ||= "geometry_clipping";
+            if (!ignoreContainment) return {reason:containmentReason};
+          }
         }
         element = videoGeometryParent(element);
       }
-      return {box};
+      return {box,bounds,containmentReason};
     } catch (_) { return {reason:"geometry_ancestor_style"}; }
   }
 
@@ -155,8 +174,9 @@ function createVideoGeometryController(env) {
       const s = styleOf(session.video), matrix = matrixOf(s.transform), rect = layout(session.video,true).box;
       if (!rect) return "geometry_presentation_bounds";
       if (!matrix || matrix.is2D === false || /^matrix3d\(/.test(s.transform) || ![matrix.a,matrix.b,matrix.c,matrix.d,matrix.e,matrix.f].every(Number.isFinite) ||
-          Math.abs(matrix.a-session.scale.x)>0.001 || Math.abs(matrix.d-session.scale.y)>0.001 ||
-          Math.abs(matrix.b)>0.001 || Math.abs(matrix.c)>0.001 || Math.abs(matrix.e)>0.001 ||
+          !videoGeometryAxisMatches(matrix.a,session.scale.x) || !videoGeometryAxisMatches(matrix.d,session.scale.y) ||
+          Math.abs(matrix.b)>Math.min(0.001,Math.abs(session.scale.x)*0.01) ||
+          Math.abs(matrix.c)>Math.min(0.001,Math.abs(session.scale.y)*0.01) || Math.abs(matrix.e)>0.001 ||
           Math.abs(matrix.f)>0.001 || (session.mode !== "original" && s.objectFit !== "fill")) return "geometry_presentation_matrix";
       const before = session.box;
       if (rect.width > before.width+2 || rect.height > before.height+2 ||
@@ -212,24 +232,22 @@ function createVideoGeometryController(env) {
       const preparationEnd=Math.min(deadline,Date.now()+700);
       while (true) {
         if (!valid()) return {outcome:"unsupported",reason:"geometry_eligibility"};
-        let checked=layout(video,true);
+        const checked=layout(video,true,true);
         const state=transitionState(video);
-        if (checked.reason === "geometry_clipping" && state === "running") checked=layout(video,true,true);
         if (!checked.box) return {outcome:"unsupported",reason:checked.reason};
         if (state === "unsafe") return {outcome:"unsupported",reason:"geometry_transition"};
         if (state === "none") break;
         if (Date.now() >= preparationEnd || !await nextFrame(preparationEnd)) {
           if (!valid()) return {outcome:"unsupported",reason:"geometry_eligibility"};
-          let checked=layout(video,true);
+          const checked=layout(video,true,true);
           const state=transitionState(video);
-          if (checked.reason === "geometry_clipping" && state === "running") checked=layout(video,true,true);
           if (!checked.box) return {outcome:"unsupported",reason:checked.reason};
           return state === "running" ?
             {outcome:"unsupported",reason:"transition_busy"} : {outcome:"unsupported",reason:"geometry_transition"};
         }
       }
       if (!valid()) return {outcome:"unsupported",reason:"geometry_eligibility"};
-      const neutral = layout(video);
+      const neutral = layout(video,false,true);
       if (!neutral.box) return {outcome:"unsupported",reason:neutral.reason};
       const box = neutral.box;
       if (!page.head) return {outcome:"unsupported"};
@@ -241,6 +259,21 @@ function createVideoGeometryController(env) {
       catch (_) { return {outcome:"unsupported"}; }
       const scale = mode === "original" ? {x:mirror ? -1 : 1,y:1} :
         videoGeometryScale(box.width,box.height,VIDEO_RATIOS[mode],mirror);
+      const centerX=box.left/2+box.right/2, centerY=box.top/2+box.bottom/2;
+      const targetWidth=box.width*Math.abs(scale.x), targetHeight=box.height*scale.y;
+      const {bounds}=neutral;
+      let fit=Math.min(1,2*((centerX-bounds.left)/targetWidth),2*((bounds.right-centerX)/targetWidth),
+        2*((centerY-bounds.top)/targetHeight),2*((bounds.bottom-centerY)/targetHeight));
+      if (![centerX,centerY,targetWidth,targetHeight,fit].every(Number.isFinite) ||
+          targetWidth <= 0 || targetHeight <= 0 || fit <= 0 ||
+          !Number.isFinite(scale.x*fit) || !Number.isFinite(scale.y*fit) ||
+          scale.x*fit === 0 || scale.y*fit <= 0)
+        return {outcome:"unsupported",reason:neutral.containmentReason || "geometry_viewport"};
+      // Leave room for floating-point and browser layout rounding at a limiting edge.
+      if (fit < 1) fit*=1-1e-12;
+      if (scale.x*fit === 0 || scale.y*fit <= 0)
+        return {outcome:"unsupported",reason:neutral.containmentReason || "geometry_viewport"};
+      scale.x*=fit;scale.y*=fit;
       const css = `video[${attribute}]{transform:scale(${scale.x},${scale.y}) !important;` +
         `transform-origin:center center !important;${mode === "original" ? "" : "object-fit:fill !important;"}}`;
       const session = {video,identity,isCurrent,mode,source:video.currentSrc,width:video.videoWidth,
@@ -284,7 +317,7 @@ function createVideoGeometryController(env) {
           if (failure) return cleanup(session) ? {outcome:"unsupported",reason:failure} : {outcome:"uncertain"};
           let checked=layout(video,true);
           const state=transitionState(video,session.scale);
-          if (checked.reason === "geometry_clipping" && state === "running") checked=layout(video,true,true);
+          if (["geometry_clipping","geometry_viewport"].includes(checked.reason) && state === "running") checked=layout(video,true,true);
           if (!checked.box) return cleanup(session) ? {outcome:"unsupported",reason:checked.reason} : {outcome:"uncertain"};
           if (state === "unsafe") return cleanup(session) ? {outcome:"unsupported",reason:"geometry_transition"} : {outcome:"uncertain"};
           if (state === "none") {
@@ -335,8 +368,10 @@ function createVideoGeometryEnvironment(page,view) {
           if (!end || typeof end.transform !== "string" ||
               ["translate","rotate","scale"].some(key => key in end)) return "unsafe";
           const m=end.transform === "none" ? new view.DOMMatrixReadOnly() : new view.DOMMatrixReadOnly(end.transform);
-          if (m.is2D !== true || Math.abs(m.a-expected.x)>0.001 || Math.abs(m.d-expected.y)>0.001 ||
-              Math.abs(m.b)>0.001 || Math.abs(m.c)>0.001 || Math.abs(m.e)>0.001 || Math.abs(m.f)>0.001)
+          if (m.is2D !== true || ![m.a,m.b,m.c,m.d,m.e,m.f].every(Number.isFinite) ||
+              !videoGeometryAxisMatches(m.a,expected.x) || !videoGeometryAxisMatches(m.d,expected.y) ||
+              Math.abs(m.b)>Math.min(0.001,Math.abs(expected.x)*0.01) ||
+              Math.abs(m.c)>Math.min(0.001,Math.abs(expected.y)*0.01) || Math.abs(m.e)>0.001 || Math.abs(m.f)>0.001)
             return "unsafe";
         }
         running=true;
