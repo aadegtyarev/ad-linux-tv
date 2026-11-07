@@ -20,7 +20,7 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
     if handler.path == "/api/bluetooth":
         return handle_bluetooth(handler, sessions, "POST")
     if path == "/extension/ack":
-        return handle_ack(handler, queue)
+        return handle_ack(handler, queue.video_menu)
     if path == "/extension/media":
         if not handler.valid_bridge():
             return handler.send(403, "{}")
@@ -351,7 +351,10 @@ def handle_post(handler, config, queue, sessions, failures, display_timer, setti
         ):
             # Older bridges would reject the command; tell the user to update instead.
             return handler.send(409, "{}")
-        command_id = queue.push(command, service, data.get("volume"))
+        if command == "home":
+            command_id = queue.video_menu.push_home(service, data.get("volume"))
+        else:
+            command_id = queue.push(command, service, data.get("volume"))
     except OverflowError:
         return handler.send(413, "{}")
     except BodyTimeout:
@@ -513,7 +516,7 @@ def handle_input(handler):
     return handler.send(200 if result.returncode == 0 else 503, "{}")
 
 
-def handle_ack(handler, queue):
+def handle_ack(handler, video_menu):
     if not handler.valid_bridge():
         return handler.send(403, "{}")
     try:
@@ -540,7 +543,7 @@ def handle_ack(handler, queue):
             outcome != "completed" and reason not in reasons
         ):
             raise ValueError("invalid acknowledgement reason")
-        if not isinstance(data["id"], str) or not queue.acknowledge(
+        if not isinstance(data["id"], str) or not video_menu.acknowledge(
             data["id"], outcome, reason, data.get("volume")
         ):
             return handler.send(409, "{}")

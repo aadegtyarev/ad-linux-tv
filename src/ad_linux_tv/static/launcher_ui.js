@@ -37,6 +37,21 @@ function createLauncherUI(send, openSettings) {
     if (focusButton) tiles.children[focus - first]?.focus();
   }
 
+  function restoreLostFocus() {
+    const active = document.activeElement;
+    if (document.visibilityState !== "visible" || !document.hasFocus() ||
+        document.querySelector("#home").hidden || !document.querySelector("#settings").hidden ||
+        (active && active !== document.body && active !== document.documentElement)) return false;
+    const button = tiles.children[focus - Math.floor(focus / size) * size];
+    if (!button) return false;
+    button.focus();
+    return document.activeElement === button;
+  }
+
+  window.addEventListener("focus", restoreLostFocus);
+  window.addEventListener("pageshow", restoreLostFocus);
+  document.addEventListener("visibilitychange", restoreLostFocus);
+
   function setFocus(index) {
     focus = index;
     for (const button of tiles.children) {
@@ -54,6 +69,12 @@ function createLauncherUI(send, openSettings) {
     if (Number.isInteger(index)) setFocus(index);
   });
   document.addEventListener("keydown", event => {
+    if (!event.defaultPrevented && event.key === "Enter" && !event.repeat && !event.altKey && !event.ctrlKey &&
+        !event.metaKey && !event.shiftKey && restoreLostFocus()) {
+      event.preventDefault();
+      document.activeElement.click();
+      return;
+    }
     const direction = {
       ArrowRight: "right", ArrowLeft: "left", ArrowDown: "down", ArrowUp: "up",
     }[event.key];
@@ -93,14 +114,15 @@ function createLauncherUI(send, openSettings) {
     if (size === pageSize && JSON.stringify(services) === JSON.stringify(items)) return;
     const active = document.activeElement;
     const restoreFocus = tiles.contains(active);
-    const selectedId = active?.dataset?.serviceId;
     const previousFocus = focus;
+    const selectedId = services[previousFocus]?.id;
     services = items;
     size = pageSize;
     const selectedIndex = selectedId ? services.findIndex(service => service.id === selectedId) : -1;
-    focus = restoreFocus && selectedIndex >= 0
-      ? selectedIndex : Math.min(previousFocus, services.length - 1);
-    render(restoreFocus);
+    focus = selectedIndex >= 0
+      ? selectedIndex : Math.max(0, Math.min(previousFocus, services.length - 1));
+    render(restoreFocus && document.visibilityState === "visible" && document.hasFocus());
+    if (!restoreFocus) restoreLostFocus();
   }
   return {update, selectForBridge};
 }

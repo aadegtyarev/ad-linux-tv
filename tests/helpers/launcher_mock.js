@@ -7,6 +7,9 @@ function launcher({hostname = "192.168.1.4", pinRequired = true} = {}) {
   const calls = [];
   const doc = {
     activeElement: null,
+    visibilityState: "visible",
+    focused: true,
+    hasFocus() { return this.focused; },
     addEventListener: (name, fn) => {
       const previous = events[name];
       events[name] = previous ? event => { previous(event); fn(event); } : fn;
@@ -62,8 +65,13 @@ function launcher({hostname = "192.168.1.4", pinRequired = true} = {}) {
   let bridgeData = {extension_online:true, pending_commands:0, last_command_failure:null};
   let audioData = {outputs:[{id:"hdmi",name:"HDMI"}],selected:"hdmi",volume:100,muted:false,browser_volume:null,browser_muted:null,browser_mute_target:false};
   let timer;
+  const windowEvents = {};
+  const window = {
+    addEventListener(name, fn) { windowEvents[name] = fn; },
+    dispatchEvent(event) { windowEvents[event.type]?.(event); },
+  };
   const context = {
-    document:doc, innerWidth:1920, location:{hostname},
+    document:doc, window, innerWidth:1920, location:{hostname},
     getComputedStyle:() => ({gridTemplateColumns:"300px 300px 300px 300px"}),
     setInterval(callback) { timer = callback; }, setTimeout, clearTimeout, console,
     fetch:async (url, options) => {
@@ -81,7 +89,7 @@ function launcher({hostname = "192.168.1.4", pinRequired = true} = {}) {
     vm.runInContext(fs.readFileSync(`src/ad_linux_tv/static/${file}`, "utf8"), context);
   }
   return {
-    doc, elements, events, calls, context,
+    doc, window, elements, events, calls, context,
     get services() { return serviceData; },
     set services(value) { serviceData = value; },
     get remoteAddress() { return remoteAddress; },
