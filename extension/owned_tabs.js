@@ -14,6 +14,7 @@ const mediaPulse = typeof module !== "undefined"
   ? require("./player_media.js").pulseOwnedMedia : pulseOwnedMedia;
 const fullscreenVideo = typeof module !== "undefined"
   ? require("./player_media.js").videoFullscreen : videoFullscreen;
+const GEOMETRY_FAILURE_REASONS = new Set(["geometry_eligibility", "geometry_viewport", "geometry_ancestor_style", "geometry_clipping", "geometry_transition", "geometry_video_transform", "geometry_post_write_current", "geometry_post_write_exception", "geometry_post_write_closed", "geometry_close_mutation", "geometry_close_playback", "geometry_close_check", "geometry_post_write_ownership", "geometry_presentation_matrix", "geometry_presentation_bounds", "geometry_presentation_ratio"]);
 class PermanentCommandError extends Error {}
 
 // Serialized into the previously validated owned frame; the injected file
@@ -221,8 +222,8 @@ function createOwnedTabs(api, fetcher = fetch) {
       if (reply?.result?.outcome === "uncertain") {
         const error = new Error("geometry outcome uncertain"); error.uncertain = true; throw error;
       }
-      if (reply?.result?.outcome === "unsupported" && reply.result.reason === "transition_busy")
-        throw new PermanentCommandError("transition_busy");
+      if (reply?.result?.outcome === "unsupported" && (reply.result.reason === "transition_busy" || GEOMETRY_FAILURE_REASONS.has(reply.result.reason)))
+        throw new PermanentCommandError(reply.result.reason);
       if (!["applied", "restored", "unchanged"].includes(reply?.result?.outcome))
         throw new PermanentCommandError("unsupported");
       const applied = reply.result.outcome === "applied";
@@ -376,4 +377,4 @@ function createOwnedTabs(api, fetcher = fetch) {
     getState:state.getState};
 }
 
-if (typeof module !== "undefined") module.exports = {createOwnedTabs, PermanentCommandError};
+if (typeof module !== "undefined") module.exports = {createOwnedTabs, PermanentCommandError, GEOMETRY_FAILURE_REASONS};

@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from . import audio
 from .bluetooth_routes import handle_bluetooth, phone_principal
 from .config import verify_pin
-from .control import QueueFullError
+from .control import GEOMETRY_FAILURE_REASONS, QueueFullError
 from .host_power import PowerError
 from .http_errors import BodyTimeout
 from .security import loopback_source
@@ -538,9 +538,12 @@ def handle_ack(handler, video_menu):
             "unsupported",
             "transition_busy",
         }
+        reasons.update(GEOMETRY_FAILURE_REASONS)
         if outcome not in {"completed", "failed", "uncertain"}:
             raise ValueError("invalid acknowledgement outcome")
-        if reason == "transition_busy" and outcome != "failed":
+        if (
+            reason == "transition_busy" or reason in GEOMETRY_FAILURE_REASONS
+        ) and outcome != "failed":
             raise ValueError("invalid acknowledgement reason")
         if (outcome == "completed" and reason is not None) or (
             outcome != "completed" and reason not in reasons

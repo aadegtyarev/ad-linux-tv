@@ -7,6 +7,27 @@ from threading import Lock
 
 from .browser_media import BrowserMedia
 
+GEOMETRY_FAILURE_REASONS = frozenset(
+    {
+        "geometry_eligibility",
+        "geometry_viewport",
+        "geometry_ancestor_style",
+        "geometry_clipping",
+        "geometry_transition",
+        "geometry_video_transform",
+        "geometry_post_write_current",
+        "geometry_post_write_exception",
+        "geometry_post_write_closed",
+        "geometry_close_mutation",
+        "geometry_close_playback",
+        "geometry_close_check",
+        "geometry_post_write_ownership",
+        "geometry_presentation_matrix",
+        "geometry_presentation_bounds",
+        "geometry_presentation_ratio",
+    }
+)
+
 COMMANDS = {
     "open",
     "home",
@@ -40,6 +61,8 @@ class CommandQueue:
         self.lease_seconds = 15
         self.last_command_failure = None
         self.geometry_notice_until = 0.0
+        self.latest_geometry_id = None
+        self.geometry_diagnostic = None
         self.results = OrderedDict()
         self.browser_media = BrowserMedia()
 
@@ -125,6 +148,8 @@ class CommandQueue:
                     "deadline": int((time.time() + 5) * 1000),
                 }
             )
+            self.latest_geometry_id = command_id
+            self.geometry_diagnostic = None
             return command_id
 
     def poll(self, now=None):
@@ -141,7 +166,28 @@ class CommandQueue:
             if not self.items or self.items[0]["id"] != command_id:
                 return False
             item = self.items[0]
-            if reason == "transition_busy" and (
+            if reason is not None and not isinstance(reason, str):
+                return False
+            if (
+                item["command"] == "video_geometry"
+                and reason is not None
+                and reason
+                not in (
+                    GEOMETRY_FAILURE_REASONS
+                    | {
+                        "invalid_id",
+                        "invalid_command",
+                        "retry_exhausted",
+                        "interrupted",
+                        "operation",
+                        "no_media",
+                        "unsupported",
+                        "transition_busy",
+                    }
+                )
+            ):
+                return False
+            if (reason == "transition_busy" or reason in GEOMETRY_FAILURE_REASONS) and (
                 item["command"] != "video_geometry" or outcome != "failed"
             ):
                 return False
@@ -163,6 +209,12 @@ class CommandQueue:
                 }
                 while len(self.results) > MAX_RESULTS:
                     self.results.popitem(last=False)
+            if item["command"] == "video_geometry" and command_id == self.latest_geometry_id:
+                self.geometry_diagnostic = (
+                    {"reason": reason, "recorded_at": time.monotonic()}
+                    if outcome == "failed" and reason in GEOMETRY_FAILURE_REASONS
+                    else None
+                )
             if item["command"] == "video_geometry" and outcome != "completed":
                 self.geometry_notice_until = time.monotonic() + 5
             # No playing media is a normal discovery result, not a global remote failure.
@@ -208,6 +260,15 @@ class CommandQueue:
                     self.geometry_notice_until = time.monotonic() + 5
             return {key: value[key] for key in ("id", "outcome", "reason")}
 
+    def geometry_failure_reason(self):
+        """Return only a fresh fixed diagnostic from the latest failure."""
+        with self.lock:
+            diagnostic = self.geometry_diagnostic
+            if diagnostic and time.monotonic() - diagnostic["recorded_at"] < FAILURE_TTL_SECONDS:
+                return diagnostic["reason"]
+            self.geometry_diagnostic = None
+            return None
+
     def status(self):
         with self.lock:
             online = self.last_seen is not None and time.time() - self.last_seen < 30
@@ -218,6 +279,8 @@ class CommandQueue:
                 failure = None
             if failure:
                 failure = {key: failure[key] for key in ("outcome", "reason")}
+                if failure["reason"] in GEOMETRY_FAILURE_REASONS:
+                    failure["reason"] = "unsupported"
         capabilities = self.browser_media.capabilities()
         return {
             "bridge_protocol": 1 if capabilities else None,

@@ -232,7 +232,8 @@ test("a late cancellation cannot remove a newer geometry layer",async()=>{
 test("setup and teardown exceptions are reported, while remaining cleanup still runs",async()=>{
   for(const option of [{appendThrows:true},{observeThrows:true}]){
     const h=makeHarness(option);
-    assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"4:3",true)).outcome,"unsupported");
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"4:3",true),
+      {outcome:"unsupported",reason:"geometry_post_write_exception"});
     assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
   }
   const h=makeHarness({removeThrows:true});
@@ -503,3 +504,106 @@ for (const event of ["loadstart","emptied","ended"]) {
     for (const name of ["loadstart","emptied","ended"]) assert.equal(h.video.events.get(name)?.size || 0,0);
   });
 }
+
+test("geometry failure categories come from the actual checks without page data",async()=>{
+  const cases=[
+    [h=>{h.video.controls=true;},"geometry_eligibility"],
+    [h=>{h.view.innerWidth=10;},"geometry_viewport"],
+    [h=>{h.parentStyle.transform="matrix(2, 0, 0, 1, 0, 0)";},"geometry_ancestor_style"],
+    [h=>{h.parentStyle.overflowX="hidden";h.parent.getBoundingClientRect=()=>({left:1,right:319,top:0,bottom:240});},"geometry_clipping"],
+    [h=>{h.setTransition("unsafe");},"geometry_transition"],
+    [h=>{h.videoStyle.transform="ignored";h.site.set("transform",{matrix:[0.5,1]});},"geometry_video_transform"],
+    [h=>{h.site.set("object-fit",{value:"contain",important:true});},"geometry_presentation_matrix"],
+  ];
+  for(const [mutate,reason] of cases){
+    const h=makeHarness();mutate(h);
+    const result=await h.controller.apply(h.video,"one",h.isCurrent,"16:9",false);
+    assert.deepEqual(result,{outcome:"unsupported",reason});
+    assert.equal(h.active(),false);
+  }
+});
+
+test("post-write guard and presentation bounds and ratio have distinct fixed reasons",async()=>{
+  for(const [kind,reason] of [["guard","geometry_post_write_current"],["bounds","geometry_presentation_bounds"],["ratio","geometry_presentation_ratio"]]){
+    let h,frames=0;
+    h=makeHarness({afterFrame:()=>{frames++;if(kind==="guard")h.video.controls=true;return Promise.resolve();}});
+    const rect=h.video.getBoundingClientRect;
+    h.video.getBoundingClientRect=()=>{
+      const box=rect();
+      if(frames && kind==="bounds") return {...box,left:box.left+5,right:box.right+5};
+      if(frames && kind==="ratio") return {...box,width:box.width-10};
+      return box;
+    };
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"16:9",false),{outcome:"unsupported",reason});
+    assert.equal(h.active(),false);
+  }
+});
+
+test("post-write checks identify closed session, ownership, and actual layout failure",async()=>{
+  for(const [kind,reason] of [["closed","geometry_close_mutation"],
+    ["marker","geometry_post_write_ownership"],["layer","geometry_post_write_ownership"],
+    ["viewport","geometry_viewport"],
+    ["style","geometry_ancestor_style"],["clipping","geometry_clipping"]]){
+    let h,layer;
+    h=makeHarness({afterFrame:()=>{
+      if(kind==="closed") h.notify({attributeName:"class"});
+      if(kind==="marker") h.attribute.clear();
+      if(kind==="layer") layer.remove();
+      if(kind==="viewport") h.view.innerWidth=10;
+      if(kind==="style") h.parentStyle.opacity="0";
+      if(kind==="clipping") {
+        h.parentStyle.overflowX="hidden";
+        h.parent.getBoundingClientRect=()=>({left:1,right:319,top:0,bottom:240});
+      }
+      return Promise.resolve();
+    }});
+    const append=h.page.head.appendChild;
+    h.page.head.appendChild=node=>{layer=node;append(node);};
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"16:9",false),
+      {outcome:"unsupported",reason});
+    assert.equal(h.active(),false);
+  }
+});
+
+test("post-write timeout is categorized and cleanup failure remains uncertain",async()=>{
+  const timeout=makeHarness({afterFrame:()=>new Promise(()=>{})});
+  assert.deepEqual(await timeout.controller.apply(timeout.video,"one",timeout.isCurrent,"16:9",false,Date.now()+20),
+    {outcome:"unsupported",reason:"geometry_post_write_current"});
+  let h;
+  h=makeHarness({removeThrows:true,afterFrame:()=>{h.attribute.clear();return Promise.resolve();}});
+  assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"16:9",false),{outcome:"uncertain"});
+  h.allowCleanup();h.tick();
+});
+
+test("running confirmation at its limit reports current, not an arbitrary error",async()=>{
+  const original=Date.now;let clock=1000,h;
+  Date.now=()=>clock;
+  try {
+    h=makeHarness({afterFrame:()=>{clock=1700;h.setTransition("running");return Promise.resolve();}});
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"16:9",false,3000),
+      {outcome:"unsupported",reason:"geometry_post_write_current"});
+    assert.equal(h.active(),false);
+  } finally {Date.now=original;}
+});
+
+test("post-write exceptions do not expose text or mask uncertain cleanup",async()=>{
+  const h=makeHarness({appendThrows:true,removeThrows:true});
+  assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"16:9",false),{outcome:"uncertain"});
+  h.allowCleanup();h.tick();
+});
+
+test("close callbacks report only their fixed per-session cause",async()=>{
+  for (const [kind,reason] of [["mutation","geometry_close_mutation"],
+    ["playback","geometry_close_playback"],["check","geometry_close_check"]]) {
+    let h;
+    h=makeHarness({afterFrame:()=>{
+      if(kind==="mutation") h.notify({attributeName:"sensitive page value"});
+      if(kind==="playback") h.video.fire("loadstart");
+      if(kind==="check") {h.page.hidden=true;h.page.fire("visibilitychange");}
+      return Promise.resolve();
+    }});
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"16:9",false),
+      {outcome:"unsupported",reason});
+    assert.equal(h.active(),false);
+  }
+});

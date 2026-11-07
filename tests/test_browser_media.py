@@ -311,3 +311,52 @@ def test_geometry_busy_receipt_is_exposed_without_private_data():
         "outcome": "failed",
         "reason": "transition_busy",
     }
+
+
+def test_geometry_diagnostic_receipt_is_bounded_and_matching():
+    queue = CommandQueue()
+    data = report(snapshot())
+    data["capabilities"].append("video_geometry_v1")
+    queue.browser_media.report(data)
+    command_id = queue.push_geometry("a" * 32, "16:9", False)
+    assert not queue.acknowledge("foreign", "failed", "geometry_viewport")
+    assert not queue.acknowledge(command_id, "uncertain", "geometry_viewport")
+    assert not queue.acknowledge(command_id, "failed", "geometry_unknown")
+    assert queue.acknowledge(command_id, "failed", "geometry_viewport")
+    assert queue.status()["last_command_failure"] == {
+        "outcome": "failed",
+        "reason": "unsupported",
+    }
+    assert queue.geometry_result(command_id)["reason"] == "geometry_viewport"
+    assert queue.geometry_failure_reason() == "geometry_viewport"
+    assert not queue.acknowledge(command_id, "failed", "geometry_viewport")
+
+
+def test_latest_geometry_diagnostic_is_fenced_by_admission_and_acknowledgement():
+    queue = CommandQueue()
+    data = report(snapshot())
+    data["capabilities"].append("video_geometry_v1")
+    queue.browser_media.report(data)
+
+    first = queue.push_geometry("a" * 32, "16:9", False)
+    assert queue.acknowledge(first, "failed", "geometry_viewport")
+    assert queue.geometry_failure_reason() == "geometry_viewport"
+    second = queue.push_geometry("a" * 32, "4:3", False)
+    assert queue.geometry_failure_reason() is None
+    assert not queue.acknowledge(first, "failed", "geometry_transition")
+    assert queue.geometry_failure_reason() is None
+    assert queue.acknowledge(second)
+    assert queue.geometry_failure_reason() is None
+    assert queue.status()["last_command_failure"]["reason"] == "unsupported"
+
+    older = queue.push_geometry("a" * 32, "16:9", False)
+    latest = queue.push_geometry("a" * 32, "4:3", False)
+    assert not queue.acknowledge(latest, "failed", "geometry_transition")
+    assert queue.acknowledge(older, "failed", "geometry_viewport")
+    assert queue.geometry_failure_reason() is None
+    assert queue.acknowledge(latest, "failed", "geometry_post_write_exception")
+    assert queue.geometry_failure_reason() == "geometry_post_write_exception"
+    last = queue.push_geometry("a" * 32, "16:9", False)
+    assert queue.geometry_failure_reason() is None
+    assert queue.acknowledge(last, "failed", "unsupported")
+    assert queue.geometry_failure_reason() is None

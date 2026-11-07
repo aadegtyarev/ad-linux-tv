@@ -82,31 +82,32 @@ function createVideoGeometryController(env) {
       const box = video.getBoundingClientRect();
       if (![box.left,box.top,box.right,box.bottom,box.width,box.height].every(Number.isFinite) ||
           box.width <= 0 || box.height <= 0 || box.left < 0 || box.top < 0 ||
-          box.right > view.innerWidth || box.bottom > view.innerHeight) return null;
+          box.right > view.innerWidth || box.bottom > view.innerHeight) return {reason:"geometry_viewport"};
       let element = video, depth = 0;
       while (element) {
-        if (++depth > 128) return null;
+        if (++depth > 128) return {reason:"geometry_ancestor_style"};
         const s = styleOf(element);
         if (!s || s.visibility !== "visible" || s.display === "none" || Number(s.opacity) !== 1 ||
             !(normal(s.clip) || s.clip === "auto") || !normal(s.clipPath) ||
             !normal(s.maskImage) || !normal(s.webkitMaskImage) ||
-            !normal(s.scale) || !normal(s.rotate) || !normal(s.translate) ||
-            ((!styled || element !== video) && !identityTransform(s.transform))) return null;
+            !normal(s.scale) || !normal(s.rotate) || !normal(s.translate)) return {reason:"geometry_ancestor_style"};
+        if ((!styled || element !== video) && !identityTransform(s.transform))
+          return {reason:element === video ? "geometry_video_transform" : "geometry_ancestor_style"};
         if ([s.borderTopLeftRadius,s.borderTopRightRadius,s.borderBottomLeftRadius,s.borderBottomRightRadius]
-          .some(value => !zero(value))) return null;
+          .some(value => !zero(value))) return {reason:"geometry_ancestor_style"};
         if (element === video && [s.borderLeftWidth,s.borderRightWidth,s.borderTopWidth,s.borderBottomWidth,
-          s.paddingLeft,s.paddingRight,s.paddingTop,s.paddingBottom].some(value => !zero(value))) return null;
+          s.paddingLeft,s.paddingRight,s.paddingTop,s.paddingBottom].some(value => !zero(value))) return {reason:"geometry_ancestor_style"};
         // Common player wrappers use overflow:hidden. They are safe when the
         // whole transformed video remains inside their visible rectangle.
         if (element !== video && [s.overflowX,s.overflowY].some(value => value && value !== "visible")) {
           const parent = element.getBoundingClientRect();
           if (box.left < parent.left || box.right > parent.right ||
-              box.top < parent.top || box.bottom > parent.bottom) return null;
+              box.top < parent.top || box.bottom > parent.bottom) return {reason:"geometry_clipping"};
         }
         element = videoGeometryParent(element);
       }
-      return box;
-    } catch (_) { return null; }
+      return {box};
+    } catch (_) { return {reason:"geometry_ancestor_style"}; }
   }
 
   function current(session) {
@@ -151,17 +152,18 @@ function createVideoGeometryController(env) {
 
   function presentation(session) {
     try {
-      const s = styleOf(session.video), matrix = matrixOf(s.transform), rect = layout(session.video,true);
-      if (!rect || !matrix || matrix.is2D === false || /^matrix3d\(/.test(s.transform) || ![matrix.a,matrix.b,matrix.c,matrix.d,matrix.e,matrix.f].every(Number.isFinite) ||
+      const s = styleOf(session.video), matrix = matrixOf(s.transform), rect = layout(session.video,true).box;
+      if (!rect) return "geometry_presentation_bounds";
+      if (!matrix || matrix.is2D === false || /^matrix3d\(/.test(s.transform) || ![matrix.a,matrix.b,matrix.c,matrix.d,matrix.e,matrix.f].every(Number.isFinite) ||
           Math.abs(matrix.a-session.scale.x)>0.001 || Math.abs(matrix.d-session.scale.y)>0.001 ||
           Math.abs(matrix.b)>0.001 || Math.abs(matrix.c)>0.001 || Math.abs(matrix.e)>0.001 ||
-          Math.abs(matrix.f)>0.001 || (session.mode !== "original" && s.objectFit !== "fill")) return false;
+          Math.abs(matrix.f)>0.001 || (session.mode !== "original" && s.objectFit !== "fill")) return "geometry_presentation_matrix";
       const before = session.box;
       if (rect.width > before.width+2 || rect.height > before.height+2 ||
           Math.abs((rect.left+rect.right)-(before.left+before.right)) > 4 ||
-          Math.abs((rect.top+rect.bottom)-(before.top+before.bottom)) > 4) return false;
-      return session.mode === "original" || Math.abs(rect.width/rect.height-VIDEO_RATIOS[session.mode]) <= 0.02;
-    } catch (_) { return false; }
+          Math.abs((rect.top+rect.bottom)-(before.top+before.bottom)) > 4) return "geometry_presentation_bounds";
+      return session.mode === "original" || Math.abs(rect.width/rect.height-VIDEO_RATIOS[session.mode]) <= 0.02 ? null : "geometry_presentation_ratio";
+    } catch (_) { return "geometry_presentation_matrix"; }
   }
 
   async function reset(video,identity,isCurrent,deadline=Date.now()+1500) {
@@ -179,7 +181,7 @@ function createVideoGeometryController(env) {
     if ((!Object.hasOwn(VIDEO_RATIOS,mode) && mode !== "original") || typeof mirror !== "boolean" ||
         typeof isCurrent !== "function") return {outcome:"invalid"};
     // Reject a stale request before touching an existing session on another target.
-    if (!eligible(video,identity,isCurrent)) return {outcome:"unsupported"};
+    if (!eligible(video,identity,isCurrent)) return {outcome:"unsupported",reason:"geometry_eligibility"};
     if (active && (active.video !== video || active.identity !== identity) && current(active))
       return {outcome:"stale"};
     const ticket=++revision;
@@ -209,19 +211,24 @@ function createVideoGeometryController(env) {
       if (mode === "original" && !mirror) return {outcome:previous ? "restored" : "unchanged"};
       const preparationEnd=Math.min(deadline,Date.now()+700);
       while (true) {
-        if (!valid() || !layout(video,true)) return {outcome:"unsupported"};
+        if (!valid()) return {outcome:"unsupported",reason:"geometry_eligibility"};
+        const checked=layout(video,true);
+        if (!checked.box) return {outcome:"unsupported",reason:checked.reason};
         const state=transitionState(video);
-        if (state === "unsafe") return {outcome:"unsupported"};
+        if (state === "unsafe") return {outcome:"unsupported",reason:"geometry_transition"};
         if (state === "none") break;
         if (Date.now() >= preparationEnd || !await nextFrame(preparationEnd)) {
-          if (!valid() || !layout(video,true)) return {outcome:"unsupported"};
+          if (!valid()) return {outcome:"unsupported",reason:"geometry_eligibility"};
+          const checked=layout(video,true);
+          if (!checked.box) return {outcome:"unsupported",reason:checked.reason};
           return transitionState(video) === "running" ?
-            {outcome:"unsupported",reason:"transition_busy"} : {outcome:"unsupported"};
+            {outcome:"unsupported",reason:"transition_busy"} : {outcome:"unsupported",reason:"geometry_transition"};
         }
       }
-      if (!valid()) return {outcome:"unsupported"};
-      const box = layout(video);
-      if (!box) return {outcome:"unsupported"};
+      if (!valid()) return {outcome:"unsupported",reason:"geometry_eligibility"};
+      const neutral = layout(video);
+      if (!neutral.box) return {outcome:"unsupported",reason:neutral.reason};
+      const box = neutral.box;
       if (!page.head) return {outcome:"unsupported"};
       let token;
       try { token = randomToken(); } catch (_) { return {outcome:"unsupported"}; }
@@ -235,7 +242,7 @@ function createVideoGeometryController(env) {
         `transform-origin:center center !important;${mode === "original" ? "" : "object-fit:fill !important;"}}`;
       const session = {video,identity,isCurrent,mode,source:video.currentSrc,width:video.videoWidth,
         height:video.videoHeight,fullscreen:page.fullscreenElement,attribute,scale,box,layer:null,
-        markerTouched:false,closed:false,cleaned:false,cleaning:false,observer:null,timer:null,retryTimer:null,changed:null,sourceChanged:null};
+        markerTouched:false,closed:false,closeCause:null,cleaned:false,cleaning:false,observer:null,timer:null,retryTimer:null,changed:null,sourceChanged:null};
       active=session;
       let confirming=true;
       try {
@@ -244,12 +251,18 @@ function createVideoGeometryController(env) {
         video.setAttribute(attribute,"");(root===page ? page.head : root).appendChild(session.layer);
         session.changed=() => {
           if (!current(session) || !markerOwned(session) || !session.layer.isConnected ||
-              (!confirming && (transitionState(video) !== "none" || !presentation(session))))
+              (!confirming && (transitionState(video) !== "none" || presentation(session)))) {
+            if (!session.closed) session.closeCause="geometry_close_check";
             cleanup(session);
+          }
         };
-        session.sourceChanged=() => cleanup(session);
+        session.sourceChanged=() => {
+          if (!session.closed) session.closeCause="geometry_close_playback";
+          cleanup(session);
+        };
         session.observer=observe(video,record => {
           if (record?.attributeName===attribute) session.markerTouched=true;
+          if (!session.closed) session.closeCause="geometry_close_mutation";
           cleanup(session);
         },attribute);
         for (const key of ["emptied","loadstart","ended"]) video.addEventListener(key,session.sourceChanged);
@@ -259,23 +272,28 @@ function createVideoGeometryController(env) {
         session.timer=setTimer(session.changed);
         const confirmationEnd=Math.min(deadline,Date.now()+700);
         while (true) {
-          if (!await nextFrame(confirmationEnd) || !valid() || session.closed || active!==session ||
-              !markerOwned(session) || !session.layer.isConnected || !layout(video,true)) {
-            return {outcome:cleanup(session) ? "unsupported" : "uncertain"};
-          }
+          let failure;
+          if (!await nextFrame(confirmationEnd)) failure="geometry_post_write_current";
+          else if (!valid()) failure=session.closed && session.closeCause || "geometry_post_write_current";
+          else if (session.closed) failure=session.closeCause || "geometry_post_write_closed";
+          else if (active!==session || !markerOwned(session) || !session.layer.isConnected)
+            failure="geometry_post_write_ownership";
+          else failure=layout(video,true).reason;
+          if (failure) return cleanup(session) ? {outcome:"unsupported",reason:failure} : {outcome:"uncertain"};
           const state=transitionState(video,session.scale);
-          if (state === "unsafe") return {outcome:cleanup(session) ? "unsupported" : "uncertain"};
+          if (state === "unsafe") return cleanup(session) ? {outcome:"unsupported",reason:"geometry_transition"} : {outcome:"uncertain"};
           if (state === "none") {
-            if (!presentation(session)) return {outcome:cleanup(session) ? "unsupported" : "uncertain"};
+            const mismatch=presentation(session);
+            if (mismatch) return cleanup(session) ? {outcome:"unsupported",reason:mismatch} : {outcome:"uncertain"};
             confirming=false;
             // This confirms computed style and geometry, not final decoded pixels or physical screen.
             return {outcome:"applied",token};
           }
           if (Date.now() >= confirmationEnd)
-            return {outcome:cleanup(session) ? "unsupported" : "uncertain"};
+            return cleanup(session) ? {outcome:"unsupported",reason:"geometry_post_write_current"} : {outcome:"uncertain"};
         }
       } catch (_) {
-        return {outcome:cleanup(session) ? "unsupported" : "uncertain"};
+        return cleanup(session) ? {outcome:"unsupported",reason:"geometry_post_write_exception"} : {outcome:"uncertain"};
       }
     } finally {
       for (const event of registered) video.removeEventListener(event,invalidatePlayback);

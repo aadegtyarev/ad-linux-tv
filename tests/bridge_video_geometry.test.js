@@ -151,6 +151,12 @@ test("a timed-out injection is uncertain and is not dispatched after the deadlin
 test("only the exact busy result is retained, without replay",async()=>{
   for (const [i,result,reason] of [
     [{outcome:"unsupported",reason:"transition_busy"},"transition_busy"],
+    ...["geometry_video_transform","geometry_post_write_current","geometry_post_write_exception","geometry_post_write_closed",
+      "geometry_post_write_ownership","geometry_close_mutation","geometry_close_playback",
+      "geometry_close_check","geometry_viewport"].map(reason=>[{outcome:"unsupported",reason},reason]),
+    [{outcome:"unsupported",reason:"geometry_presentation_ratio"},"geometry_presentation_ratio"],
+    [{outcome:"uncertain",reason:"geometry_presentation_ratio"},"interrupted"],
+    [{outcome:"other",reason:"geometry_presentation_ratio"},"unsupported"],
     [{outcome:"unsupported",reason:"foreign"},"unsupported"],
     [{outcome:"other",reason:"transition_busy"},"unsupported"],
     [{outcome:"unsupported",reason:["transition_busy"]},"unsupported"],
@@ -160,8 +166,9 @@ test("only the exact busy result is retained, without replay",async()=>{
       options.func?.name==="playerMedia" ? [{frameId:5,result:snapshot}] :
       (calls++,[{frameId:5,result}]));
     const item=command(`geometry-busy-${i}`);
-    assert.deepEqual(await controller.execute(item),{outcome:"failed",reason});
-    assert.deepEqual(await controller.execute(item),{outcome:"failed",reason});
+    const expected={outcome:reason === "interrupted" ? "uncertain" : "failed",reason};
+    assert.deepEqual(await controller.execute(item),expected);
+    assert.deepEqual(await controller.execute(item),expected);
     assert.equal(calls,1);
   }
 });

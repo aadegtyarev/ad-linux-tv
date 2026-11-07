@@ -7,6 +7,7 @@ from . import security, strict_json
 from .http_errors import BodyTimeout
 
 PANEL_PATH = "/api/local-video-panel"
+GEOMETRY_DIAGNOSTIC_PATH = "/api/local-video-geometry-diagnostic"
 HEADER = "X-AD-Linux-TV-Video-Panel"
 HEADER_VALUE = "video-panel-v1"
 
@@ -21,6 +22,12 @@ def trusted_overlay(handler):
         and handler.headers.get_all("Origin") == [f"http://{host}"]
         and handler.headers.get_all(HEADER) == [HEADER_VALUE]
     )
+
+
+def handle_geometry_diagnostic(handler, queue):
+    if not trusted_overlay(handler):
+        return handler.send(403, "{}")
+    return handler.send(200, json.dumps({"reason": queue.geometry_failure_reason()}))
 
 
 def handle_local_panel(handler, menu, method):
