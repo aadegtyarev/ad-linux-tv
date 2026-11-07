@@ -45,10 +45,14 @@ class VideoPanel:
     def __init__(self):
         self.state = None
         self.inflight = False
+        self.current_request = None
+        self.draft = None
+        self.notice = None
         self.rendering = False
         self.offline = True
         self.stopped = False
         self.close_intent = None
+        self.close_sent = False
         self.jobs = queue.Queue(maxsize=1)
         self.worker = threading.Thread(target=self._worker_loop, daemon=True, name="video-panel")
         self.worker.start()
@@ -132,12 +136,18 @@ class VideoPanel:
         if self.inflight or self.stopped:
             return
         self.inflight = True
-        self._render()
-
+        # Only update the action button here: rendering radio buttons from their
+        # toggled handler can reenter GTK and undo the user’s selection.
+        self.apply_button.set_sensitive(False)
+        self.current_request = body
+        if body and body.get("action") == "close":
+            self.close_sent = True
         try:
             self.jobs.put_nowait((body,))
         except queue.Full:
             self.inflight = False
+            self.current_request = None
+            self.draft = None
             self.offline = True
             self._render()
 
@@ -155,19 +165,59 @@ class VideoPanel:
     def _received(self, state, failed):
         if self.stopped:
             return False
+        request = self.current_request
+        self.current_request = None
         self.inflight = False
         if failed:
+            if request is not None:
+                self.notice = "Не удалось подтвердить запрос. Проверьте настройки заново."
+            elif self.draft:
+                self.notice = "Выбор не сохранён. Проверьте настройки заново."
+            self.draft = None
             self.offline = True
             self._render()
             return False
         self.offline = False
+        previous = self.state
         self.state = state
+        if previous and (
+            not state["visible"]
+            or (state["instance"], state["opening"]) != (previous["instance"], previous["opening"])
+        ):
+            self.notice = None
         if self.close_intent:
             instance, opening = self.close_intent
             if state["visible"] and (state["instance"], state["opening"]) == (instance, opening):
-                self._request({"action": "close", "instance": instance, "opening": opening})
+                if not self.close_sent:
+                    self._request({"action": "close", "instance": instance, "opening": opening})
+                self._render()
                 return False
             self.close_intent = None
+            self.close_sent = False
+        if self.draft:
+            same = (
+                previous
+                and state["visible"]
+                and state["available"]
+                and not state["busy"]
+                and (state["instance"], state["opening"])
+                == (previous["instance"], previous["opening"])
+            )
+            if request and request.get("action") == "choose":
+                same = (
+                    same
+                    and state["revision"] == request["revision"] + 1
+                    and (state["mode"], state["mirror"]) == (request["mode"], request["mirror"])
+                )
+            else:
+                same = same and state["revision"] == previous["revision"]
+            if not same:
+                self.draft = None
+                self.notice = "Выбор не сохранён. Проверьте настройки заново."
+            elif (state["mode"], state["mirror"]) == self.draft:
+                self.draft = None
+            else:
+                self._send_choice()
         self._render()
         return False
 
@@ -186,33 +236,51 @@ class VideoPanel:
         if not self.window.get_visible():
             self.window.show_all()
         self.rendering = True
-        self.choices[state["mode"]].set_active(True)
-        self.mirror.set_active(state["mirror"])
+        mode, mirror = self.draft or (state["mode"], state["mirror"])
+        self.choices[mode].set_active(True)
+        self.mirror.set_active(mirror)
         self.rendering = False
         self.status.set_text(
-            "Нет связи с медиацентром." if self.offline else MESSAGES[state["status"]]
+            "Нет связи с медиацентром. Проверьте настройки заново."
+            if self.offline
+            else self.notice or MESSAGES[state["status"]]
         )
         enabled = (
-            state["available"] and not state["busy"] and not self.inflight and not self.offline
+            state["available"]
+            and not state["busy"]
+            and not self.offline
+            and not (
+                self.current_request and self.current_request.get("action") in ("apply", "close")
+            )
         )
         for button in self.choices.values():
             button.set_sensitive(enabled)
         self.mirror.set_sensitive(enabled)
-        self.apply_button.set_sensitive(enabled)
+        self.apply_button.set_sensitive(enabled and not self.inflight and not self.draft)
         # The local close remains available after an I/O error.
-        self.close_button.set_sensitive(not self.inflight)
+        self.close_button.set_sensitive(True)
 
     def _choose(self, mode, mirror):
         if (
             not self.state
-            or self.inflight
             or self.offline
+            or self.close_intent
             or not self.state["visible"]
             or not self.state["available"]
             or self.state["busy"]
+            or (self.current_request and self.current_request.get("action") != "choose")
+            and self.current_request is not None
         ):
             return
+        self.draft = (mode, mirror)
+        self.notice = None
+        if not self.inflight:
+            self._send_choice()
+        # Do not render here: GTK radio toggle signals can be reentrant.
+
+    def _send_choice(self):
         state = self.state
+        mode, mirror = self.draft
         self._request(
             {
                 "action": "choose",
@@ -229,33 +297,43 @@ class VideoPanel:
 
     def _mirror_changed(self, button):
         if not self.rendering and self.state:
-            self._choose(self.state["mode"], button.get_active())
+            self._choose((self.draft or (self.state["mode"], False))[0], button.get_active())
 
     def _apply(self, _button):
         if (
             self.state
             and not self.inflight
+            and not self.draft
+            and not self.close_intent
             and not self.offline
             and self.state["visible"]
             and self.state["available"]
             and not self.state["busy"]
         ):
             state = self.state
+            self.notice = None
+            self.status.set_text(MESSAGES["pending"])
+            for button in self.choices.values():
+                button.set_sensitive(False)
+            self.mirror.set_sensitive(False)
             self._request(
                 {"action": "apply", "instance": state["instance"], "revision": state["revision"]}
             )
 
     def _close(self, _button):
-        if self.state and not self.inflight:
+        if self.state and not self.close_intent:
             self.close_intent = (self.state["instance"], self.state["opening"])
+            self.close_sent = False
+            self.draft = None
             self.window.hide()
-            self._request(
-                {
-                    "action": "close",
-                    "instance": self.state["instance"],
-                    "opening": self.state["opening"],
-                }
-            )
+            if not self.inflight:
+                self._request(
+                    {
+                        "action": "close",
+                        "instance": self.state["instance"],
+                        "opening": self.state["opening"],
+                    }
+                )
 
 
 def main():

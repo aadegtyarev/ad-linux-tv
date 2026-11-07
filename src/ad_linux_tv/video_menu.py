@@ -18,6 +18,7 @@ OVERLAY_TIMEOUT = 3.0
 class VideoMenu:
     def __init__(self, queue, clock=time.monotonic):
         self._queue = queue
+        queue.video_menu = self
         self._clock = clock
         self._lock = RLock()
         self._instance = secrets.token_hex(16)
@@ -31,6 +32,27 @@ class VideoMenu:
         self._revision = 0
         self._status = "unavailable"
         self._overlay_seen = None
+        self._home_openings = {}
+
+    def push_home(self, service_id=None, volume=None):
+        """Associate an admitted Home with the visible opening under the menu lock."""
+        with self._lock:
+            command_id = self._queue.push("home", service_id, volume)
+            if self._visible:
+                self._home_openings[command_id] = self._opening
+            return command_id
+
+    def acknowledge(self, command_id, outcome, reason, volume):
+        # Menu-before-queue is also the order used by apply() and push_home().
+        with self._lock:
+            if not self._queue.acknowledge(command_id, outcome, reason, volume):
+                return False
+            opening = self._home_openings.pop(command_id, None)
+            if outcome == "completed" and opening is not None and self._visible:
+                if opening == self._opening:
+                    self._visible = False
+                    self._revision += 1
+            return True
 
     def matches_instance(self, instance):
         return isinstance(instance, str) and secrets.compare_digest(instance, self._instance)

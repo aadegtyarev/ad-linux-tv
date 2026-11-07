@@ -361,3 +361,106 @@ def test_missing_capability_or_media_disables_apply():
     queue.browser_media.capable = True
     queue.browser_media.media_id = None
     assert not menu.snapshot()["available"]
+
+
+def test_home_ack_only_closes_its_visible_opening():
+    queue = CommandQueue()
+    menu = VideoMenu(queue)
+    menu.open()
+    first = menu.push_home()
+    second = menu.push_home()
+    assert not menu.acknowledge(second, "completed", None, None)
+    assert not menu.acknowledge("unknown", "completed", None, None)
+    assert menu.snapshot()["visible"]
+    assert menu.acknowledge(first, "failed", "operation", None)
+    assert menu.snapshot()["visible"]
+    menu.open()
+    assert menu.acknowledge(second, "completed", None, None)
+    assert menu.snapshot()["visible"]
+    assert not menu.acknowledge(second, "completed", None, None)
+    third = menu.push_home()
+    assert menu.acknowledge(third, "completed", None, None)
+    assert not menu.snapshot()["visible"]
+    menu.open()
+    assert not menu.acknowledge(third, "completed", None, None)
+    assert menu.snapshot()["visible"]
+
+
+def test_home_admission_overflow_and_uncertain_do_not_close_or_retry():
+    queue = CommandQueue()
+    menu = VideoMenu(queue)
+    menu.open()
+    home = menu.push_home()
+    for _ in range(127):
+        queue.push("back")
+    with pytest.raises(QueueFullError):
+        menu.push_home()
+    assert len(menu._home_openings) == 1
+    assert menu.acknowledge(home, "uncertain", "interrupted", None)
+    assert menu.snapshot()["visible"]
+    assert len(queue.items) == 127
+    assert not menu._home_openings
+
+
+def test_home_admission_and_ack_serialize_with_reopen(monkeypatch):
+    queue = CommandQueue()
+    menu = VideoMenu(queue)
+    menu.open()
+    entered, release = threading.Event(), threading.Event()
+    original = queue.push
+
+    def blocked_push(*args):
+        entered.set()
+        assert release.wait(2)
+        return original(*args)
+
+    monkeypatch.setattr(queue, "push", blocked_push)
+    ids = []
+    admission = threading.Thread(target=lambda: ids.append(menu.push_home()))
+    admission.start()
+    assert entered.wait(2)
+    reopen = threading.Thread(target=menu.open)
+    reopen.start()
+    release.set()
+    admission.join(2)
+    reopen.join(2)
+    assert not admission.is_alive() and not reopen.is_alive()
+    assert menu.acknowledge(ids[0], "completed", None, None)
+    assert menu.snapshot()["visible"]
+
+
+def test_home_ack_and_reopen_are_serialized(monkeypatch):
+    queue = CommandQueue()
+    menu = VideoMenu(queue)
+    menu.open()
+    home = menu.push_home()
+    entered, release = threading.Event(), threading.Event()
+    original = queue.acknowledge
+
+    def blocked_ack(*args):
+        entered.set()
+        assert release.wait(2)
+        return original(*args)
+
+    monkeypatch.setattr(queue, "acknowledge", blocked_ack)
+    ack = threading.Thread(target=lambda: menu.acknowledge(home, "completed", None, None))
+    ack.start()
+    assert entered.wait(2)
+    reopen = threading.Thread(target=menu.open)
+    reopen.start()
+    release.set()
+    ack.join(2)
+    reopen.join(2)
+    assert not ack.is_alive() and not reopen.is_alive()
+    assert menu.snapshot()["visible"]
+
+
+def test_non_home_and_home_admitted_while_hidden_do_not_close_opening():
+    queue = CommandQueue()
+    menu = VideoMenu(queue)
+    home = menu.push_home()
+    back = queue.push("back")
+    menu.open()
+    assert menu.acknowledge(home, "completed", None, None)
+    assert menu.acknowledge(back, "completed", None, None)
+    assert menu.snapshot()["visible"]

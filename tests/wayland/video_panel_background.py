@@ -15,6 +15,10 @@ window.connect("focus-in-event", lambda *_: print("fixture_background_focus_in",
 window.connect("focus-out-event", lambda *_: print("fixture_background_focus_out", flush=True))
 entry = Gtk.Entry()
 entry.connect("button-press-event", lambda *_: print("fixture_background_clicked", flush=True))
+entry.connect(
+    "key-press-event",
+    lambda _w, event: print("fixture_background_key", Gdk.keyval_name(event.keyval), flush=True),
+)
 window.add(entry)
 window.connect("destroy", Gtk.main_quit)
 window.show_all()

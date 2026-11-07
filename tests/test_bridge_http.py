@@ -108,3 +108,38 @@ def test_player_result_requires_auth_and_matches_ack(endpoint, monkeypatch):
         "reason": None,
         "volume": 55,
     }
+
+
+def test_home_ack_closes_only_admitted_opening_over_http(endpoint, monkeypatch):
+    from ad_linux_tv.video_menu import VideoMenu
+
+    menus = []
+    original = VideoMenu.push_home
+
+    def open_before_admission(menu, *args):
+        menu.open()
+        menus.append(menu)
+        return original(menu, *args)
+
+    monkeypatch.setattr(VideoMenu, "push_home", open_before_admission)
+    connection, port = endpoint
+    _, auth, cookie = login(connection, port)
+    headers = command_headers(port, cookie, auth["csrf"])
+    response, body = request(connection, "POST", "/api/command", '{"command":"home"}', headers)
+    assert response.status == 202
+    command_id = json.loads(body)["id"]
+    menu = menus[0]
+    bridge = {
+        "Host": f"127.0.0.1:{port}",
+        BRIDGE_HEADER: BRIDGE_VALUE,
+        "Content-Type": "application/json",
+    }
+    ack = {"id": command_id, "outcome": "completed", "reason": None}
+    invalid = json.dumps({**ack, "command": "home"})
+    assert request(connection, "POST", "/extension/ack", invalid, bridge)[0].status == 400
+    assert menu.snapshot()["visible"]
+    assert request(connection, "POST", "/extension/ack", json.dumps(ack), bridge)[0].status == 200
+    assert not menu.snapshot()["visible"]
+    menu.open()
+    assert request(connection, "POST", "/extension/ack", json.dumps(ack), bridge)[0].status == 409
+    assert menu.snapshot()["visible"]

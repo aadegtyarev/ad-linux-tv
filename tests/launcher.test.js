@@ -21,6 +21,52 @@ test("launcher focus uses actual columns and carries arrows across pages", async
   assert.equal(ui.elements["#page"].textContent, "2 / 3");
 });
 
+test("lost launcher focus is recovered on return and Enter, without stealing controls", async () => {
+  const ui = launcher();
+  await ready();
+  assert.equal(ui.doc.activeElement.dataset.serviceIndex, "0");
+  ui.elements["#tiles"].children[5].focus();
+  ui.doc.activeElement = ui.doc.body;
+  ui.doc.focused = false;
+  ui.window.dispatchEvent({type:"pageshow"});
+  assert.equal(ui.doc.activeElement, ui.doc.body);
+  ui.services = [...ui.services, {id:"extra", name:"Extra"}];
+  ui.refresh();
+  await ready();
+  assert.equal(ui.doc.activeElement, ui.doc.body);
+  ui.doc.focused = true;
+  ui.doc.visibilityState = "hidden";
+  ui.window.dispatchEvent({type:"focus"});
+  assert.equal(ui.doc.activeElement, ui.doc.body);
+  ui.doc.visibilityState = "visible";
+  ui.doc.dispatchEvent({type:"visibilitychange"});
+  assert.equal(ui.doc.activeElement.dataset.serviceIndex, "5");
+  ui.elements["#system-button"].focus();
+  ui.window.dispatchEvent({type:"focus"});
+  ui.refresh();
+  await ready();
+  assert.equal(ui.doc.activeElement, ui.elements["#system-button"]);
+  ui.doc.activeElement = ui.doc.body;
+  ui.elements["#settings"].hidden = false;
+  ui.window.dispatchEvent({type:"pageshow"});
+  assert.equal(ui.doc.activeElement, ui.doc.body);
+  ui.elements["#settings"].hidden = true;
+  ui.elements["#home"].hidden = true;
+  ui.window.dispatchEvent({type:"focus"});
+  assert.equal(ui.doc.activeElement, ui.doc.body);
+  ui.elements["#home"].hidden = false;
+  let prevented = false;
+  ui.doc.dispatchEvent({type:"keydown", key:"Enter", ctrlKey:true, preventDefault(){ prevented = true; }});
+  assert.equal(ui.doc.activeElement, ui.doc.body);
+  assert.equal(prevented, false);
+  ui.doc.dispatchEvent({type:"keydown", key:"Enter", preventDefault(){ prevented = true; }});
+  await ready();
+  assert.equal(prevented, true);
+  assert.equal(ui.doc.activeElement.dataset.serviceIndex, "5");
+  const command = ui.calls.find(call => call.url === "/api/command");
+  assert.equal(JSON.parse(command.options.body).service_id, "svc-5");
+});
+
 test("System remains pointer-clickable while arrows and bridge OK select tiles", async () => {
   const ui = launcher();
   await ready();
@@ -67,6 +113,46 @@ test("periodic refresh preserves grid focus and skips unchanged DOM replacement"
   await ready();
   assert.equal(ui.doc.activeElement.dataset.serviceId, "svc-5");
   assert.equal(ui.doc.activeElement.dataset.serviceIndex, "0");
+});
+
+test("catalogue reorder preserves selected service without stealing focus; removal clamps selection", async () => {
+  const ui = launcher();
+  await ready();
+  ui.elements["#tiles"].children[5].focus();
+  ui.doc.activeElement = ui.doc.body;
+  ui.doc.focused = false;
+  ui.services = [...ui.services.filter(service => service.id !== "svc-5"), ui.services[5]];
+  ui.refresh();
+  await ready();
+  assert.equal(ui.doc.activeElement, ui.doc.body);
+  assert.equal(ui.elements["#page"].textContent, "3 / 3");
+  ui.doc.focused = true;
+  ui.doc.dispatchEvent({type:"keydown", key:"Enter", preventDefault(){}});
+  await ready();
+  assert.equal(ui.doc.activeElement.dataset.serviceId, "svc-5");
+  assert.equal(JSON.parse(ui.calls.find(call => call.url === "/api/command").options.body).service_id, "svc-5");
+
+  const system = ui.elements["#system-button"];
+  system.focus();
+  ui.services = [ui.services.at(-1), ...ui.services.slice(0, -1)];
+  ui.refresh();
+  await ready();
+  assert.equal(ui.doc.activeElement, system);
+  assert.equal(ui.elements["#page"].textContent, "1 / 3");
+  ui.services = ui.services.filter(service => service.id !== "svc-5");
+  ui.refresh();
+  await ready();
+  assert.equal(ui.doc.activeElement, system);
+  ui.doc.activeElement = ui.doc.body;
+  ui.window.dispatchEvent({type:"focus"});
+  assert.equal(ui.doc.activeElement.dataset.serviceId, "svc-0");
+  ui.services = [];
+  ui.refresh();
+  await ready();
+  ui.services = [{id:"new", name:"New"}];
+  ui.refresh();
+  await ready();
+  assert.equal(ui.doc.activeElement.dataset.serviceId, "new");
 });
 
 test("services refresh does not clear offline or pending command status", async () => {

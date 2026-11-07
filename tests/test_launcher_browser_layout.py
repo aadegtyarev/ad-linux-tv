@@ -64,7 +64,10 @@ class FixtureHandler(BaseHTTPRequestHandler):
             body = (STATIC / self.path[1:]).read_bytes()
             kind = "text/css" if self.path.endswith(".css") else "text/javascript"
         elif self.path == "/fixture.js":
-            body = b"window.fixtureUI=createLauncherUI(()=>{},()=>{});"
+            body = (
+                b"window.opened=[];"
+                b"window.fixtureUI=createLauncherUI((...args)=>opened.push(args),()=>{});"
+            )
             kind = "text/javascript"
         elif self.path == "/qr.svg":
             body = (
@@ -290,6 +293,78 @@ def test_launcher_fit_and_scroll_fallback():
                 )
                 assert pages["separated"] and pages["reachable"], pages["debug"]
                 assert pages["next"] == ["12"] and pages["returned"] == 12
+                execute(
+                    port,
+                    session,
+                    """
+                    opened.length=0;
+                    fixtureUI.update(Array.from({length:13},(_,i)=>({id:`s${i}`,name:'Service'})),12);
+                    document.querySelector('#next').click();
+                    document.activeElement.blur();
+                    fixtureUI.update([{id:'s12',name:'Service'},
+                      ...Array.from({length:12},(_,i)=>({id:`s${i}`,name:'Service'}))],12);
+                    if (document.activeElement.dataset.serviceId !== 's12')
+                      throw Error('selection lost');
+                    document.activeElement.blur();
+                    """,
+                )
+                request(
+                    port,
+                    "POST",
+                    f"/session/{session}/actions",
+                    {
+                        "actions": [
+                            {
+                                "type": "key",
+                                "id": "keyboard",
+                                "actions": [
+                                    {"type": "keyDown", "value": "\ue007"},
+                                    {"type": "keyUp", "value": "\ue007"},
+                                ],
+                            }
+                        ]
+                    },
+                )
+                assert execute(port, session, "return opened;") == [["open", "s12"]]
+                assert (
+                    execute(port, session, "return document.activeElement.dataset.serviceId;")
+                    == "s12"
+                )
+                launcher_handle = request(port, "GET", f"/session/{session}/window")
+                execute(port, session, "document.activeElement.blur();")
+                other = request(port, "POST", f"/session/{session}/window/new", {"type": "tab"})
+                request(port, "POST", f"/session/{session}/window", {"handle": other["handle"]})
+                request(port, "POST", f"/session/{session}/window", {"handle": launcher_handle})
+                wait_until(
+                    lambda: execute(
+                        port, session, "return document.activeElement.dataset.serviceId === 's12';"
+                    )
+                )
+                assert execute(
+                    port,
+                    session,
+                    """
+                    const control=document.querySelector('#system-button');
+                    control.focus();
+                    fixtureUI.update([...Array.from({length:12},(_,i)=>
+                      ({id:`s${i}`,name:'Service'})),{id:'s12',name:'Service'}],12);
+                    window.dispatchEvent(new Event('focus'));
+                    return document.activeElement===control &&
+                      document.querySelector('#page').textContent==='2 / 2';
+                    """,
+                )
+                assert execute(
+                    port,
+                    session,
+                    """
+                    fixtureUI.update([{id:'remaining',name:'Service'}],12);
+                    if (document.activeElement !== document.querySelector('#system-button'))
+                      return false;
+                    document.activeElement.blur();
+                    window.dispatchEvent(new Event('focus'));
+                    return document.activeElement.dataset.serviceId === 'remaining';
+                    """,
+                )
                 fallback = execute(
                     port,
                     session,
