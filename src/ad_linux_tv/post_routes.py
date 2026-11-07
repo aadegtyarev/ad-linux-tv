@@ -536,9 +536,12 @@ def handle_ack(handler, video_menu):
             "operation",
             "no_media",
             "unsupported",
+            "transition_busy",
         }
         if outcome not in {"completed", "failed", "uncertain"}:
             raise ValueError("invalid acknowledgement outcome")
+        if reason == "transition_busy" and outcome != "failed":
+            raise ValueError("invalid acknowledgement reason")
         if (outcome == "completed" and reason is not None) or (
             outcome != "completed" and reason not in reasons
         ):

@@ -221,6 +221,8 @@ function createOwnedTabs(api, fetcher = fetch) {
       if (reply?.result?.outcome === "uncertain") {
         const error = new Error("geometry outcome uncertain"); error.uncertain = true; throw error;
       }
+      if (reply?.result?.outcome === "unsupported" && reply.result.reason === "transition_busy")
+        throw new PermanentCommandError("transition_busy");
       if (!["applied", "restored", "unchanged"].includes(reply?.result?.outcome))
         throw new PermanentCommandError("unsupported");
       const applied = reply.result.outcome === "applied";

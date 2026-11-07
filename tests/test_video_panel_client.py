@@ -52,6 +52,12 @@ def test_local_request_uses_only_fixed_loopback_and_header(monkeypatch):
     assert sent[0].get_header("X-ad-linux-tv-video-panel") == "video-panel-v1"
 
 
+def test_transition_busy_is_a_valid_panel_status():
+    item = state()
+    item["status"] = "transition_busy"
+    assert panel.validate_state(item)["status"] == "transition_busy"
+
+
 def test_valid_panel_state_contains_no_media_identity():
     assert panel.validate_state(state()) == state()
     assert "media_id" not in state()

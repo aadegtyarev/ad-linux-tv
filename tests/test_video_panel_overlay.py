@@ -314,6 +314,21 @@ def test_apply_disables_choices_without_render_and_supersedes_old_notice(overlay
     assert overlay.draft is None
 
 
+def test_transition_busy_panel_suggests_manual_retry(overlay):
+    overlay.state = state(status="transition_busy")
+    overlay.window = SimpleNamespace(get_visible=Mock(return_value=True))
+    overlay.rendering = False
+    overlay.choices = {mode: Mock() for mode in ("original", "4:3", "16:9")}
+    overlay.mirror = Mock()
+    overlay.status = Mock()
+    overlay.close_button = Mock()
+    overlay._render = overlay.__class__._render.__get__(overlay)
+    overlay._render()
+    message = overlay.status.set_text.call_args.args[0]
+    assert "Повторите вручную" in message
+    assert "могло быть снято" in message
+
+
 def test_apply_result_supersedes_old_notice_and_failure_reports_new_uncertainty(overlay):
     import queue
 

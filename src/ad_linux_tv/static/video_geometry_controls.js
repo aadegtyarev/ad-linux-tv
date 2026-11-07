@@ -137,7 +137,10 @@ class VideoGeometryControls {
         if (result.status === 200) {
           const receipt = await result.json();
           if (!this.current(epoch)) return;
-          if (receipt?.id !== id || receipt.outcome !== "completed") throw new Error("unavailable");
+          if (receipt?.id === id && receipt.outcome === "failed" && receipt.reason === "transition_busy")
+            throw new Error("transition_busy");
+          if (receipt?.id !== id || receipt.outcome !== "completed" || receipt.reason !== null)
+            throw new Error("unavailable");
           const latest = await this.state(epoch);
           if (!latest || !this.current(epoch)) return;
           if (!latest.available || latest.media_id !== expected) {
@@ -157,6 +160,9 @@ class VideoGeometryControls {
       if (error?.message === "changed") {
         this.note.textContent = "Видео сменилось. Обновите видео и выберите настройки заново.";
         this.notify("Видео сменилось; настройка не перенесена.", true);
+      } else if (error?.message === "transition_busy") {
+        this.note.textContent = "Переход видео ещё завершается. Попробуйте снова вручную. Предыдущее изменение могло быть удалено.";
+        this.notify(this.note.textContent, true);
       } else {
         this.note.textContent = "Плеер не поддерживается или результат не подтверждён.";
         this.notify("Не удалось изменить видео на этом плеере.", true);

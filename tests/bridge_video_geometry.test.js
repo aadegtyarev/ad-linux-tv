@@ -147,3 +147,21 @@ test("a timed-out injection is uncertain and is not dispatched after the deadlin
   assert.equal(count,1);
   assert.equal((await controller.execute(item)).outcome,"uncertain");
 });
+
+test("only the exact busy result is retained, without replay",async()=>{
+  for (const [i,result,reason] of [
+    [{outcome:"unsupported",reason:"transition_busy"},"transition_busy"],
+    [{outcome:"unsupported",reason:"foreign"},"unsupported"],
+    [{outcome:"other",reason:"transition_busy"},"unsupported"],
+    [{outcome:"unsupported",reason:["transition_busy"]},"unsupported"],
+  ].map((entry,i)=>[i,...entry])) {
+    const {mock,controller}=await setup(); let calls=0;
+    mock.setScriptingResults(options=>options.files ? [{frameId:5}] :
+      options.func?.name==="playerMedia" ? [{frameId:5,result:snapshot}] :
+      (calls++,[{frameId:5,result}]));
+    const item=command(`geometry-busy-${i}`);
+    assert.deepEqual(await controller.execute(item),{outcome:"failed",reason});
+    assert.deepEqual(await controller.execute(item),{outcome:"failed",reason});
+    assert.equal(calls,1);
+  }
+});

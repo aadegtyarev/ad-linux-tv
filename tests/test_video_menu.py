@@ -464,3 +464,33 @@ def test_non_home_and_home_admitted_while_hidden_do_not_close_opening():
     assert menu.acknowledge(home, "completed", None, None)
     assert menu.acknowledge(back, "completed", None, None)
     assert menu.snapshot()["visible"]
+
+
+def test_transition_busy_status_is_matching_and_never_replays():
+    for result, expected in (
+        ({"id": "command-1", "outcome": "failed", "reason": "transition_busy"}, "transition_busy"),
+        ({"id": "old-command", "outcome": "failed", "reason": "transition_busy"}, "unavailable"),
+        ({"id": "command-1", "outcome": "uncertain", "reason": "transition_busy"}, "unavailable"),
+    ):
+        queue = Queue()
+        menu = VideoMenu(queue)
+        menu.open()
+        apply(menu)
+        queue.results["command-1"] = result
+        assert menu.snapshot()["status"] == expected
+        assert len(queue.sent) == 1
+
+
+def test_transition_busy_does_not_override_changed_target():
+    queue = Queue()
+    menu = VideoMenu(queue)
+    menu.open()
+    apply(menu)
+    queue.browser_media.media_id = "b" * 32
+    queue.results["command-1"] = {
+        "id": "command-1",
+        "outcome": "failed",
+        "reason": "transition_busy",
+    }
+    assert menu.snapshot()["status"] == "changed"
+    assert len(queue.sent) == 1

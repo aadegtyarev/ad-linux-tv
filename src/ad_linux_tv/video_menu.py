@@ -98,6 +98,12 @@ class VideoMenu:
                 self._status = "changed"
             elif result.get("id") == command_id and result.get("outcome") == "completed":
                 self._status = "completed"
+            elif (
+                result.get("id") == command_id
+                and result.get("outcome") == "failed"
+                and result.get("reason") == "transition_busy"
+            ):
+                self._status = "transition_busy"
             else:
                 self._status = "unavailable"
         elif self._clock() >= deadline:
