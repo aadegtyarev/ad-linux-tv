@@ -25,7 +25,7 @@ function makeHarness(options={}) {
   video.getAttribute=name=>attribute.has(name)?attribute.get(name):null;
   video.setAttribute=(name,value)=>{attribute.set(name,value);};
   video.removeAttribute=name=>{if(removeAttributeThrows)throw Error("attribute removal");attribute.delete(name);};
-  const parentStyle=base(),videoStyle=base();
+  const parentStyle=base(),bodyStyle=base(),videoStyle=base();
   const layerTransform=()=>{
     if(!layer?.isConnected)return null;
     const attr=layer.textContent.match(/video\[([^\]]+)\]/)?.[1];
@@ -42,6 +42,7 @@ function makeHarness(options={}) {
   page.head={appendChild(node){layer=node;node.isConnected=true;if(options.appendThrows)throw Error("append");}};
   const styleOf=element=>{
     if(element===parent)return parentStyle;
+    if(element===page.body)return bodyStyle;
     if(element!==video)return base();
     const s={...videoStyle}, [x,y]=effective();
     s.transform=(x===1 && y===1 && !layerTransform() && !site.has("transform")) ? "none" : `matrix(${x}, 0, 0, ${y}, 0, 0)`;
@@ -58,7 +59,7 @@ function makeHarness(options={}) {
     observe:(_video,callback)=>{if(options.observeThrows)throw Error("observe");observerCallback=callback;return {takeRecords:()=>records.splice(0),disconnect(){}};},
     setTimer:callback=>{timerCallback=callback;return 1;},clearTimer:()=>{}};
   const controller=createVideoGeometryController(env);
-  return {page,view,parent,parentStyle,video,videoStyle,site,attribute,controller,
+  return {page,view,parent,parentStyle,bodyStyle,video,videoStyle,site,attribute,controller,
     isCurrent:(_v,id)=>current===id,setCurrent:id=>{current=id;},setTransition:value=>{transition=value;},
     active:()=>Boolean(layer?.isConnected),
     notify:record=>observerCallback(record),queue:record=>records.push(record),
@@ -352,6 +353,114 @@ test("post-apply transition must end before success",async()=>{
   h.setTransition("running");frames.shift()();await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.active(),true);h.setTransition("none");frames.shift()();
   assert.equal((await pending).outcome,"applied");
+});
+
+test("transient clipping during a transform transition waits for strict final geometry",async()=>{
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  h.parentStyle.overflowX="hidden";
+  h.parent.getBoundingClientRect=()=>({left:100,right:420,top:0,bottom:240});
+  const rect=h.video.getBoundingClientRect;let overshoot=false;
+  h.video.getBoundingClientRect=()=>{const box=rect();return {...box,left:box.left+100-(overshoot?5:0),right:box.right+100+(overshoot?5:0)};};
+  const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",false);
+  overshoot=true;h.setTransition("running");frames.shift()();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.active(),true);assert.equal(frames.length,1);
+  overshoot=false;h.setTransition("none");frames.shift()();
+  assert.equal((await pending).outcome,"applied");
+});
+
+test("preparation waits through clipping only while the transition is running",async()=>{
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  h.parentStyle.overflowX="hidden";
+  h.parent.getBoundingClientRect=()=>({left:100,right:420,top:0,bottom:240});
+  const rect=h.video.getBoundingClientRect;let overshoot=true;
+  h.video.getBoundingClientRect=()=>{const box=rect();return {...box,left:box.left+100-(overshoot?5:0),right:box.right+100+(overshoot?5:0)};};
+  h.setTransition("running");
+  const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",false);
+  assert.equal(h.active(),false);assert.equal(frames.length,1);
+  overshoot=false;h.setTransition("none");frames.shift()();await new Promise(resolve=>setImmediate(resolve));
+  frames.shift()();assert.equal((await pending).outcome,"applied");
+});
+
+test("clipping while waiting never bypasses final geometry or safety guards",async()=>{
+  for (const kind of ["final","source","unsafe","ancestor","viewport","ownership"]) {
+    const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+    h.parentStyle.overflowX="hidden";
+    h.parent.getBoundingClientRect=()=>({left:100,right:420,top:0,bottom:240});
+    const rect=h.video.getBoundingClientRect;let overshoot=false;
+    h.video.getBoundingClientRect=()=>{const box=rect();return {...box,left:box.left+100-(overshoot?5:0),right:box.right+100+(overshoot?5:0)};};
+    const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",false);
+    overshoot=true;h.setTransition("running");frames.shift()();await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(h.active(),true);
+    if(kind==="final") h.setTransition("none");
+    if(kind==="source") h.video.currentSrc="https://example.invalid/changed";
+    if(kind==="unsafe") h.setTransition("unsafe");
+    if(kind==="ancestor") h.parentStyle.opacity="0";
+    if(kind==="viewport") h.view.innerWidth=10;
+    if(kind==="ownership") h.attribute.clear();
+    frames.shift()();const result=await pending;
+    assert.equal(result.outcome,"unsupported",kind);
+    if(kind==="final") assert.equal(result.reason,"geometry_clipping");
+    assert.equal(h.active(),false,kind);assert.equal(h.attribute.size,0,kind);
+  }
+});
+
+function clippingTransitionHarness() {
+  const frames=[];const h=makeHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+  h.parentStyle.overflowX="hidden";h.bodyStyle.overflowX="hidden";
+  h.parent.getBoundingClientRect=()=>({left:100,right:420,top:0,bottom:240});
+  h.page.body.getBoundingClientRect=()=>({left:100,right:420,top:0,bottom:240});
+  const rect=h.video.getBoundingClientRect;let overshoot=false;
+  h.video.getBoundingClientRect=()=>{const box=rect();return {...box,left:box.left+100-(overshoot?5:0),right:box.right+100+(overshoot?5:0)};};
+  return {h,frames,overshoot:value=>{overshoot=value;}};
+}
+
+test("temporary clipping checks every ancestor and strict final clipping",async()=>{
+  for (const kind of ["settled","upper-style","upper-final-clipping"]) {
+    const fixture=clippingTransitionHarness(),{h,frames}=fixture;
+    const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",false);
+    fixture.overshoot(true);h.setTransition("running");
+    if(kind==="upper-style") h.bodyStyle.opacity="0";
+    frames.shift()();await new Promise(resolve=>setImmediate(resolve));
+    if(kind==="upper-style") {
+      assert.deepEqual(await pending,{outcome:"unsupported",reason:"geometry_ancestor_style"});
+      assert.equal(h.active(),false);assert.equal(h.attribute.size,0);continue;
+    }
+    assert.equal(h.active(),true);
+    fixture.overshoot(false);h.setTransition("none");
+    if(kind==="upper-final-clipping") h.page.body.getBoundingClientRect=()=>({left:101,right:419,top:0,bottom:240});
+    frames.shift()();const result=await pending;
+    if(kind==="settled") assert.equal(result.outcome,"applied");
+    else {
+      assert.deepEqual(result,{outcome:"unsupported",reason:"geometry_clipping"});
+      assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+    }
+  }
+});
+
+test("clipped running confirmation times out and cleans the owned layer",async()=>{
+  const now=Date.now;let clock=1000;Date.now=()=>clock;
+  try {
+    const fixture=clippingTransitionHarness(),{h,frames}=fixture;
+    const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",false,3000);
+    fixture.overshoot(true);h.setTransition("running");frames.shift()();
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(h.active(),true);clock=1700;frames.shift()();
+    assert.deepEqual(await pending,{outcome:"unsupported",reason:"geometry_post_write_current"});
+    assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+  } finally {Date.now=now;}
+});
+
+test("mutation and playback races during clipped transition clean the owned layer",async()=>{
+  for (const kind of ["mutation","loadstart","emptied","ended"]) {
+    const fixture=clippingTransitionHarness(),{h,frames}=fixture;
+    const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",false);
+    fixture.overshoot(true);h.setTransition("running");frames.shift()();
+    await new Promise(resolve=>setImmediate(resolve));assert.equal(h.active(),true);
+    if(kind==="mutation") h.notify({attributeName:"class"});else h.video.fire(kind);
+    assert.equal(h.active(),false);frames.shift()();
+    assert.deepEqual(await pending,{outcome:"unsupported",reason:kind==="mutation" ? "geometry_close_mutation" : "geometry_close_playback"});
+    assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+  }
 });
 
 test("animation inspection rejects paused, infinite and non-transition transforms",()=>{
