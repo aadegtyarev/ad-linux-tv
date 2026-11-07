@@ -5,6 +5,8 @@ const ledgerFactory = typeof module !== "undefined"
   ? require("./command_ledger.js").createCommandLedger : createCommandLedger;
 const PermanentError = typeof module !== "undefined"
   ? require("./owned_tabs.js").PermanentCommandError : PermanentCommandError;
+const geometryFailureReasons = typeof module !== "undefined"
+  ? require("./owned_tabs.js").GEOMETRY_FAILURE_REASONS : GEOMETRY_FAILURE_REASONS;
 const PREPARE_LIMIT = typeof module !== "undefined"
   ? require("./command_ledger.js").MAX_PREPARE_ATTEMPTS : MAX_PREPARE_ATTEMPTS;
 
@@ -49,7 +51,8 @@ function createTabController(api, fetcher = fetch) {
       if (error instanceof ExecutionUncertain || error?.uncertain === true)
         return {outcome:"uncertain", reason:"interrupted"};
       if (item.command === "video_geometry" && error instanceof PermanentError &&
-          error.message === "transition_busy") return failed(item.id, "transition_busy");
+          (error.message === "transition_busy" || geometryFailureReasons.has(error.message)))
+        return failed(item.id, error.message);
       return failed(item.id, error instanceof PermanentError && error.message === "no_media" ?
         "no_media" : error instanceof PermanentError && error.message === "unsupported" ?
           "unsupported" : "operation");

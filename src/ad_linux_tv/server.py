@@ -27,7 +27,12 @@ from .settings import SettingsManager
 from .sleep_timer import DisplaySleepTimer
 from .tv_shortcut_learner import ShortcutLearner
 from .video_menu import VideoMenu
-from .video_panel_routes import PANEL_PATH, handle_local_panel
+from .video_panel_routes import (
+    GEOMETRY_DIAGNOSTIC_PATH,
+    PANEL_PATH,
+    handle_geometry_diagnostic,
+    handle_local_panel,
+)
 
 
 def make_handler(config, config_path=None):
@@ -151,6 +156,8 @@ def make_handler(config, config_path=None):
                 raise BodyTimeout from exc
 
         def do_GET(self):
+            if self.path == GEOMETRY_DIAGNOSTIC_PATH:
+                return handle_geometry_diagnostic(self, queue)
             if self.path == PANEL_PATH:
                 return handle_local_panel(self, video_menu, "GET")
             if self.path == "/api/bluetooth":

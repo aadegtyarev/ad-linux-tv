@@ -158,6 +158,10 @@ def test_busy_ack_rejects_foreign_command_and_malformed_reasons(endpoint):
     item = json.loads(request(connection, "GET", "/extension/poll", headers=bridge)[1])[0]
     for outcome, reason, expected in (
         ("failed", "transition_busy", 409),
+        ("failed", "geometry_viewport", 409),
+        ("uncertain", "geometry_viewport", 400),
+        ("completed", "geometry_viewport", 400),
+        ("failed", "geometry_not_allowlisted", 400),
         ("uncertain", "transition_busy", 400),
         ("completed", "transition_busy", 400),
         ("failed", ["transition_busy"], 400),
