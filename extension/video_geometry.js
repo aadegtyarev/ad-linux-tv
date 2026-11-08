@@ -69,19 +69,40 @@ function createVideoGeometryController(env) {
     } finally { clearTimeout(timer); }
   }
 
+  // Document.fullscreenElement can be retargeted to a shadow host. Inspect
+  // the video's own root chain, including closed roots, without crossing frames.
+  function fullscreenState(video) {
+    const documentTarget=page.fullscreenElement;
+    const ancestors=[], roots=new Set();
+    for (let node=video; node; node=videoGeometryParent(node)) {
+      if (ancestors.length >= 128) return {valid:false};
+      ancestors.push(node);
+      const root=node.getRootNode?.();
+      if (root && root !== page && (root.mode === "open" || root.mode === "closed")) roots.add(root);
+    }
+    const documentIndex=documentTarget ? ancestors.indexOf(documentTarget) : -1;
+    if (documentTarget && documentIndex < 0) return {valid:false};
+    let target=documentTarget, targetIndex=documentIndex;
+    for (const root of roots) {
+      const candidate=root.fullscreenElement;
+      if (!candidate) continue;
+      const index=ancestors.indexOf(candidate);
+      if (!documentTarget || index < 0 || index > documentIndex) return {valid:false};
+      if (index < targetIndex) {target=candidate;targetIndex=index;}
+    }
+    return {valid:target !== video,target,documentTarget};
+  }
+
   function eligible(video, identity, isCurrent) {
     try {
       const root = video?.getRootNode();
       if (!video?.isConnected || video.tagName !== "VIDEO" || page.hidden || video.ownerDocument !== page ||
           !(root === page || root?.mode === "open" || root?.mode === "closed") ||
           !video.currentSrc || !video.videoWidth || !video.videoHeight ||
-          video.srcObject || video.mediaKeys || video.controls || page.fullscreenElement === video ||
+          video.srcObject || video.mediaKeys || video.controls ||
           Array.from(video.textTracks || []).some(track => track.mode === "showing") ||
           !isCurrent(video, identity)) return false;
-      if (!page.fullscreenElement) return true;
-      for (let node=videoGeometryParent(video); node; node=videoGeometryParent(node))
-        if (node === page.fullscreenElement) return true;
-      return false;
+      return fullscreenState(video).valid;
     } catch (_) { return false; }
   }
 
@@ -96,7 +117,10 @@ function createVideoGeometryController(env) {
       let containmentReason = box.left < 0 || box.top < 0 ||
         box.right > bounds.right || box.bottom > bounds.bottom ? "geometry_viewport" : null;
       if (!ignoreContainment && containmentReason) return {reason:containmentReason};
-      let element = video, depth = 0;
+      const state=fullscreenState(video);
+      if (!state.valid) return {reason:"geometry_eligibility"};
+      const fullscreen=state.target;
+      let element = video, depth = 0, aboveFullscreen = false;
       while (element) {
         if (++depth > 128) return {reason:"geometry_ancestor_style"};
         const s = styleOf(element);
@@ -106,13 +130,13 @@ function createVideoGeometryController(env) {
             !normal(s.scale) || !normal(s.rotate) || !normal(s.translate)) return {reason:"geometry_ancestor_style"};
         if ((!styled || element !== video) && !identityTransform(s.transform))
           return {reason:element === video ? "geometry_video_transform" : "geometry_ancestor_style"};
-        if ([s.borderTopLeftRadius,s.borderTopRightRadius,s.borderBottomLeftRadius,s.borderBottomRightRadius]
+        if (element === video && [s.borderTopLeftRadius,s.borderTopRightRadius,s.borderBottomLeftRadius,s.borderBottomRightRadius]
           .some(value => !zero(value))) return {reason:"geometry_ancestor_style"};
         if (element === video && [s.borderLeftWidth,s.borderRightWidth,s.borderTopWidth,s.borderBottomWidth,
           s.paddingLeft,s.paddingRight,s.paddingTop,s.paddingBottom].some(value => !zero(value))) return {reason:"geometry_ancestor_style"};
-        // Common player wrappers use overflow:hidden. They are safe when the
-        // whole transformed video remains inside their visible rectangle.
-        if (element !== video && [s.overflowX,s.overflowY].some(value => value && value !== "visible")) {
+        // Fullscreen top-layer rendering escapes overflow above its element;
+        // retain all style checks on those ancestors and clipping at and below it.
+        if (element !== video && !aboveFullscreen && [s.overflowX,s.overflowY].some(value => value && value !== "visible")) {
           const parent = element.getBoundingClientRect();
           if (![parent.left,parent.top,parent.right,parent.bottom].every(Number.isFinite) ||
               parent.right <= parent.left || parent.bottom <= parent.top) return {reason:"geometry_clipping"};
@@ -123,16 +147,21 @@ function createVideoGeometryController(env) {
             if (!ignoreContainment) return {reason:containmentReason};
           }
         }
+        if (element === fullscreen && element !== video) aboveFullscreen = true;
         element = videoGeometryParent(element);
       }
+      if (fullscreen && !aboveFullscreen) return {reason:"geometry_eligibility"};
       return {box,bounds,containmentReason};
     } catch (_) { return {reason:"geometry_ancestor_style"}; }
   }
 
   function current(session) {
-    return eligible(session.video,session.identity,session.isCurrent) &&
+    if (!eligible(session.video,session.identity,session.isCurrent)) return false;
+    const fullscreen=fullscreenState(session.video);
+    return fullscreen.valid && fullscreen.target === session.fullscreen.target &&
+      fullscreen.documentTarget === session.fullscreen.documentTarget &&
       session.video.currentSrc === session.source && session.video.videoWidth === session.width &&
-      session.video.videoHeight === session.height && page.fullscreenElement === session.fullscreen;
+      session.video.videoHeight === session.height;
   }
 
   function markerOwned(session) {
@@ -206,7 +235,7 @@ function createVideoGeometryController(env) {
       return {outcome:"stale"};
     const ticket=++revision;
     const snapshot={video,identity,isCurrent,source:video.currentSrc,width:video.videoWidth,
-      height:video.videoHeight,fullscreen:page.fullscreenElement};
+      height:video.videoHeight,fullscreen:fullscreenState(video)};
     let playbackChanged=false;
     const invalidatePlayback=() => { playbackChanged=true; };
     const playbackEvents=["emptied","loadstart","ended"];
@@ -277,7 +306,7 @@ function createVideoGeometryController(env) {
       const css = `video[${attribute}]{transform:scale(${scale.x},${scale.y}) !important;` +
         `transform-origin:center center !important;${mode === "original" ? "" : "object-fit:fill !important;"}}`;
       const session = {video,identity,isCurrent,mode,source:video.currentSrc,width:video.videoWidth,
-        height:video.videoHeight,fullscreen:page.fullscreenElement,attribute,scale,box,layer:null,
+        height:video.videoHeight,fullscreen:snapshot.fullscreen,attribute,scale,box,layer:null,
         markerTouched:false,closed:false,closeCause:null,cleaned:false,cleaning:false,observer:null,timer:null,retryTimer:null,changed:null,sourceChanged:null};
       active=session;
       let confirming=true;

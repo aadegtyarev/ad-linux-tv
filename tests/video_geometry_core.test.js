@@ -169,14 +169,158 @@ test("fullscreen container is eligible but fullscreen video and changed fullscre
   h.page.fullscreenElement=null;h.page.fire("fullscreenchange");assert.equal(h.active(),false);
 });
 
+test("fullscreen ignores only overflow above its element, including across shadow ancestry",async()=>{
+  for(const shadow of [false,true]){
+    const h=makeHarness();h.page.fullscreenElement=h.parent;
+    h.bodyStyle.overflowX="hidden";h.bodyStyle.borderTopLeftRadius="16px";
+    h.page.body.getBoundingClientRect=()=>({left:500,top:0,right:600,bottom:240});
+    if(shadow){
+      const root={mode:"open",host:h.page.body,appendChild:node=>h.page.head.appendChild(node)};
+      h.video.getRootNode=()=>root;h.parent.parentElement=null;h.parent.getRootNode=()=>root;
+    }
+    for(const [mode,mirror] of [["4:3",false],["16:9",true],["original",true]])
+      assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,mode,mirror)).outcome,"applied");
+    h.bodyStyle.maskImage="url(#mask)";h.tick();assert.equal(h.active(),false);
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"4:3",false),
+      {outcome:"unsupported",reason:"geometry_ancestor_style"});
+    h.bodyStyle.maskImage="none";
+    assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"4:3",false)).outcome,"applied");
+    h.page.fullscreenElement=null;h.page.fire("fullscreenchange");assert.equal(h.active(),false);
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"4:3",false),
+      {outcome:"unsupported",reason:"geometry_clipping"});
+  }
+});
+
+function retargetedFullscreenHarness(options={}) {
+  const h=makeHarness(options), host=h.page.documentElement;
+  const root={mode:"closed",host,fullscreenElement:h.parent,
+    appendChild:node=>h.page.head.appendChild(node)};
+  h.video.getRootNode=()=>root;h.parent.getRootNode=()=>root;h.page.body.getRootNode=()=>root;
+  h.page.fullscreenElement=host;
+  return {h,root};
+}
+
+test("retargeted closed-shadow fullscreen uses actual target, not document host",async()=>{
+  const {h,root}=retargetedFullscreenHarness();
+  h.bodyStyle.overflowX="hidden";
+  h.page.body.getBoundingClientRect=()=>({left:500,top:0,right:600,bottom:240});
+  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
+  h.parentStyle.overflowX="hidden";
+  h.parent.getBoundingClientRect=()=>({left:161,top:0,right:320,bottom:240});
+  assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"4:3",false),
+    {outcome:"unsupported",reason:"geometry_clipping"});
+  h.parentStyle.overflowX="visible";root.fullscreenElement=h.video;
+  assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"4:3",false),
+    {outcome:"unsupported",reason:"geometry_eligibility"});
+  root.fullscreenElement={};
+  assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"4:3",false),
+    {outcome:"unsupported",reason:"geometry_eligibility"});
+});
+
+test("nested shadow roots resolve the deepest fullscreen target",async()=>{
+  const h=makeHarness(),host=h.page.body;
+  const outer={mode:"closed",host,fullscreenElement:h.parent};
+  const inner={mode:"open",host:h.parent,fullscreenElement:null,
+    appendChild:node=>h.page.head.appendChild(node)};
+  h.video.getRootNode=()=>inner;h.parent.getRootNode=()=>outer;
+  h.page.fullscreenElement=host;h.bodyStyle.overflowX="hidden";
+  host.getBoundingClientRect=()=>({left:500,top:0,right:600,bottom:240});
+  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
+  assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
+  inner.fullscreenElement=h.video;
+  assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"4:3",false)).reason,"geometry_eligibility");
+});
+
+test("retargeted fullscreen target switches invalidate pending and active sessions",async()=>{
+  {
+    const frames=[],{h,root}=retargetedFullscreenHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+    h.setTransition("running");
+    const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);
+    root.fullscreenElement=h.page.body;h.setTransition("none");frames.shift()();
+    assert.equal((await pending).outcome,"unsupported");assert.equal(h.active(),false);
+  }
+  {
+    const frames=[],{h,root}=retargetedFullscreenHarness({afterFrame:()=>new Promise(resolve=>frames.push(resolve))});
+    const pending=h.controller.apply(h.video,"one",h.isCurrent,"16:9",true);
+    root.fullscreenElement=h.page.body;frames.shift()();
+    assert.equal((await pending).outcome,"unsupported");assert.equal(h.active(),false);
+  }
+  for(const trigger of ["event","timer"]){
+    const {h,root}=retargetedFullscreenHarness();
+    assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"applied");
+    root.fullscreenElement=h.page.body;
+    if(trigger==="event") h.page.fire("fullscreenchange");else h.tick();
+    assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+  }
+});
+
+test("fullscreen element and descendant clipping, viewport and unrelated fullscreen remain enforced",async()=>{
+  for(const kind of ["fullscreen","descendant","viewport","unrelated"]){
+    const h=makeHarness();
+    h.page.fullscreenElement=kind==="descendant" ? h.page.body : h.parent;
+    if(kind==="unrelated") h.page.fullscreenElement={};
+    else if(kind==="viewport") h.view.innerWidth=100;
+    else {
+      h.parentStyle.overflowX="hidden";
+      h.parent.getBoundingClientRect=()=>({left:161,top:0,right:320,bottom:240});
+    }
+    const result=await h.controller.apply(h.video,"one",h.isCurrent,"4:3",false);
+    assert.equal(result.outcome,"unsupported",kind);
+    assert.equal(result.reason,kind==="viewport" ? "geometry_viewport" : kind==="unrelated" ? "geometry_eligibility" : "geometry_clipping",kind);
+    assert.equal(h.active(),false);
+  }
+});
+
 test("clipping, padding, transform and inaccessible roots fail closed",async()=>{
   for(const change of [h=>h.parentStyle.overflowX="hidden",h=>h.parentStyle.clipPath="inset(1px)",
     h=>h.videoStyle.paddingTop="2px",h=>h.parentStyle.clip="rect(0px, 200px, 200px, 0px)",
     h=>h.videoStyle.clip="rect(0px, 200px, 200px, 0px)",h=>h.parentStyle.transform="matrix(2,0,0,2,0,0)",
     h=>h.video.getRootNode=()=>({}),h=>h.videoStyle.scale="2",h=>h.parentStyle.maskImage="url(#mask)",
-    h=>h.parentStyle.borderTopLeftRadius="5px"]){
+    h=>h.videoStyle.borderTopLeftRadius="5px"]){
     const h=makeHarness();change(h);
     assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true)).outcome,"unsupported");
+    assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+  }
+});
+
+test("rounded clipping, nonclipping and nested ancestors retain site styles through fit, mirror and reset",async()=>{
+  for(const kind of ["clipping","nonclipping","nested"]){
+    const h=makeHarness();
+    h.parentStyle.borderTopLeftRadius="16px";
+    h.parentStyle.borderBottomRightRadius="8px";
+    if(kind!=="nonclipping"){
+      h.parentStyle.overflowX="hidden";h.parentStyle.overflowY="hidden";
+      h.parent.getBoundingClientRect=()=>({left:0,top:0,right:320,bottom:240});
+    }
+    if(kind==="nested"){
+      h.bodyStyle.borderTopRightRadius="12px";h.bodyStyle.overflowY="hidden";
+      h.page.body.getBoundingClientRect=()=>({left:0,top:0,right:320,bottom:240});
+    }
+    const parentStyle={...h.parentStyle},bodyStyle={...h.bodyStyle},videoStyle={...h.videoStyle};
+    for(const [mode,mirror,scale] of [["4:3",false,[1,1]],["16:9",false,[1,.75]],
+      ["4:3",true,[-1,1]],["16:9",true,[-1,.75]],["original",true,[-1,1]]]){
+      assert.equal((await h.controller.apply(h.video,"one",h.isCurrent,mode,mirror)).outcome,"applied",kind);
+      assert.deepEqual(h.effective(),scale);
+      assert.deepEqual(h.parentStyle,parentStyle);assert.deepEqual(h.bodyStyle,bodyStyle);
+      assert.deepEqual(h.videoStyle,videoStyle);assert.equal(h.site.size,0);
+    }
+    assert.equal((await h.controller.reset(h.video,"one",h.isCurrent)).outcome,"restored");
+    assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
+    assert.deepEqual(h.parentStyle,parentStyle);assert.deepEqual(h.bodyStyle,bodyStyle);
+    assert.deepEqual(h.videoStyle,videoStyle);assert.equal(h.site.size,0);
+  }
+});
+
+test("rounded ancestors do not bypass clipping, mask or transform checks and video radius remains rejected",async()=>{
+  for(const [change,reason] of [
+    [h=>{h.parentStyle.overflowX="hidden";h.parent.getBoundingClientRect=()=>({left:161,top:0,right:320,bottom:240});},"geometry_clipping"],
+    [h=>{h.parentStyle.maskImage="url(#mask)";},"geometry_ancestor_style"],
+    [h=>{h.parentStyle.transform="matrix(2, 0, 0, 1, 0, 0)";},"geometry_ancestor_style"],
+    [h=>{h.videoStyle.borderBottomRightRadius="1px";},"geometry_ancestor_style"],
+  ]){
+    const h=makeHarness();h.parentStyle.borderTopLeftRadius="16px";change(h);
+    assert.deepEqual(await h.controller.apply(h.video,"one",h.isCurrent,"16:9",true),{outcome:"unsupported",reason});
     assert.equal(h.active(),false);assert.equal(h.attribute.size,0);
   }
 });
