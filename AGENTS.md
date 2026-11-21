@@ -1,6 +1,5 @@
 # Project instructions
 
-<!-- BEGIN ad-pi-addons contract workflow -->
 ## Contracts and feature work
 - Read `docs/contracts/meta-contract.md` before implementing or reviewing a feature.
 - Before implementation, agree on and save the approved feature contract under `docs/contracts/features/`; identify and read affected `docs/contracts/surfaces/` contracts.
@@ -9,7 +8,17 @@
 - Preserve existing instructions and surface contracts; never overwrite or delete them silently. Feature contracts are temporary task artifacts and must not remain after verified completion.
 - Use available subagent roles only when configured. For nontrivial codebase or documentation reconnaissance, delegate bounded, read-only investigation to a suitable configured role when available; request relevant source paths and concise evidence, not whole-document dumps. Keep trivial lookups direct. The parent owns scope, decisions, synthesis, verification, and user communication. If no suitable role is available, work directly from the same contracts and checks, and state if independent review cannot be obtained. This rule does not require named Pi skills.
 - End every task with a concise user-facing report of what changed, checks and outcomes, and remaining risks or blockers. Do not finish with tool output alone or end silently; this rule requires no installed skills.
-<!-- END ad-pi-addons contract workflow -->
+
+## Working principles
+- 80/20: do the highest-value 20% first; never skip acceptance checks or handling of realistic failures.
+- Simplest change: an abstraction, layer, option or dependency only for real duplication now, a needed seam, or the contract. Handle realistic failures and all outside input.
+- Large features: small slices with a result the user can check, each its own PR.
+- New user-facing surface: offer the operator a prior-art study (a prototype for UI) before the contract; do it only if they agree.
+- No archaeology: code, comments, contracts and docs describe only the current state; git keeps history. Comments give only a short "why".
+- Run only the checks the change can affect; before merge, the standard tests and lint (see Project-specific commands); everything for shared parts or a release.
+- Subagents: at least medium reasoning effort, high for planning and review; prefer a different model for review than the implementer, and say so if none is available.
+- Do not widen scope, budget or permissions; push, PR, merge and release only within the operator's permission.
+- Report honestly what was and was not checked; never log or commit secrets.
 
 ## Project-specific commands and conventions
 - Stack / product: implemented Kubuntu media center `ad-linux-tv`; Firefox-based. Target/release verification remains pending.
