@@ -20,6 +20,7 @@ def test_canonical_mapping_is_empty_by_default_and_round_trips():
         "video_panel": "XF86Launch4",
         "magnifier": "XF86Launch5",
         "fullscreen": "XF86Launch6",
+        "keyboard": "XF86Launch7",
     }
     assert validate_shortcuts(value) == value
     assert set(ACTIONS) == set(value)
@@ -66,12 +67,19 @@ def test_rendered_shortcuts_use_only_fixed_actions_and_do_not_override_bindings(
         "name": "Execute",
         "command": "/usr/local/libexec/ad-linux-tv/tv-shortcut.sh magnifier",
     }
-    six = {
+    assert add_selected_shortcuts(root, {"keyboard": "XF86Launch7"}, defaults_verified=True) == {
+        "keyboard": "XF86Launch7"
+    }
+    assert root.find("keyboard/keybind[@key='XF86Launch7']/action").attrib == {
+        "name": "Execute",
+        "command": "/usr/local/libexec/ad-linux-tv/tv-shortcut.sh keyboard",
+    }
+    three = {
         "ok": "XF86Launch4",
         "volume_up": "XF86Launch5",
         "volume_down": "XF86Launch6",
     }
-    assert add_selected_shortcuts(root, six, defaults_verified=True) == six
+    assert add_selected_shortcuts(root, three, defaults_verified=True) == three
     expected = {
         "XF86Launch4": ("yes", "/usr/bin/wtype -k Return"),
         "XF86Launch5": ("no", "/usr/bin/wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"),

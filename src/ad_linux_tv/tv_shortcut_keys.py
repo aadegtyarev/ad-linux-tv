@@ -4,7 +4,15 @@ Numeric values are XKB keysyms. A learner filters locally before returning a
 candidate; ordinary typed keys must never become captured results.
 """
 
-ACTIONS = ("ok", "volume_up", "volume_down", "video_panel", "magnifier", "fullscreen")
+ACTIONS = (
+    "ok",
+    "volume_up",
+    "volume_down",
+    "video_panel",
+    "magnifier",
+    "fullscreen",
+    "keyboard",
+)
 KEYSYMS = {
     **{f"XF86Launch{digit}": 0x1008FF40 + index for index, digit in enumerate("0123456789ABCDEF")},
     "XF86Tools": 0x1008FF81,
@@ -24,7 +32,7 @@ BY_VALUE = {value: key for key, value in KEYSYMS.items()}
 
 
 def validate_shortcuts(value):
-    """Allow only six distinct canonical keys; omitted entries mean unassigned."""
+    """Allow only distinct canonical keys, one per action; omitted entries mean unassigned."""
     if not isinstance(value, dict) or set(value) - set(ACTIONS):
         raise ValueError("invalid shortcuts")
     result = {}

@@ -23,13 +23,13 @@ Scan the TV QR code with a phone on the same home network. No PIN is needed by d
 
 ### Choose remote buttons
 
-In phone **Menu → Settings → Кнопки пульта**, select **Назначить** beside OK, volume +/−, video format, magnifier or fullscreen. You can also select a device in the phone's **Bluetooth** section and choose **Настроить кнопки пульта**. The wizard remains available without Bluetooth and is not currently in TV System. When the TV asks, press a rare extra button on the remote. Its former action may occur while it is being identified. Repeat for the other actions, then **Сохранить назначения** and explicitly restart TV mode when convenient. **Убрать** clears a choice after saving and restarting.
+In phone **Menu → Settings → Кнопки пульта**, select **Назначить** beside OK, volume +/−, video format, magnifier, fullscreen or keyboard. You can also select a device in the phone's **Bluetooth** section and choose **Настроить кнопки пульта**. The wizard remains available without Bluetooth and is not currently in TV System. When the TV asks, press a rare extra button on the remote. Its former action may occur while it is being identified. Repeat for the other actions, then **Сохранить назначения** and explicitly restart TV mode when convenient. **Убрать** clears a choice after saving and restarting.
 
 The assignments affect the same key on every remote or keyboard in TV mode, not only the remote used to choose it. Ordinary Enter, arrows and standard volume keys remain available. Some buttons, applications or TV-mode versions cannot be recognized or intercepted; the settings report unavailable choices. Actual remote behavior still needs to be checked.
 
 ## Touch panel
 
-On a touchscreen, a small panel offers Home, Back/Forward, keyboard, timer, volume and **⛶** for video fullscreen. Over fullscreen video only the handle, **⛶** (to return) and the volume button stay; drag the handle to move this small panel, it keeps its own place.
+On a touchscreen, a small panel offers Home, Back/Forward, keyboard, timer, volume and **⛶** for video fullscreen. Without a touchscreen, assign the **Клавиатура** remote button to show or hide the on-screen keyboard. Over fullscreen video only the handle, **⛶** (to return) and the volume button stay; drag the handle to move this small panel, it keeps its own place.
 
 ## Timer
 
