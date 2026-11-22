@@ -21,5 +21,10 @@ case ${1:-} in
       -X POST -H 'Content-Type: application/json' -H 'Origin: http://127.0.0.1:8765' \
       --data '{"command":"fullscreen"}' http://127.0.0.1:8765/api/command
     ;;
+  keyboard)
+    [[ $# -eq 1 ]] || exit 2
+    # The touch overlay owns the kept-open keyboard state, with or without a touchscreen.
+    exec /usr/bin/pkill -USR1 -u "$(id -u)" -xf '/usr/bin/python3 /usr/local/libexec/ad-linux-tv/touch-overlay.py'
+    ;;
   *) exit 2 ;;
 esac

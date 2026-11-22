@@ -7,7 +7,7 @@ const settle = () => new Promise(resolve=>setImmediate(resolve));
 const id = "a".repeat(32);
 function harness(request, {restartHint = true} = {}) {
   const elements = {};
-  for (const name of ["ok", "volume_up", "volume_down", "video_panel", "magnifier", "fullscreen"])
+  for (const name of ["ok", "volume_up", "volume_down", "video_panel", "magnifier", "fullscreen", "keyboard"])
     for (const suffix of ["key", "applied", "learn", "clear"]) elements[`${name}-${suffix}`] = {};
   for (const name of ["save", "cancel", "status"]) elements[name] = {};
   if (restartHint) elements.restart = {};
@@ -43,8 +43,8 @@ test("new controller remains compatible with an already-loaded older page", asyn
   assert.equal(h.elements["ok-learn"].disabled,false);
 });
 
-test("all six distinct choices remain drafts until one explicit save", async()=>{
-  const actions=["ok","volume_up","volume_down","video_panel","magnifier","fullscreen"];
+test("all distinct choices remain drafts until one explicit save", async()=>{
+  const actions=["ok","volume_up","volume_down","video_panel","magnifier","fullscreen","keyboard"];
   let key="",writes=0;
   const h=harness(async(method,path,body)=>{
     if(method==="GET") return ok(200,{tv_shortcuts:{}});
@@ -58,8 +58,8 @@ test("all six distinct choices remain drafts until one explicit save", async()=>
   for(let i=0;i<actions.length;i++)assert.equal(h.elements[`${actions[i]}-key`].textContent,`XF86Launch${i+1}`);
 });
 
-test("clearing one of six choices retains the other five until explicitly saved", async()=>{
-  const saved={ok:"XF86Launch1",volume_up:"XF86Launch2",volume_down:"XF86Launch3",video_panel:"XF86Launch4",magnifier:"XF86Launch5",fullscreen:"XF86Launch6"};
+test("clearing one choice retains the others until explicitly saved", async()=>{
+  const saved={ok:"XF86Launch1",volume_up:"XF86Launch2",volume_down:"XF86Launch3",video_panel:"XF86Launch4",magnifier:"XF86Launch5",fullscreen:"XF86Launch6",keyboard:"XF86Launch7"};
   let write=null;
   const h=harness(async(method,_path,body)=>{
     if(method==="GET") return ok(200,{tv_shortcuts:saved,tv_shortcuts_applied:saved});
@@ -70,7 +70,7 @@ test("clearing one of six choices retains the other five until explicitly saved"
   assert.equal(h.elements["volume_up-applied"].textContent,"Сейчас: XF86Launch2");
   await h.controls.save();
   assert.deepEqual(write.value.expected,saved);
-  assert.equal(Object.keys(write.value.assignments).length,5);
+  assert.equal(Object.keys(write.value.assignments).length,Object.keys(saved).length-1);
   assert.equal(write.value.assignments.volume_up,undefined);
   assert.equal(write.value.assignments.ok,"XF86Launch1");
 });

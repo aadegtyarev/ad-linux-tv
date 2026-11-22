@@ -1,4 +1,4 @@
-"""The labwc helper can invoke only three fixed local operations."""
+"""The labwc helper can invoke only fixed local operations."""
 
 import json
 import os
@@ -44,3 +44,34 @@ def test_helper_invokes_only_fixed_local_actions_without_printing_responses(tmp_
     for args in ([], ["fullscreen", "extra"], ["unknown"], [";echo bad"]):
         result = subprocess.run([str(script), *args], env=env, capture_output=True, timeout=5)
         assert result.returncode == 2 and not capture.exists()
+
+
+def test_keyboard_signals_only_the_exact_overlay_of_the_current_user(tmp_path):
+    capture = tmp_path / "arguments"
+    fake_pkill = tmp_path / "pkill"
+    fake_pkill.write_text(
+        "#!/usr/bin/env python3\nimport json, os, sys\n"
+        "open(os.environ['CAPTURE'], 'w').write(json.dumps(sys.argv[1:]))\n"
+    )
+    fake_pkill.chmod(0o755)
+    source = (
+        (ROOT / "ops/kiosk/tv-shortcut.sh").read_text().replace("/usr/bin/pkill", str(fake_pkill))
+    )
+    script = tmp_path / "helper"
+    script.write_text(source)
+    script.chmod(0o755)
+    env = dict(os.environ, CAPTURE=str(capture))
+    result = subprocess.run(
+        [str(script), "keyboard"], env=env, text=True, capture_output=True, timeout=5
+    )
+    assert result.returncode == 0 and not result.stdout
+    assert json.loads(capture.read_text()) == [
+        "-USR1",
+        "-u",
+        str(os.getuid()),
+        "-xf",
+        "/usr/bin/python3 /usr/local/libexec/ad-linux-tv/touch-overlay.py",
+    ]
+    capture.unlink()
+    result = subprocess.run([str(script), "keyboard", "x"], env=env, capture_output=True, timeout=5)
+    assert result.returncode == 2 and not capture.exists()

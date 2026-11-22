@@ -111,6 +111,7 @@ _SHORTCUT_COMMANDS = {
     "video_panel": "/usr/local/libexec/ad-linux-tv/tv-shortcut.sh video_panel",
     "magnifier": "/usr/local/libexec/ad-linux-tv/tv-shortcut.sh magnifier",
     "fullscreen": "/usr/local/libexec/ad-linux-tv/tv-shortcut.sh fullscreen",
+    "keyboard": "/usr/local/libexec/ad-linux-tv/tv-shortcut.sh keyboard",
 }
 _REPEATABLE = frozenset({"volume_up", "volume_down"})
 

@@ -9,7 +9,7 @@ class TvShortcutControls {
     this.request = request;
     this.onAuth = onAuth;
     this.onSaved = onSaved;
-    this.actions = ["ok", "volume_up", "volume_down", "video_panel", "magnifier", "fullscreen"];
+    this.actions = ["ok", "volume_up", "volume_down", "video_panel", "magnifier", "fullscreen", "keyboard"];
     this.field = name => root.querySelector(`[data-shortcut="${name}"]`);
     this.active = false;
     this.epoch = 0;

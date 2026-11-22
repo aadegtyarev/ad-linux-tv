@@ -6,6 +6,7 @@
 
 import json
 import os
+import signal
 import subprocess
 import tempfile
 from glob import glob
@@ -16,8 +17,9 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
+gi.require_version("GLibUnix", "2.0")
 gi.require_version("GtkLayerShell", "0.1")
-from gi.repository import Gdk, GLib, Gtk, GtkLayerShell
+from gi.repository import Gdk, GLib, GLibUnix, Gtk, GtkLayerShell
 
 
 STYLE = b"""
@@ -280,6 +282,8 @@ def fullscreen_active():
 
 
 def main():
+    # A remote keyboard press during startup must not kill the overlay.
+    signal.signal(signal.SIGUSR1, signal.SIG_IGN)
     window = Gtk.Window()
     window.set_decorated(False)
     window.set_resizable(False)
@@ -380,7 +384,8 @@ def main():
             GLib.idle_add(apply_position, position["top"], position["right"])
 
     panel.connect("size-allocate", on_panel_allocate)
-    pinned = False
+    # Who keeps the keyboard open: "touch", "remote" or None.
+    pinned = None
     volume_timer = None
     volume_commits = {"volume": None}
     loading_volume = False
@@ -544,7 +549,7 @@ def main():
 
     def on_home(_button):
         nonlocal pinned
-        pinned = False
+        pinned = None
         close_volume()
         close_timer()
         set_keyboard_visible(False)
@@ -560,14 +565,21 @@ def main():
         close_timer()
         history("forward")
 
-    def on_keyboard(_button):
+    def toggle_keyboard(source):
         nonlocal pinned
         visible = keyboard_visible()
         if visible is None:
             return
-        pinned = not visible
-        if not set_keyboard_visible(pinned):
-            pinned = False
+        pinned = None if visible else source
+        if not set_keyboard_visible(pinned is not None):
+            pinned = None
+
+    def on_keyboard(_button):
+        toggle_keyboard("touch")
+
+    def on_remote_keyboard():
+        toggle_keyboard("remote")
+        return GLib.SOURCE_CONTINUE
 
     def on_touch_click(button, callback):
         context = button.get_style_context()
@@ -615,8 +627,9 @@ def main():
         # Over fullscreen video only the handle, fullscreen and volume buttons stay, so touch
         # users can leave fullscreen, adjust the sound and move the panel off the picture.
         compact = fullscreen_active()
-        if (not should_show or compact) and pinned:
-            pinned = False
+        # A remote-opened keyboard does not depend on the touchscreen.
+        if pinned and (compact or (not should_show and pinned == "touch")):
+            pinned = None
             set_keyboard_visible(False)
         if not should_show and volume_panel.get_visible():
             close_volume()
@@ -651,6 +664,7 @@ def main():
             set_keyboard_visible(True)
         return True
 
+    GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, on_remote_keyboard)
     update_visibility()
     GLib.timeout_add(150, keep_keyboard_open)
     GLib.timeout_add_seconds(2, update_visibility)
